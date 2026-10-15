@@ -345,8 +345,27 @@ static void test_wide_boxes(void)
     GOTO("left", NAV_RIGHT, "right");
 }
 
+static void test_nearest(void)
+{
+    List l = {{{0}}, 0};
+    int hx = -1, hy = -1;
+
+    CHECK(nav_nearest(l.t, 0, 5, 5, &hx, &hy) == NAV_NONE);
+    add(&l, 0, 0, 100, 100, 1, "a");
+    add(&l, 300, 0, 100, 100, 1, "b");
+    add(&l, 0, 300, 100, 100, 1, "c");
+    CHECK(nav_nearest(l.t, l.n, 50, 50, &hx, &hy) == 0 && hx == 49 && hy == 49);        /* on a target: that one */
+    CHECK(nav_nearest(l.t, l.n, 250, 40, &hx, &hy) == 1 && hx == 349);                  /* off to the side: the nearest edge, in any direction */
+    CHECK(nav_nearest(l.t, l.n, 40, 250, &hx, &hy) == 2 && hy == 349);
+    CHECK(nav_nearest(l.t, l.n, 199, 50, &hx, &hy) == 0 && nav_nearest(l.t, l.n, 200, 50, &hx, &hy) == 1);   /* the middle between a's edge (99) and b's (300) */
+    l.t[1].x0 = 301; l.t[1].x1 = 401;
+    CHECK(nav_nearest(l.t, l.n, 200, 50, &hx, &hy) == 0);                               /* a tie goes to the earlier */
+    CHECK(nav_nearest(l.t, l.n, 100, 50, &hx, &hy) == 0);                               /* the edge is out (x1 is exclusive): 1 pixel from a */
+}
+
 int main(void)
 {
+    test_nearest();
     test_grid();
     test_duel();
     test_zone_preference();

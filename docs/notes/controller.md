@@ -6,7 +6,7 @@ touched. Everything goes through `front_push_mouse` and `front_push_key` (`front
 235, food 49 -> 59) and a held A past 400 ms repeats like a held mouse button.
 
 Files: `pad.c` / `pad.h` (the logic: no SDL, no game, unit tested: `test_pad.c`, about 430 checks), and the glue in `front_sdl.c` (controller events in, the cursor drawn, the `pad` steps of `PORT_CONTROL`). The D-pad's
-navigation is `nav.c` (which target next: pure, `test_nav.c`) and `navwm.c` (the targets, read off the window tree), described in `controller-nav.md`.
+navigation is `nav.c` (which target next: pure, `test_nav.c`) and `navwm.c` (the targets, read off the window tree), described in `controller-nav.md`; on the game's own screens the targets are read from the game's button table by `screens.c`, described in `controller-screens.md`.
 `PORT_NOPAD=1` turns it all off. With no controller nothing changes: the pad is "active" only after it has been used, and the real mouse takes over again the moment it moves.
 
 ## The controls
@@ -18,7 +18,7 @@ All of this is one table at the top of `pad.c` (`binds[]`, with the numbers besi
 | Left stick | the cursor, in screen pixels | |
 | Left trigger (held) | slow cursor, a quarter of the speed | precision |
 | Right stick pressed in (held) | fast cursor, twice the speed | |
-| D-pad | **in a duel, a dialog or a menu: the cursor jumps to the next card, button or row in that direction** (after 400 ms it repeats, every 150 ms); anywhere else the arrow keys, repeating as a keyboard's do (after 400 ms, every 70) | `controller-nav.md`: how the targets are found and the rules |
+| D-pad | **in a duel, a dialog or a menu, on the screens the game draws itself (title, new game, village, shops, world map, clues, stats, the encounter boxes) and in the deck builder: the cursor jumps to the next card, button or row in that direction** (after 400 ms it repeats, every 150 ms); on the map, in castles and dungeons the arrow keys, repeating as a keyboard's do (after 400 ms, every 70) | `controller-nav.md`: how the targets are found and the rules; `controller-screens.md`: the game's own screens |
 | A | left click; held while A is held (drags: deck builder cards; the map walks toward the cursor) | |
 | B | right click (the game's menus on a card, the castle pager's previous page) | |
 | X, Start | Enter | the default button of a dialog, the Done of a prompt bar, the name entry |
@@ -84,7 +84,7 @@ does not look at it), so the code from the event on is the real one:
     pad press NAME                        down, then up
     pad remove                            a controller was unplugged
     pad pos                               where the cursor is, on stderr: "pad: X Y active=0|1 left=0|1"
-    pad nav                               what the D-pad would move between now: "nav: mode duel|dialog|menu|combo|none, N targets, pointer (X,Y) on I", then a line for each target
+    pad nav                               what the D-pad would move between now: "nav: mode duel|deck|dialog|menu|combo|screen|none, N targets, pointer (X,Y) on I", then a line for each target
     hit X Y                               (not a pad step) the window a click at X, Y reaches
 
 (Steps are handled in the order of the pipe, but the controller events they push are seen by the next turn of the window loop: ask `pad pos` a few milliseconds after the last one.)
@@ -93,6 +93,7 @@ does not look at it), so the code from the event on is the real one:
 - `python3 tools/soak/pad_play.py [--shots DIR]` plays with pad commands only, headless, 1024x768: the title screen, difficulty, colour, visage and name of a new game, walking on the map (trigger and stick,
   right stick), then, from the saved game, the encounter's Duel, the coin toss dialogs, a land played from the hand with A, B's menu closed with Back, Done. It reads the game's memory and the window tree to check
   each step and keeps screenshots; it passed here. `Game.pad_goto` (`tools/soak/pentamoor_ctl.py`) moves the cursor with the stick the way a person does (closed loop on `pad pos`).
+- `python3 tools/soak/screen_nav_play.py [--res 1024x768] [--shots DIR]` plays a new game, a castle's gate, a village (food, a card bought), the world map, the clues, the wizard's stats and the deck builder with the D-pad and A, and checks each screen's targets against the game's own hover (`controller-screens.md`).
 - `python3 tools/soak/nav_play.py [--res 1024x768]` plays a duel (mouse, until both sides have permanents) and then checks the D-pad in it: `controller-nav.md`, "Tested".
 - By hand with the same driver: the deck builder (`DECK.EXE`): a card dragged from the stock row into the deck with A held and the stick (Stats 0 -> 1 cards), RB paging the stock row, and the title screen, a village's food button
   (one A press, one purchase), the duel's hand list, a card's right-click menu (B) and a menu row chosen with A, the encounter dialogs' buttons.
@@ -106,7 +107,6 @@ does not look at it), so the code from the event on is the real one:
 - **A real display.** The drawn cursor and the hidden host pointer were looked at in screenshots and, for the pointer, by the code path only (the dummy video driver has no pointer to see). Full screen likewise.
 - **Touch** was not touched: SDL's default turns it into the mouse, and the pad then gives the cursor back to it. (The Deck's touch screen goes through the same logical size as the mouse; not tried.)
 - **Steam Input's layouts** (`steamdeck.md`): the Gamepad template and the layout that ships were not loaded in a Steam client.
-- **The game's own keyboard navigation of buttons** (Tab and Shift+Tab, and the up and down arrows on some screens, step through a screen's hotspots and call `SetCursorPos` to put the pointer on the
-  button: `FUN_0041f3ea`, 0x41f3ea) is not followed: `SetCursorPos` only changes the number `GetCursorPos` answers, so neither the real pointer nor the pad's cursor moves with it. The D-pad's own navigation
-  (`controller-nav.md`) works from the window tree instead, and only in duels, dialogs and menus; the screens drawn by the game itself (the title menus, the village, the castle pager, the map, the deck
-  builder) have no windows to read, so there the D-pad is still the arrow keys.
+- **The game's own keyboard navigation of buttons** (Tab and Shift+Tab, and the up and down arrows on some screens, step through a screen's button table by index and call `SetCursorPos` to put the pointer on the
+  button: `FUN_0041f3ea`, 0x41f3ea) is not followed: `SetCursorPos` only changes the number `GetCursorPos` answers, so neither the real pointer nor the pad's cursor moves with it. The D-pad does not use it: on the
+  game's own screens it reads the same table (`controller-screens.md`) and moves by the picture, and in the map it is the arrow keys.

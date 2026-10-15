@@ -102,6 +102,7 @@ void port_prehook(uint32_t addr, HostGuestFn fn);    /* runs before the lifted f
 void lzw_install(void);
 void pace_install(void);         /* the overworld's frame rate (pace.c) */
 void textfocus_install(void);    /* when the game waits for typed text (textfocus.c) */
+void screens_install(void);      /* which screen of the game is on, for the D-pad (screens.c) */
 void yesno_install(void);        /* when the game asks a (Y/N) question (yesno.c) */
 void lzw_install_deckdll(uint32_t base);
 
