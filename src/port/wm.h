@@ -54,6 +54,7 @@ typedef struct Window {
     int scroll[4][3];            /* [bar][min, max, pos] */
     int top;                     /* a list box: the first item shown (LB_SETTOPINDEX) */
     int own_mouse;               /* a dialog whose procedure does the clicks on its list boxes and combo boxes itself (the file dialog): they are not the standard ones'  */
+    int own_keys;                /* a dialog whose procedure reads Enter and Esc itself (a message box: the default button need not be IDOK): the dialog manager does not turn them into IDOK and IDCANCEL */
     int lb_icons;                /* a list box whose items are drawn with a folder or file icon (an item's data: 1 a folder), as the file dialog's list is */
     int has_caret, caret;        /* an edit box that shows a text cursor (1; 2: with all its text selected), and where (a byte offset in its text): the file dialog's */
     /* dialogs */
@@ -132,7 +133,7 @@ void wm_popup_dump(FILE *f);                  /* an open popup menu, one line pe
 void wm_dump_queue(FILE *f);                 /* every window: handle, parent, class, title, rectangle, visibility (debugging aid) */
 
 /* the registries other modules add their APIs to */
-extern const WinApi USER32_APIS[], CONTROLS_APIS[], FILEDLG_APIS[], WINHELP_APIS[], MENUS_APIS[], GDI32_STATE_APIS[], GDI32_BLIT_APIS[], GDI32_TEXT_APIS[];
+extern const WinApi USER32_APIS[], CONTROLS_APIS[], FILEDLG_APIS[], WINHELP_APIS[], MSGBOX_APIS[], MENUS_APIS[], GDI32_STATE_APIS[], GDI32_BLIT_APIS[], GDI32_TEXT_APIS[];
 
 /* the case-insensitive class name and string helpers */
 char *wm_strdup_guest(uint32_t addr);

@@ -23,7 +23,7 @@ int winhelp_text(uint32_t cmd, const char *file, char *out, size_t cap);
 /* The file name part of a help file's path ("C:\MAGIC\PROGRAM\duel.hlp" gives "duel.hlp"). */
 void winhelp_file_name(const char *path, char *out, size_t cap);
 
-/* A small modal dialog: the text (wrapped; '\n' breaks a line) over an OK button. Returns when OK, Enter, Esc or the close box is used. 0 if there is no window system. */
+/* A small modal dialog: the text (wrapped; '\n' breaks a line) over an OK button, made by msgbox.c. Returns when OK, Enter, Esc or the close box is used. */
 int port_message_dialog(uint32_t owner, const char *caption, const char *text);
 
 #endif

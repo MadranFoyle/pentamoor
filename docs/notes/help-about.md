@@ -49,8 +49,8 @@ The dialog (`port_message_dialog`) is built in code like the file dialog's and r
 close it. It is modal as a real help window is not (WinHelp opens a separate window and the game goes on); the game is paused behind the dialog until OK, which is no different for the player than closing
 the help window, and avoids needing a second top-level window.
 
-`MessageBoxA` is still the old stand-in (it logs and answers IDOK without showing anything); `port_message_dialog` could serve it, but a message box that waits would change how the game's error and
-assertion paths behave in unattended runs (the soak test), so it was left for its own change.
+`port_message_dialog` is now a message box with only an OK button (`msgbox.c`, see `dialogs.md`: `MessageBoxA` is real since, with `PORT_MSGBOX=auto` for unattended runs); the dialog text above is
+the same, the size now comes from measuring the wrapped text instead of the 50-characters-a-line estimate.
 
 ## Checked
 

@@ -251,7 +251,7 @@ int wm_inject_key(uint32_t vk, uint32_t scancode, int down, int ch, int repeat)
     if (wm_top_dialog()) {
         uint32_t hdlg = wm_top_dialog();
 
-        if (vk == 0x1B || vk == 0x0D) {                       /* the dialog manager: Esc is IDCANCEL, Enter is IDOK, sent to the open dialog if it has such a control */
+        if ((vk == 0x1B || vk == 0x0D) && !(wm_window(hdlg) && wm_window(hdlg)->own_keys)) {   /* the dialog manager: Esc is IDCANCEL, Enter is IDOK, sent to the open dialog if it has such a control */
             uint32_t cid = vk == 0x1B ? 2 : 1;
             Window *c = wm_dlg_item(hdlg, cid);
 

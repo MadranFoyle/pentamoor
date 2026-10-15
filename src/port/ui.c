@@ -101,8 +101,9 @@ static void label_line(Canvas *c, const UiFont *f, int x, int y, const char *s, 
     }
 }
 
-/* Text wrapped to a width (DT_WORDBREAK), each line aligned (0 left, 1 centre, 2 right); returns the height used. */
-static int wrapped_text(Canvas *c, const UiFont *f, int x, int y, int width, const char *s, int align, int wrap, const uint8_t col[3], int disabled, int underline)
+/* Text wrapped to a width (DT_WORDBREAK), each line aligned (0 left, 1 centre, 2 right); returns the height used. With no canvas nothing is drawn: it only measures, and
+ * `widest` (if given) is the width of the longest line. */
+static int wrapped_text(Canvas *c, const UiFont *f, int x, int y, int width, const char *s, int align, int wrap, const uint8_t col[3], int disabled, int underline, int *widest)
 {
     size_t n = strlen(s), at = 0;
     int line = 0;
@@ -133,7 +134,10 @@ static int wrapped_text(Canvas *c, const UiFont *f, int x, int y, int width, con
             lw = text_w(f, s + at, lw_end - at);
             tx = align == 1 ? x + (width - lw) / 2 : align == 2 ? x + width - lw : x;
             ul = underline >= (int)at && underline < (int)lw_end ? underline - (int)at : -1;
-            label_line(c, f, tx, y + line * f->height, s + at, lw_end - at, ul, col, disabled);
+            if (c)
+                label_line(c, f, tx, y + line * f->height, s + at, lw_end - at, ul, col, disabled);
+            if (widest && lw > *widest)
+                *widest = lw;
         }
         line++;
         if (fit >= n)
@@ -315,6 +319,34 @@ static void draw_button(Canvas *c, const Window *w, const Window *dlg, int x0, i
     }
 }
 
+/* The four icons of a message box, 32 x 32 and drawn here rather than loaded: a blue "?" in a circle (MB_ICONQUESTION), a yellow triangle with "!" (MB_ICONEXCLAMATION), a red
+ * circle with a white cross (MB_ICONERROR), a blue "i" in a circle (MB_ICONINFORMATION). */
+static void draw_msg_icon(Canvas *c, int x0, int y0, char kind)
+{
+    static const uint8_t RED[3] = {255, 0, 0}, BLUE[3] = {0, 0, 255}, YEL[3] = {255, 255, 0}, WHITE[3] = {255, 255, 255};
+    int px, py;
+    UiFont f = {"MS Sans Serif", 19, 1, 0, 0};
+    char g[2] = {kind == 'x' ? 'X' : kind, 0};
+
+    ui_font_metrics(f.face, f.pt, 1, &f.height, &f.ascent, NULL);
+    for (py = 0; py < 32; py++)
+        for (px = 0; px < 32; px++) {
+            double dx = px - 15.5, dy = py - 15.5, d = dx * dx + dy * dy;
+
+            if (kind == '!') {                                            /* the triangle: from the apex down, widening by a pixel every two rows */
+                int half = 1 + py * 14 / 28;
+
+                if (py >= 2 && py < 30 && px >= 16 - half && px < 16 + half)
+                    put(c, x0 + px, y0 + py, (px == 16 - half || px == 15 + half || py == 29) ? DARK : YEL);
+            } else if (d <= 15.0 * 15.0)
+                put(c, x0 + px, y0 + py, d > 14.0 * 14.0 ? DARK : kind == 'x' ? RED : BLUE);
+        }
+    if (kind == '!')
+        text_at(c, &f, x0 + (32 - text_w(&f, g, 1)) / 2, y0 + 8, g, 1, DARK);
+    else
+        text_at(c, &f, x0 + (32 - text_w(&f, g, 1)) / 2, y0 + (32 - f.height) / 2, g, 1, WHITE);
+}
+
 static void draw_static(Canvas *c, const Window *w, const Window *dlg, int x0, int y0, int x1, int y1)
 {
     UiFont f = ui_font(dlg, 0);
@@ -335,6 +367,10 @@ static void draw_static(Canvas *c, const Window *w, const Window *dlg, int x0, i
         else { bevel(c, x0, y0, x1, y1, SHADOW, HILIGHT); bevel(c, x0 + 1, y0 + 1, x1 - 1, y1 - 1, HILIGHT, SHADOW); }
         return;
     }
+    if (kind == 3 && w->title[0] == '\x01' && w->title[1]) {                         /* a message box's icon (msgbox.c): \x01 and one of ! ? i x */
+        draw_msg_icon(c, x0, y0, w->title[1]);
+        return;
+    }
     if (kind == 3 || kind == 0xD || kind == 0xE)                                    /* icons, owner-drawn and bitmaps are not text */
         return;
     if (!w->ctl_transparent)
@@ -346,7 +382,23 @@ static void draw_static(Canvas *c, const Window *w, const Window *dlg, int x0, i
     } else
         strip_amp(w->title, label, sizeof(label), &ul);
     align = kind == 1 ? 1 : kind == 2 ? 2 : 0;
-    wrapped_text(c, &f, x0, y0, x1 - x0, label, align, kind != 0xC && kind != 0xB, fg, disabled, ul);
+    wrapped_text(c, &f, x0, y0, x1 - x0, label, align, kind != 0xC && kind != 0xB, fg, disabled, ul, NULL);
+}
+
+/* How much room a static text needs: its height when wrapped to `width` pixels in a dialog font, and the width of its longest line (what the message box sizes itself by). */
+int ui_text_measure(const char *face, int pt, int bold, const char *s, int width, int *widest)
+{
+    UiFont f;
+    int w = 0, h;
+
+    f.face = face;
+    f.pt = pt;
+    f.bold = bold;
+    ui_font_metrics(face, pt, bold, &f.height, &f.ascent, NULL);
+    h = wrapped_text(NULL, &f, 0, 0, width, s, 0, 1, BLACK, 0, -1, &w);
+    if (widest)
+        *widest = w;
+    return h;
 }
 
 static void draw_edit(Canvas *c, const Window *w, const Window *dlg, int x0, int y0, int x1, int y1)

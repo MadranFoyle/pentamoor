@@ -12,6 +12,7 @@
 #include "sched.h"
 #include "steamdeck.h"
 #include "wm.h"
+#include "yesno.h"
 
 void compose_screen(uint8_t *rgb);
 
@@ -244,6 +245,15 @@ void front_ui_saw(void) { press_seen = 1; }
 static void deliver(const Ev *e)
 {
     if (e->type == 0) {
+        int ans = yesno_mouse(e->kind);
+
+        if (ans < 0)                                     /* the release of a press that answered a yes/no question (yesno.c) */
+            return;
+        if (ans) {                                       /* a press that answers one: the key the game is waiting for, in place of the click */
+            front_push_key(ans == 'y' ? 0x59 : 0x4E, ans == 'y' ? 0x15 : 0x31, 1, ans, 0);
+            front_push_key(ans == 'y' ? 0x59 : 0x4E, ans == 'y' ? 0x15 : 0x31, 0, -1, 0);
+            return;
+        }
         wm_inject_mouse(e->kind, e->x, e->y);
         if (e->kind == IN_DOWN || e->kind == IN_RDOWN) {
             hold_on = hold_mouse = press_down = 1;

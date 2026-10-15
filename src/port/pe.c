@@ -35,7 +35,7 @@ static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }
 
 static const WinApi *find_api(const char *dll, const char *name)
 {
-    const WinApi *tables[] = {KERNEL32_APIS, KERNEL32_RT_APIS, CRT_APIS, STDIO_APIS, USER32_APIS, CONTROLS_APIS, FILEDLG_APIS, WINHELP_APIS, MENUS_APIS, GDI32_STATE_APIS, GDI32_BLIT_APIS, GDI32_TEXT_APIS, VIDEO_APIS};
+    const WinApi *tables[] = {KERNEL32_APIS, KERNEL32_RT_APIS, CRT_APIS, STDIO_APIS, USER32_APIS, CONTROLS_APIS, FILEDLG_APIS, WINHELP_APIS, MSGBOX_APIS, MENUS_APIS, GDI32_STATE_APIS, GDI32_BLIT_APIS, GDI32_TEXT_APIS, VIDEO_APIS};
     size_t t;
 
     for (t = 0; t < sizeof(tables) / sizeof(tables[0]); t++) {

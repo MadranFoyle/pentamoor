@@ -95,6 +95,7 @@ or Switch pad: anything SDL knows as a game controller, plugged in before or whi
 | Right trigger + left stick | walk on the map in the direction you push |
 | Right stick | arrow keys (castles, dungeons) |
 
+The game's own "(Y/N)" questions (buying a card in a village, for one) are answered with a key; with a mouse or a controller the left button (A) is yes and the right one (B) is no, and the screen says so.
 Typing a name needs a keyboard (on a Steam Deck, Steam's keyboard: Steam + X). `PORT_NOPAD=1` turns the controller off, `PORT_FULLSCREEN=1` starts full screen (on a Steam Deck it does by itself; `PORT_FULLSCREEN=0` turns that off). Details and what is not tested: [docs/notes/controller.md](docs/notes/controller.md).
 
 ## Where things stand

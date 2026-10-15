@@ -646,7 +646,7 @@ static uint32_t EndDialog(const uint32_t *a)
 typedef struct DlgItem {
     uint32_t style, exstyle, id;
     int x, y, cx, cy;
-    char cls[64], text[256];
+    char cls[64], text[2048];
 } DlgItem;
 
 typedef struct Dlg {
@@ -913,12 +913,6 @@ int wm_press_dialog_button(uint32_t id)
 }
 
 
-static uint32_t MessageBoxA(const uint32_t *a)
-{
-    port_log("MessageBox: %s: %s -> IDOK", P(a[2]), P(a[1]));
-    return 1;
-}
-
 static uint32_t wsprintfA(const uint32_t *a)
 {
     /* cdecl: (buffer, format, ...): the arguments follow on the stack, which lift_call copied to a[2...] */
@@ -975,7 +969,7 @@ const WinApi CONTROLS_APIS[] = {
     {"user32.dll", "SetDlgItemInt", SetDlgItemInt}, {"user32.dll", "GetDlgItemInt", GetDlgItemInt},
     {"user32.dll", "CheckDlgButton", CheckDlgButton}, {"user32.dll", "IsDlgButtonChecked", IsDlgButtonChecked},
     {"user32.dll", "CheckRadioButton", CheckRadioButton}, {"user32.dll", "EndDialog", EndDialog},
-    {"user32.dll", "DialogBoxParamA", DialogBoxParamA}, {"user32.dll", "MessageBoxA", MessageBoxA}, {"user32.dll", "wsprintfA", wsprintfA},
+    {"user32.dll", "DialogBoxParamA", DialogBoxParamA}, {"user32.dll", "wsprintfA", wsprintfA},
     {"user32.dll", "SetScrollRange", SetScrollRange}, {"user32.dll", "GetScrollRange", GetScrollRange},
     {"user32.dll", "SetScrollPos", SetScrollPos}, {"user32.dll", "GetScrollPos", GetScrollPos}, {"user32.dll", "LoadBitmapA", zero},
     {0, 0, 0},

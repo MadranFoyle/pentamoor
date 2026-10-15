@@ -514,6 +514,19 @@ phrase tables, 56 bitmaps), not text, so no help is displayed: a WinHelp engine 
 copyright lines, closed by a click, a key or a command: it has no OK button) and needed nothing: it already ran from its template through the dialog layer, in `MAGIC.EXE`'s duels and in
 `DUEL.EXE`. `DECK.EXE` and `DECKDLL.DLL` have no Help or About; F1 is not a help key in the game (its accelerator, command 600, has no handler in `MAGIC.EXE` or `DUEL.EXE`, and `TranslateAcceleratorA` is a stub in any case). What was checked, and what was not: `docs/notes/help-about.md`.
 
+### Message boxes and the game's "(Y/N)" questions
+
+`MessageBoxA` used to log and return `IDOK` without showing anything, so a style other than `MB_OK` got an answer that is none of `IDYES`, `IDNO`, `IDCANCEL` (the deck builder's "Do you wish to
+save ...?" is a `MB_YESNOCANCEL`). `msgbox.c` now shows a real modal box in the Windows 98 look (caption, icon, wrapped text, the buttons of the style, `MB_DEFBUTTON1` to 3) and returns the
+button's id; Enter and Space press the focused button, Tab and the arrows move the focus, a button's underlined letter presses it, Esc is Cancel (OK for a lone OK button, nothing for Yes/No and
+Abort/Retry/Ignore, as on Windows), the mouse and the D-pad and A of a controller work. **`PORT_MSGBOX=ask|auto`**: `ask` shows the box and waits; `auto` returns the default button's id at once
+(logging `MessageBox: caption: text -> IDYES`). Unset, it is `auto` when nobody can answer (`PORT_CONTROL` or `PORT_SCRIPT` is set, `PORT_HEADLESS` is set, or `SDL_VIDEODRIVER=dummy`: the soak test, CI
+and the driving scripts) and `ask` otherwise. The log gets one `MessageBox:` line for every call either way. `WinHelpA`'s "not available" dialog is the same box and is always shown.
+
+The **Buy Cards "(Y/N)"** is not a message box: the game draws "Buy for N gold?   (Y/N)" itself and waits in its wait-for-key function (0x48ac2f) for `y` or `Y`; any other key is no. Nothing
+else could answer it, so with a controller (no Y key) or a mouse the screen could not be left. `yesno.c` knows when one of the three such questions (buy, sell, take) is being asked, from the return
+address of that function, and while it is the left mouse button (A) is `y` and the right one (B) is `n`, with a line on the screen saying so. `docs/notes/dialogs.md` has the details.
+
 ### Notes by area
 
 Later work is written up per area in `docs/notes/`: `overworld.md` (how to reach the map, what was walked, the click-repeat fix), `movies.md` (the 68 StatWin clips), `saves-and-paths.md` (save round trips,

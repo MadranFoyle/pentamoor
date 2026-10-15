@@ -63,8 +63,8 @@ endif
 # dlopen is in libc on macOS and current glibc; older glibc wants -ldl. Windows: LoadLibrary (plat_win.c), nothing to link.
 DL_LIBS = $(if $(filter Linux,$(UNAME)),-ldl,)
 PLAT = plat_posix.c plat_win.c
-SRC = main.c $(PLAT) guest.c pe.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c lzw.c modules.c sound.c video.c movie.c pace.c gamemod.c pad.c nav.c navwm.c steamdeck.c textin.c textfocus.c $(FRONT)
-HEADERS = plat.h port.h wm.h gdi.h gdi_int.h sched.h front.h pad.h nav.h navwm.h steamdeck.h textin.h filedlg.h winhelp.h ../native/lift_rt.h ../native/lift_tables.h
+SRC = main.c $(PLAT) guest.c pe.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c lzw.c modules.c sound.c video.c movie.c pace.c gamemod.c pad.c nav.c navwm.c steamdeck.c textin.c textfocus.c yesno.c $(FRONT)
+HEADERS = plat.h port.h wm.h gdi.h gdi_int.h sched.h front.h pad.h nav.h navwm.h steamdeck.h textin.h yesno.h filedlg.h winhelp.h msgbox.h ../native/lift_rt.h ../native/lift_tables.h
 RTFLAGS = -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native
 
 PROGRAMS = magic deck duel
@@ -130,8 +130,8 @@ clean:
 	rm -rf $(BUILD)
 
 # The tests of the window manager and the graphics layer: host functions stand in for the game's window procedures, so no game files are needed.
-LIB_SRC = $(PLAT) nav.c navwm.c lzw.c guest.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c front.c steamdeck.c modules.c sound.c video.c movie.c
-TEST_DEPS = test_stubs.c $(LIB_SRC) nav.h navwm.h port.h wm.h gdi.h gdi_int.h sched.h front.h filedlg.h winhelp.h
+LIB_SRC = $(PLAT) nav.c navwm.c lzw.c guest.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c front.c yesno.c steamdeck.c modules.c sound.c video.c movie.c
+TEST_DEPS = test_stubs.c $(LIB_SRC) nav.h navwm.h port.h wm.h gdi.h gdi_int.h sched.h front.h filedlg.h winhelp.h msgbox.h yesno.h
 
 $(BUILD)/test_wm$(EXE): test_wm.c $(TEST_DEPS)
 	mkdir -p $(BUILD)
