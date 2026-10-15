@@ -62,6 +62,7 @@ static int game_main(void *p)
     lzw_install();
     pace_install();
     textfocus_install();
+    yesno_install();
     sound_install();
     video_install();
     {

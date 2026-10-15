@@ -17,8 +17,10 @@
 #include "plat.h"
 #include "sched.h"
 #include "test_util.h"
+#include "msgbox.h"
 #include "wm.h"
 #include "winhelp.h"
+#include "yesno.h"
 
 extern char guest_cwd[260];
 int wm_dialog_count(void);
@@ -38,7 +40,7 @@ static uint32_t cstr(const char *s) { uint32_t p = scratch((uint32_t)strlen(s) +
 /* call an API by name, as the guest would */
 static uint32_t api(const char *name, uint32_t *args)
 {
-    static const WinApi *const tables[] = {USER32_APIS, CONTROLS_APIS, FILEDLG_APIS, WINHELP_APIS, MENUS_APIS, NULL};
+    static const WinApi *const tables[] = {USER32_APIS, CONTROLS_APIS, FILEDLG_APIS, WINHELP_APIS, MSGBOX_APIS, MENUS_APIS, NULL};
     int t;
     const WinApi *p;
 
@@ -1190,6 +1192,368 @@ static void test_winhelp(void)
     }
 }
 
+/* ---- MessageBoxA (msgbox.c) ------------------------------------------------------------------------------------------------------------- */
+/* The box is shown by the API and answered by a script from a thread of its own: e Enter, s Space, x Esc, t Tab, l Left, r Right, c<n> a click on button n, k<ch> a typed
+ * letter, w the close box (WM_CLOSE). A step that does not end the box leaves it open, which is checked (mb_open) before the next one. */
+static const char *mb_script;
+static int mb_done, mb_n, mb_ids[4], mb_default, mb_open[16], mb_default_at[16], mb_nsteps;
+static char mb_labels[4][16], mb_caption[64], mb_text[1100], mb_icon;
+static int mb_text_w, mb_text_h, mb_client_w, mb_client_h;
+
+static int mb_default_index(uint32_t hdlg)
+{
+    int i, n = wm_window_count(), k = 0, d = -1;
+
+    for (i = 0; i < n; i++) {
+        Window *c = wm_window_at_index(i);
+
+        if (c && c->parent == hdlg && c->cname && !strcasecmp(c->cname, "BUTTON")) {
+            if ((c->style & 0xF) == 1)
+                d = k;
+            k++;
+        }
+    }
+    return d;
+}
+
+static Window *mb_button(uint32_t hdlg, int index)
+{
+    int i, n = wm_window_count(), k = 0;
+
+    for (i = 0; i < n; i++) {
+        Window *c = wm_window_at_index(i);
+
+        if (c && c->parent == hdlg && c->cname && !strcasecmp(c->cname, "BUTTON") && k++ == index)
+            return c;
+    }
+    return NULL;
+}
+
+static void mb_key(uint32_t vk, int ch)
+{
+    wm_inject_key(vk, 0, 1, ch, 0);
+    wm_inject_key(vk, 0, 0, -1, 0);
+}
+
+static uint32_t mb_driver(const uint32_t *a)
+{
+    int waited = 0, i, n, step = 0;
+    uint32_t hdlg;
+    Window *d;
+    const char *p = mb_script;
+
+    (void)a;
+    while (!wm_top_dialog() && waited++ < 2000)
+        sched_sleep(0.002);
+    sched_sleep(0.05);
+    hdlg = wm_top_dialog();
+    d = wm_window(hdlg);
+    mb_n = 0;
+    mb_icon = 0;
+    n = wm_window_count();
+    for (i = 0; d && i < n; i++) {
+        Window *c = wm_window_at_index(i);
+
+        if (!c || c->parent != hdlg || !c->cname)
+            continue;
+        if (!strcasecmp(c->cname, "BUTTON") && mb_n < 4) {
+            mb_ids[mb_n] = (int)c->id;
+            snprintf(mb_labels[mb_n++], sizeof(mb_labels[0]), "%s", c->title);
+        } else if (!strcasecmp(c->cname, "STATIC")) {
+            if ((c->style & 0x1F) == 3)
+                mb_icon = c->title[1];
+            else {
+                snprintf(mb_text, sizeof(mb_text), "%s", c->title);
+                mb_text_w = c->w;
+                mb_text_h = c->h;
+                CHECK((c->style & 0x80) != 0);                        /* SS_NOPREFIX: an & in a message is shown */
+            }
+        }
+    }
+    if (d) {
+        snprintf(mb_caption, sizeof(mb_caption), "%s", d->title);
+        mb_default = mb_default_index(hdlg);
+        mb_client_w = d->w - d->nc_l - d->nc_r;
+        mb_client_h = d->h - d->nc_t - d->nc_b;
+    }
+    while (*p && d) {
+        char tok = *p++;
+
+        if (tok == 'e') mb_key(0x0D, 0x0D);
+        else if (tok == 's') mb_key(0x20, ' ');
+        else if (tok == 'x') mb_key(0x1B, 0x1B);
+        else if (tok == 't') mb_key(0x09, 0x09);
+        else if (tok == 'l') mb_key(0x25, -1);
+        else if (tok == 'r') mb_key(0x27, -1);
+        else if (tok == 'k') { int ch = *p++; mb_key((uint32_t)toupper(ch), ch); }
+        else if (tok == 'w') wm_post(hdlg, WM_CLOSE, 0, 0);
+        else if (tok == 'c') {
+            Window *b = mb_button(hdlg, *p++ - '0');
+
+            if (b)
+                wh_click_window(b);
+        }
+        sched_sleep(0.06);
+        if (step < 16) {
+            mb_open[step] = wm_dialog_count();
+            mb_default_at[step] = wm_dialog_count() ? mb_default_index(hdlg) : -1;
+        }
+        step++;
+    }
+    mb_nsteps = step;
+    if (wm_dialog_count())                                    /* the script left it open: Enter presses the focused button */
+        mb_key(0x0D, 0x0D);
+    mb_done = 1;
+    return 0;
+}
+
+/* MessageBoxA with a script; returns what the API returned */
+static int mb_run(uint32_t type, const char *caption, const char *text, const char *script)
+{
+    static uint32_t driver;
+    uint32_t r;
+    int waits;
+
+    if (!driver)
+        driver = port_host_function(mb_driver);
+    msgbox_set_mode(MSGBOX_ASK);
+    mb_script = script;
+    mb_done = mb_n = mb_nsteps = 0;
+    mb_text[0] = mb_caption[0] = 0;
+    sched_spawn(driver, 0, 0);
+    r = API("MessageBoxA", 0, text ? cstr(text) : 0, caption ? cstr(caption) : 0, type);
+    for (waits = 0; !mb_done && waits < 500; waits++)
+        sched_sleep(0.004);
+    CHECK(mb_done);
+    CHECK(!wm_dialog_count());
+    msgbox_set_mode(0);
+    return (int)r;
+}
+
+static void test_msgbox(void)
+{
+    MsgBoxSpec s;
+    MsgBoxLayout L;
+    char line[300];
+    int k, t, lh;
+    static const struct { uint32_t type; int n; int ids[3]; int cancel; } STY[] = {
+        {MB_OK, 1, {IDOK}, IDOK}, {MB_OKCANCEL, 2, {IDOK, IDCANCEL}, IDCANCEL}, {MB_ABORTRETRYIGNORE, 3, {IDABORT, IDRETRY, IDIGNORE}, 0},
+        {MB_YESNOCANCEL, 3, {IDYES, IDNO, IDCANCEL}, IDCANCEL}, {MB_YESNO, 2, {IDYES, IDNO}, 0}, {MB_RETRYCANCEL, 2, {IDRETRY, IDCANCEL}, IDCANCEL}
+    };
+
+    /* the six styles: which buttons, in what order, what Esc means; the default button; the icon */
+    for (t = 0; t < 6; t++) {
+        msgbox_spec(STY[t].type, &s);
+        CHECK(s.n == STY[t].n);
+        for (k = 0; k < s.n; k++)
+            CHECK(s.id[k] == STY[t].ids[k]);
+        CHECK(s.cancel == STY[t].cancel);
+        CHECK(s.def == 0 && s.icon == 0);
+        CHECK(msgbox_default_id(STY[t].type) == STY[t].ids[0]);
+        CHECK(msgbox_default_id(STY[t].type | MB_DEFBUTTON2) == STY[t].ids[s.n > 1 ? 1 : 0]);          /* a default that is not there is the first button */
+        CHECK(msgbox_default_id(STY[t].type | MB_DEFBUTTON3) == STY[t].ids[s.n > 2 ? 2 : 0]);
+        CHECK(msgbox_default_id(STY[t].type | MB_DEFBUTTON4) == STY[t].ids[0]);
+    }
+    msgbox_spec(MB_YESNO, &s);
+    CHECK(!strcmp(s.label[0], "&Yes") && !strcmp(s.label[1], "&No"));
+    msgbox_spec(MB_ABORTRETRYIGNORE, &s);
+    CHECK(!strcmp(s.label[0], "&Abort") && !strcmp(s.label[1], "&Retry") && !strcmp(s.label[2], "&Ignore"));
+    msgbox_spec(MB_OKCANCEL, &s);
+    CHECK(!strcmp(s.label[0], "OK") && !strcmp(s.label[1], "Cancel"));
+    msgbox_spec(6, &s);                                        /* MB_CANCELTRYCONTINUE: not known here, a plain OK box */
+    CHECK(s.n == 1 && s.id[0] == IDOK);
+    msgbox_spec(MB_OK | MB_ICONHAND, &s);          CHECK(s.icon == 'x');
+    msgbox_spec(MB_OK | MB_ICONQUESTION, &s);      CHECK(s.icon == '?');
+    msgbox_spec(MB_OK | MB_ICONEXCLAMATION, &s);   CHECK(s.icon == '!');
+    msgbox_spec(MB_OK | MB_ICONASTERISK, &s);      CHECK(s.icon == 'i');
+    msgbox_spec(0x1030, &s);                                    /* MB_SYSTEMMODAL | MB_ICONEXCLAMATION | MB_OK, as the game's duel error: the extra bits change nothing here */
+    CHECK(s.n == 1 && s.icon == '!' && s.def == 0);
+    msgbox_spec(MB_YESNOCANCEL | MB_DEFBUTTON3, &s);
+    CHECK(s.def == 2 && s.id[2] == IDCANCEL);
+
+    /* the keys: Enter and Space press the focused button, Esc is the cancel id (none for Yes/No), a button's letter presses it */
+    msgbox_spec(MB_YESNO, &s);
+    CHECK(msgbox_key(&s, 0, 0x0D, 0x0D) == IDYES && msgbox_key(&s, 1, 0x0D, 0x0D) == IDNO && msgbox_key(&s, 1, 0x20, ' ') == IDNO);
+    CHECK(msgbox_key(&s, 0, 0x1B, 0x1B) == 0);
+    CHECK(msgbox_key(&s, 0, 0, 'y') == IDYES && msgbox_key(&s, 0, 0, 'Y') == IDYES && msgbox_key(&s, 0, 0, 'n') == IDNO && msgbox_key(&s, 0, 0, 'N') == IDNO);
+    CHECK(msgbox_key(&s, 0, 0, 'c') == 0 && msgbox_key(&s, 0, 0, 'o') == 0 && msgbox_key(&s, 0, 0x41, -1) == 0);
+    CHECK(msgbox_key(&s, 0, 'Y', -1) == IDYES && msgbox_key(&s, 0, 'N', -1) == IDNO && msgbox_key(&s, 0, 'Q', -1) == 0);        /* a key with no character is its letter */
+    CHECK(msgbox_key(&s, 7, 0x0D, 0x0D) == IDYES);             /* a focus out of range is the default */
+    msgbox_spec(MB_OK, &s);
+    CHECK(msgbox_key(&s, 0, 0x1B, 0x1B) == IDOK && msgbox_key(&s, 0, 0x0D, 0x0D) == IDOK && msgbox_key(&s, 0, 0, 'o') == 0);
+    msgbox_spec(MB_OKCANCEL, &s);
+    CHECK(msgbox_key(&s, 0, 0x1B, 0x1B) == IDCANCEL && msgbox_key(&s, 0, 0, 'c') == 0 && msgbox_key(&s, 0, 0, 'k') == 0);
+    msgbox_spec(MB_ABORTRETRYIGNORE, &s);
+    CHECK(msgbox_key(&s, 0, 0, 'a') == IDABORT && msgbox_key(&s, 0, 0, 'r') == IDRETRY && msgbox_key(&s, 0, 0, 'I') == IDIGNORE && msgbox_key(&s, 0, 0x1B, 0x1B) == 0);
+    msgbox_spec(MB_YESNOCANCEL, &s);
+    CHECK(msgbox_key(&s, 0, 0, 'y') == IDYES && msgbox_key(&s, 0, 0, 'n') == IDNO && msgbox_key(&s, 0, 0x1B, 0x1B) == IDCANCEL);
+    msgbox_spec(MB_RETRYCANCEL, &s);
+    CHECK(msgbox_key(&s, 0, 0, 'r') == IDRETRY && msgbox_key(&s, 0, 0x1B, 0x1B) == IDCANCEL);
+    /* the focus: Tab, Right and Down go on, Left and Up go back, both wrap */
+    msgbox_spec(MB_YESNOCANCEL, &s);
+    CHECK(msgbox_move(&s, 0, 0x09) == 1 && msgbox_move(&s, 2, 0x09) == 0 && msgbox_move(&s, 0, 0x25) == 2 && msgbox_move(&s, 1, 0x26) == 0);
+    CHECK(msgbox_move(&s, 0, 0x27) == 1 && msgbox_move(&s, 0, 0x28) == 1 && msgbox_move(&s, 1, 0x0D) == 1 && msgbox_move(&s, 1, 0x41) == 1);
+    msgbox_spec(MB_OK, &s);
+    CHECK(msgbox_move(&s, 0, 0x09) == 0);                      /* one button: the focus stays */
+
+    /* the mode: what the environment says, else AUTO for a run nobody watches */
+    CHECK(msgbox_mode_for(NULL, 0) == MSGBOX_ASK && msgbox_mode_for(NULL, 1) == MSGBOX_AUTO);
+    CHECK(msgbox_mode_for("ask", 1) == MSGBOX_ASK && msgbox_mode_for("auto", 0) == MSGBOX_AUTO && msgbox_mode_for("ASK", 1) == MSGBOX_ASK);
+    CHECK(msgbox_mode_for("nonsense", 0) == MSGBOX_ASK && msgbox_mode_for("nonsense", 1) == MSGBOX_AUTO && msgbox_mode_for("", 1) == MSGBOX_AUTO);
+    msgbox_set_mode(MSGBOX_AUTO);
+    CHECK(msgbox_mode() == MSGBOX_AUTO);
+    msgbox_set_mode(MSGBOX_ASK);
+    CHECK(msgbox_mode() == MSGBOX_ASK);
+    msgbox_set_mode(0);
+
+    /* the log line */
+    msgbox_log_line(line, sizeof(line), "End of duel", "Want to play again?", IDYES, 0);
+    CHECK(!strcmp(line, "MessageBox: End of duel: Want to play again? -> IDYES"));
+    msgbox_log_line(line, sizeof(line), "Deck Maker", "Save?", IDCANCEL, 1);
+    CHECK(!strcmp(line, "MessageBox: Deck Maker: Save? -> IDCANCEL (answered)"));
+
+    /* the size: the text wrapped to a width, the icon beside it, the buttons in a row under both */
+    lh = 0;
+    ui_font_metrics("MS Sans Serif", 8, 0, &lh, NULL, NULL);
+    msgbox_spec(MB_OK, &s);
+    msgbox_layout(&s, "Error", "Hi", 640, &L);
+    CHECK(L.icon_x == -1 && L.text_x == 12 && L.text_h == lh && L.text_y == 12 && L.btn_y == 12 + lh + 12);
+    CHECK(L.client_w >= 75 + 24 && L.client_h == L.btn_y + 23 + 12);
+    CHECK(L.btn_x[0] * 2 + 75 == L.client_w);                  /* one button, in the middle */
+    msgbox_spec(MB_OK | MB_ICONHAND, &s);
+    msgbox_layout(&s, "Error", "Hi", 640, &L);
+    CHECK(L.icon_x == 12 && L.text_x == 12 + 32 + 12 && L.btn_y == 12 + 32 + 12);                  /* one short line beside a 32 pixel icon */
+    CHECK(L.text_y == 12 + (32 - lh) / 2 && L.icon_y == 12);
+    msgbox_layout(&s, "Error", "one\ntwo\nthree", 640, &L);
+    CHECK(L.text_h == 3 * lh);                                  /* a new line is a line */
+    {
+        char longtext[3000];
+        int i;
+
+        longtext[0] = 0;
+        for (i = 0; i < 40; i++)
+            strcat(longtext, "Not enough system memory to run at this screen resolution. ");
+        msgbox_layout(&s, "Error", longtext, 640, &L);
+        CHECK(L.text_h > 10 * lh);                              /* wrapped, not one long line */
+        CHECK(L.text_w <= 640 * 11 / 20 && L.client_w <= 12 + 44 + 640 * 11 / 20 + 12);
+        msgbox_layout(&s, "Error", longtext, 1024, &L);
+        CHECK(L.text_w > 640 * 11 / 20 && L.text_w <= 520);    /* a bigger screen gets a wider box, up to a limit */
+        msgbox_layout(&s, "Error", longtext, 320, &L);
+        CHECK(L.text_w <= 240);                                 /* and a small one is not made narrower than 240 */
+    }
+    msgbox_spec(MB_ABORTRETRYIGNORE, &s);
+    msgbox_layout(&s, "Error", "x", 640, &L);
+    CHECK(L.btn_x[1] - L.btn_x[0] == 75 + 9 && L.btn_x[2] - L.btn_x[1] == 75 + 9);               /* three buttons 75 wide, 9 apart, centred */
+    CHECK(L.btn_x[0] == L.client_w - (L.btn_x[2] + 75));
+    CHECK(L.client_w >= 3 * 75 + 2 * 9 + 24);
+    msgbox_layout(&s, "A caption that is much longer than the text under it, so that it sets the width of the box", "x", 640, &L);
+    CHECK(L.client_w > 3 * 75 + 2 * 9 + 24);                    /* the caption has room too */
+
+    /* MessageBoxA shown, and answered every way */
+    CHECK(mb_run(MB_OK, "Title", "Some text & more", "e") == IDOK);
+    CHECK(mb_n == 1 && !strcmp(mb_labels[0], "OK") && mb_default == 0 && !strcmp(mb_caption, "Title") && !strcmp(mb_text, "Some text & more") && mb_icon == 0);
+    CHECK(mb_text_h >= lh && mb_text_w > 50);
+    CHECK(mb_client_w > 75 && mb_client_h > 23 + 24);
+    CHECK(mb_run(MB_OK, "t", "x", "x") == IDOK);                    /* Esc on a lone OK is OK */
+    CHECK(mb_run(MB_OK, "t", "x", "w") == IDOK);                    /* so is the close box */
+    CHECK(mb_run(MB_OK, "t", "x", "s") == IDOK);
+    CHECK(mb_run(MB_OK, "t", "x", "c0") == IDOK);
+    CHECK(mb_run(MB_OK, "t", "x", "ko") == IDOK && mb_nsteps == 1 && mb_open[0] == 1);                  /* no accelerator on OK: the letter does nothing (the script then ends the box with Enter) */
+    CHECK(mb_run(MB_OK, NULL, NULL, "e") == IDOK && !strcmp(mb_caption, "Error") && mb_text[0] == 0);   /* no caption: "Error" */
+    CHECK(mb_run(MB_OKCANCEL, "t", "x", "e") == IDOK && mb_n == 2 && mb_ids[0] == IDOK && mb_ids[1] == IDCANCEL && !strcmp(mb_labels[1], "Cancel"));
+    CHECK(mb_run(MB_OKCANCEL, "t", "x", "x") == IDCANCEL);
+    CHECK(mb_run(MB_OKCANCEL, "t", "x", "w") == IDCANCEL);
+    CHECK(mb_run(MB_OKCANCEL, "t", "x", "c1") == IDCANCEL);
+    CHECK(mb_run(MB_OKCANCEL | MB_DEFBUTTON2, "t", "x", "e") == IDCANCEL && mb_default == 1);           /* Enter presses the default button, which here is not OK */
+    CHECK(mb_run(MB_OKCANCEL | MB_DEFBUTTON2, "t", "x", "te") == IDOK && mb_default_at[0] == 0);       /* Tab moves the default to the next, which wraps */
+    CHECK(mb_run(MB_ABORTRETRYIGNORE, "t", "x", "xwka") == IDABORT);       /* Esc and the close box are ignored, the box stays; the letters answer */
+    CHECK(mb_n == 3 && mb_ids[0] == IDABORT && mb_ids[1] == IDRETRY && mb_ids[2] == IDIGNORE && mb_open[0] == 1 && mb_open[1] == 1);
+    CHECK(mb_run(MB_ABORTRETRYIGNORE, "t", "x", "kr") == IDRETRY);
+    CHECK(mb_run(MB_ABORTRETRYIGNORE, "t", "x", "kI") == IDIGNORE);
+    CHECK(mb_run(MB_ABORTRETRYIGNORE | MB_DEFBUTTON3, "t", "x", "e") == IDIGNORE && mb_default == 2);
+    CHECK(mb_run(MB_YESNOCANCEL, "t", "x", "e") == IDYES && mb_default == 0);
+    CHECK(mb_run(MB_YESNOCANCEL, "t", "x", "x") == IDCANCEL);
+    CHECK(mb_run(MB_YESNOCANCEL, "t", "x", "w") == IDCANCEL);
+    CHECK(mb_run(MB_YESNOCANCEL, "t", "x", "kn") == IDNO);
+    CHECK(mb_run(MB_YESNOCANCEL, "t", "x", "c1") == IDNO);
+    CHECK(mb_run(MB_YESNOCANCEL, "t", "x", "c2") == IDCANCEL);
+    CHECK(mb_run(MB_YESNO, "t", "x", "e") == IDYES && mb_n == 2 && mb_ids[0] == IDYES && mb_ids[1] == IDNO && !strcmp(mb_labels[0], "&Yes") && !strcmp(mb_labels[1], "&No"));
+    CHECK(mb_run(MB_YESNO, "t", "x", "xwky") == IDYES && mb_open[0] == 1 && mb_open[1] == 1);          /* Yes/No ignore Esc and the close box */
+    CHECK(mb_run(MB_YESNO, "t", "x", "xkN") == IDNO && mb_open[0] == 1);
+    CHECK(mb_run(MB_YESNO, "t", "x", "te") == IDNO && mb_default_at[0] == 1);
+    CHECK(mb_run(MB_YESNO, "t", "x", "tte") == IDYES && mb_default_at[1] == 0);                  /* Tab twice comes round to Yes */
+    CHECK(mb_run(MB_YESNO, "t", "x", "le") == IDNO && mb_default_at[0] == 1);                    /* Left from the first wraps to the last */
+    CHECK(mb_run(MB_YESNO, "t", "x", "rs") == IDNO && mb_default_at[0] == 1);                    /* Right moves on; Space presses the focused button */
+    CHECK(mb_run(MB_YESNO | MB_DEFBUTTON2, "t", "x", "e") == IDNO && mb_default == 1);
+    CHECK(mb_run(MB_YESNO | MB_DEFBUTTON2, "t", "x", "s") == IDNO);
+    CHECK(mb_run(MB_YESNO, "t", "x", "c0") == IDYES);
+    CHECK(mb_run(MB_YESNO, "t", "x", "c1") == IDNO);
+    CHECK(mb_run(MB_RETRYCANCEL, "t", "x", "kr") == IDRETRY && mb_n == 2 && mb_ids[1] == IDCANCEL);
+    CHECK(mb_run(MB_RETRYCANCEL, "t", "x", "x") == IDCANCEL);
+    CHECK(mb_run(MB_RETRYCANCEL, "t", "x", "w") == IDCANCEL);
+    /* the icons */
+    CHECK(mb_run(MB_OK | MB_ICONHAND, "t", "x", "e") == IDOK && mb_icon == 'x');
+    CHECK(mb_run(MB_YESNOCANCEL | MB_ICONQUESTION, "t", "x", "e") == IDYES && mb_icon == '?');
+    CHECK(mb_run(MB_OK | MB_ICONEXCLAMATION, "t", "x", "e") == IDOK && mb_icon == '!');
+    CHECK(mb_run(MB_OK | MB_ICONASTERISK, "t", "x", "e") == IDOK && mb_icon == 'i');
+    CHECK(mb_run(0x1010, "t", "x", "e") == IDOK && mb_icon == 'x');                       /* the game's MB_SYSTEMMODAL | MB_ICONHAND */
+    /* a long message is wrapped to the lines it needs, and the box is no bigger than that */
+    {
+        char longtext[600];
+        int i;
+
+        longtext[0] = 0;
+        for (i = 0; i < 4; i++)
+            strcat(longtext, "Change it back to a smaller size before continuing (the game will hide itself until then). ");
+        CHECK(mb_run(MB_OK | MB_ICONEXCLAMATION, "Magic: The Gathering", longtext, "e") == IDOK);
+        CHECK(mb_text_h > 3 * lh && mb_text_h < 12 * lh && !strncmp(mb_text, "Change it back", 14));
+        CHECK(mb_client_w <= 12 + 44 + 640 + 12 && mb_client_h <= 480);
+    }
+    /* with no one to answer (a run on the control pipe, a script, the dummy drivers): the default button at once, no box */
+    msgbox_set_mode(MSGBOX_AUTO);
+    CHECK(API("MessageBoxA", 0, cstr("text"), cstr("caption"), MB_OK) == IDOK && wm_dialog_count() == 0);
+    CHECK(API("MessageBoxA", 0, cstr("text"), cstr("caption"), MB_YESNO) == IDYES && wm_dialog_count() == 0);
+    CHECK(API("MessageBoxA", 0, cstr("text"), cstr("caption"), MB_YESNO | MB_DEFBUTTON2) == IDNO);
+    CHECK(API("MessageBoxA", 0, cstr("text"), cstr("caption"), MB_YESNOCANCEL | MB_DEFBUTTON3 | MB_ICONQUESTION) == IDCANCEL);
+    CHECK(API("MessageBoxA", 0, cstr("text"), cstr("caption"), MB_ABORTRETRYIGNORE) == IDABORT);
+    CHECK(API("MessageBoxA", 0, cstr("text"), cstr("caption"), MB_RETRYCANCEL | MB_DEFBUTTON2) == IDCANCEL);
+    CHECK(API("MessageBoxA", 0, cstr("text"), cstr("caption"), MB_OKCANCEL | 0x1000) == IDOK);
+    CHECK(API("MessageBoxA", 0, 0, 0, MB_OK) == IDOK && wm_dialog_count() == 0);         /* no text, no caption: still answered */
+    msgbox_set_mode(0);
+}
+
+static void test_yesno(void)
+{
+    int k;
+
+    /* the three places the game asks "(Y/N)" from (the instruction after a call of its wait-for-key function), and no other */
+    CHECK(yesno_site(0x509e4a) && yesno_site(0x4f156e) && yesno_site(0x45119d));
+    CHECK(!yesno_site(0) && !yesno_site(0x509e45) && !yesno_site(0x48ac3d) && !yesno_site(0x47c000));
+    /* asking: the game polled for a key within the last YESNO_HOLD_MS */
+    CHECK(!yesno_asking(5000, 0));
+    CHECK(yesno_asking(5000, 4999) && yesno_asking(5000, 5000 - YESNO_HOLD_MS + 1) && !yesno_asking(5000, 5000 - YESNO_HOLD_MS) && !yesno_asking(5000, 1000));
+    CHECK(yesno_asking(5, 0xFFFFFFF0u));                       /* the millisecond clock wraps */
+    /* a press while it asks: left is yes, right is no, nothing else is an answer */
+    CHECK(yesno_press_answer(IN_DOWN, 5000, 4900) == 'y' && yesno_press_answer(IN_RDOWN, 5000, 4900) == 'n');
+    CHECK(yesno_press_answer(IN_UP, 5000, 4900) == 0 && yesno_press_answer(IN_RUP, 5000, 4900) == 0 && yesno_press_answer(IN_MOVE, 5000, 4900) == 0 && yesno_press_answer(IN_WHEEL, 5000, 4900) == 0);
+    CHECK(yesno_press_answer(IN_DOWN, 5000, 0) == 0 && yesno_press_answer(IN_DOWN, 5000, 1000) == 0);       /* not asking: a click is a click */
+    /* the whole thing: nothing before the game asks; a press answers once, its release is dropped, the next press (a double click) is the game's again */
+    CHECK(!yesno_waiting() && yesno_mouse(IN_DOWN) == 0 && yesno_mouse(IN_UP) == 0 && yesno_mouse(IN_MOVE) == 0);
+    yesno_note_poll();
+    CHECK(yesno_waiting() && yesno_mouse(IN_MOVE) == 0 && yesno_waiting());
+    CHECK(yesno_mouse(IN_DOWN) == 'y' && !yesno_waiting());
+    CHECK(yesno_mouse(IN_DOWN) == 0);
+    CHECK(yesno_mouse(IN_UP) == -1 && yesno_mouse(IN_UP) == 0);
+    yesno_note_poll();
+    CHECK(yesno_mouse(IN_RDOWN) == 'n' && yesno_mouse(IN_RUP) == -1 && yesno_mouse(IN_RUP) == 0);
+    for (k = 0; k < 2; k++) {                                   /* the release of the click that opened the question comes while it asks: it goes through */
+        yesno_note_poll();
+        CHECK(yesno_mouse(k ? IN_RUP : IN_UP) == 0 && yesno_waiting());
+        CHECK(yesno_mouse(k ? IN_RDOWN : IN_DOWN) == (k ? 'n' : 'y'));
+        CHECK(yesno_mouse(k ? IN_RUP : IN_UP) == -1);
+    }
+}
+
 static int picker_done;
 static uint32_t picker(const uint32_t *a)
 {
@@ -1460,6 +1824,8 @@ int main(void)
     test_popup_menu();
     test_file_dialogs();
     test_winhelp();
+    test_msgbox();
+    test_yesno();
     test_auto_controls();
     test_navwm_duel();
     printf("%d checks, %d failed\n", checks, failures);

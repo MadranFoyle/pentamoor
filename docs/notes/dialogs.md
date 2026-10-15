@@ -57,3 +57,69 @@ Group boxes keep the face-coloured strip behind their label even over artwork (r
 - The `1` after "DIFFICULTY:" has a grey patch behind it in the real dialog; ours is transparent.
 - Owner-drawn button labels are two or three pixels lower than the real ones (the game computes that position itself from `GetTextMetrics`).
 - No real screenshots of Windows 98 at 800x600 or 1024x768, where the same rules apply with different layouts.
+
+## Message boxes (`MessageBoxA`) and the "(Y/N)" questions
+
+Findings of the session that fixed "can't say Y or N to the buy cards dialog" (macOS arm64, dummy SDL drivers, 1024x768, a new game, the village poked to, `PORT_CONTROL`).
+Code: `src/port/msgbox.c`, `yesno.c`; tests `test_msgbox` and `test_yesno` in `test_wm.c`.
+
+### What the Buy Cards question is
+
+Not a dialog, not a message box. In a village, `Buy Cards` opens "Cards for Sale" (four cards with prices, drawn by the game); a click on a card draws the card large with **"Buy for 20 gold?   (Y/N)"**
+over it (text at 0x5322d0 in `MAGIC.EXE`). No window exists then (the `windows` dump shows only the desktop and the main window), and `MessageBox:` is not logged. The game sits in its wait-for-key
+function 0x48ac2f (a loop of polls of its own key queue, 0x4080b2) and takes `y` or `Y` as yes and **any other key as no** (the caller, 0x509e45 to 0x509f4c). So:
+
+- the keyboard works (`key y` from the control pipe: gold 5000 -> 4980, the card gone, the deck 36 -> 37 cards; real keys arrive the same way as typed names do);
+- a mouse click does nothing, and a controller has no Y key (its Y button is a double click, X is Enter, which is "no"): the screen could not be left, which is the bug.
+
+There are three such questions in `MAGIC.EXE` (the other two are "Sell <card> for N gold? (Y/N)" at 0x4f1569, `y` only, and "Take <card>     (Y/N)" at 0x451198, `y` or `Y`); the other two were not reached
+(the deck editor's sell is a popup menu "Sell Card for 10" that sells at once, and the "Take" one is in a function called from about 25 places of the duel and shop code).
+
+### The fix
+
+`yesno.c` hooks the wait-for-key function (entry: is the caller one of the three return addresses 0x509e4a, 0x4f156e, 0x45119d) and its poll (each poll inside the loop notes the time). While the game
+has polled in the last 200 ms for one of those three, `front.c` turns a left press into the key `y` and a right press into `n` (the release is dropped, and the press that answered ends the question, so
+the second click of a double click is the game's again), and `compose.c` draws "Y or left click (A): yes   N or right click (B): no" at the bottom. The controller needs nothing of its own: A and B
+are the left and right buttons. Checked: left press -> bought (5000 -> 4990), right press -> declined, the hint on screen only while the question is up, `key y` still buys.
+
+### MessageBoxA
+
+Every call used to log `MessageBox: caption: text -> IDOK` and return 1 without showing anything, which is neither `IDYES` (6) nor `IDNO` (7). Who calls it (`MessageBoxA` import, found in the machine code;
+types are `uType`):
+
+| program | where | box |
+| --- | --- | --- |
+| `DECKDLL.DLL` | 0x10024ffd, 0x100278a5 | **YESNOCANCEL, question icon**, "Deck Builder"/"Deck Maker": "Do you wish to save C:\MAGIC\PROGRAM\PlayDeck\new.dck?" (leaving the standalone deck builder after a change; nothing asked it before: the answer was IDOK) |
+| `DECKDLL.DLL` | 0x10024ee0, 0x10024f12, 0x10024f4f, 0x10025073, 0x100250a4 | OK + info: "You must name your deck before saving.", "Your deck must have at least 40 cards to be used in the duel.", "Your deck has too many cards. ...", errors |
+| `DECKDLL.DLL` | 0x10024d9b, 0x10024db6, 0x10024e65, 0x1002549c, 0x100171d3..0x10017aea, 0x1003cda4 | OK: "Checking deck for legal cards", "All cards are in 4th edition", "Card Error", "Could not create CARDID.TXT", "Stats Error" |
+| `DECKDLL.DLL` | five "Couldn't bring up the ... dialog box", the memory warning, two "Assertion Error" (system modal), 0x100129b7 | OK: error paths |
+| `MAGIC.EXE` | 0x4437a8 | OK + exclamation: "Not enough system memory to run at this screen resolution. ..." |
+| `MAGIC.EXE` | 0x495943, 0x4f2ebc, 0x500ff5, 0x443319 | OK: "Duel couldn't run", "Couldn't bring up the Load Decks dialog", "Couldn't register the classes", "These big arts are in:" |
+| `MAGIC.EXE` | 0x501987, 0x501ab7 | OK, system modal: "Assertion Error" (+ "Please call MPS Customer Support") |
+| `MAGIC.EXE` | 0x4424ed | **YESNO**, "End of duel": "Congratulations!" / "Too bad" / "Oh well..." (by the duel's result 1, 0, -1) + "Want to play again?"; in the window procedure that waits on a child duel process (WaitForSingleObject, 0x4423e9) and on IDYES sends itself a message to start again. Not met in play (duels run inside the process here); IDOK was never "yes" |
+| `DUEL.EXE` | 0x49bf21..0x49c192 | OK + error: "Duel Error": "Your selected deck is not a legal deck. Please select a new deck." and six more, "Couldn't bring up the dialog box", "Load saved game: Couldn't load the save game; corrupt file or from a different version" |
+| `DUEL.EXE` | 0x4b383d | YESNO "End of duel", the same code as in `MAGIC.EXE`; the others as in `MAGIC.EXE` |
+| `STATWIN.DLL`, `MAGVID.DLL` | 0x1000a407, 0x10008d97, 0x10002cbb | "KPlay error: Not a Windows DIB.", "GetLastError" |
+
+Only the deck builder's save question and the "must name your deck" / "40 cards" notices are met in play; the rest are error paths.
+
+`msgbox.c` builds the box as a modal dialog in code (as `filedlg.c` and `winhelp.c`): MS Sans Serif 8, centred on the screen, caption in the title bar, an icon of 32 x 32 drawn by `ui.c`
+(a `?` in a blue disc, a `!` in a yellow triangle, a white cross in a red disc, an `i` in a blue disc; no icon when the style has none), the text word-wrapped to at most 55% of the screen width (240 to 520
+pixels; the box is as wide as the longest line, the buttons or the caption need), 75 x 23 pixel buttons 9 apart, centred. `MB_OK`, `OKCANCEL`, `ABORTRETRYIGNORE`, `YESNOCANCEL`, `YESNO`, `RETRYCANCEL`
+with `MB_DEFBUTTON1` to 3 (a default that is not there is the first button; `MB_SYSTEMMODAL`, `MB_TOPMOST` and the rest are ignored) return `IDOK`, `IDCANCEL`, `IDABORT`, `IDRETRY`, `IDIGNORE`, `IDYES`, `IDNO`.
+Keys (Windows's rules): Enter and Space press the focused button (the default one at first; Tab, Right and Down move it on, Left and Up back; the focused one is drawn as the default button), a letter
+underlined on a button presses it (`&Yes`, `&No`, `&Abort`, `&Retry`, `&Ignore`; case does not matter; a key with no character counts as its letter), **Esc is IDCANCEL if there is a Cancel button, IDOK for
+a lone OK, and nothing for Yes/No and Abort/Retry/Ignore** (the close box the same). The box's dialog procedure reads Enter and Esc itself (`own_keys` in `Window`), because the dialog manager's
+"Enter is IDOK" would press OK on `MB_DEFBUTTON2`. A close box that does nothing must still answer `WM_CLOSE` as handled: the default turns it into `DestroyWindow` under the loop that waits.
+Mouse: the buttons are ordinary push buttons. Controller: the D-pad's dialog mode finds the push buttons (checked in `DECK.EXE`: `pad nav` lists `&Yes`, `&No`, `Cancel`; left, then A, answered IDNO),
+X and Start are Enter, Back is Esc.
+
+**Unattended runs.** A run that nobody can answer would hang in the box. `PORT_MSGBOX=auto` (the default when `PORT_CONTROL`, `PORT_SCRIPT` or `PORT_HEADLESS` is set or `SDL_VIDEODRIVER=dummy`) shows nothing
+and returns the default button's id (IDOK for `MB_OK`, IDYES for `MB_YESNO`, IDCANCEL for `MB_YESNOCANCEL | MB_DEFBUTTON3`, ...), logging `MessageBox: caption: text -> IDYES`; `ask` shows the box (a `PORT_CONTROL`
+session that wants to see one sets `PORT_MSGBOX=ask`, and the log line ends in `(answered)`).
+
+Checked in the real programs (`DECK.EXE`, standalone, `PORT_MSGBOX=ask`): the YESNOCANCEL box looked right (icon, wrapped text, three buttons, `Yes` default with the heavier border); Esc -> IDCANCEL and
+the program stayed; Tab then Enter -> IDNO (the program left); `pad press left`, `pad press a` -> IDNO; `y` -> IDYES, which saved and showed the "You must name your deck before saving." info box; with no
+`PORT_MSGBOX` under `PORT_CONTROL` the same call logged `-> IDYES` and showed nothing. **Not checked:** the box at 640x480 and 800x600, in `MAGIC.EXE` and `DUEL.EXE` (no path to one of their errors was
+found without breaking the game), with a real mouse, keyboard or controller (all input here was the control pipe), on Windows, the Sell and Take "(Y/N)" questions, and against a real Windows 98 box
+(sizes and spacing follow its look, not measured). A message box is modal and the game waits behind it, which it also did on Windows.

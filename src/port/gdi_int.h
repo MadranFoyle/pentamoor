@@ -144,6 +144,7 @@ uint32_t gdi_dialog_font(const char *face, int pt);
 int ui_dlu_x(int v, int avg);                  /* dialog units to pixels, as Windows 98 rounds them */
 int ui_dlu_y(int v, int height);
 int ui_text_width(const char *face, int pt, int bold, const char *s, size_t n);
+int ui_text_measure(const char *face, int pt, int bold, const char *s, int width, int *widest);   /* ui.c: the height of a text wrapped to a width, and its longest line */
 void ui_text_draw(uint8_t *rgb, int w, int h, int x, int y, const char *s, size_t n, const char *face, int pt, int bold, const uint8_t color[3]);
 int compose_write_ppm(const char *path);
 

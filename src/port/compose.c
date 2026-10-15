@@ -7,6 +7,7 @@
 
 #include "gdi_int.h"
 #include "movie.h"
+#include "yesno.h"
 
 void ui_dialog(uint8_t *rgb, int sw, int sh, Window *d, uint32_t pressed, void (*paint_child)(void *ctx, Window *child, int ox, int oy), void *ctx);
 
@@ -255,6 +256,17 @@ static void draw_held_hint(Scene *s)
     text(s, (SCREEN_W - text_extent(msg, 14)) / 2, SCREEN_H - 40, msg, 14, grey);
 }
 
+/* The game's "(Y/N)" questions (yesno.c) are answered by a key, which a mouse or a controller does not have: say what its buttons do while one is asked. */
+static void draw_yesno_hint(Scene *s)
+{
+    static const uint8_t ink[3] = {240, 240, 240}, back[3] = {20, 20, 20}, edge[3] = {200, 180, 100};
+    static const char msg[] = "Y or left click (A): yes        N or right click (B): no";
+    int w = text_extent(msg, 14) + 24, x = (SCREEN_W - w) / 2, y = SCREEN_H - 34;
+
+    rect(s, x, y, x + w, y + 24, back, edge);
+    text(s, x + 12, y + 4, msg, 14, ink);
+}
+
 void compose_screen(uint8_t *rgb)
 {
     Scene s = {rgb};
@@ -305,6 +317,8 @@ void compose_screen(uint8_t *rgb)
     draw_popup(&s);
     if (wm_held_clip())
         draw_held_hint(&s);
+    if (yesno_waiting())
+        draw_yesno_hint(&s);
 }
 
 int compose_write_ppm(const char *path)

@@ -137,6 +137,7 @@ All are environment variables; the full list with explanations is in [docs/PHASE
 | `PORT_PAD_BACKGROUND=1` | the pad keeps working while another window has the focus (the default on a Deck) |
 | `PORT_FRAME_MS` | the overworld's frame time in ms (default 60) |
 | `PORT_OVERLAY` | where saves and other writes go |
+| `PORT_MSGBOX=ask` / `auto` | the game's `MessageBoxA`: `ask` shows the box and waits for an answer, `auto` answers at once with the default button (`IDOK`, `IDYES`, ...) and logs it. Unset: `auto` when `PORT_CONTROL`, `PORT_SCRIPT`, `PORT_HEADLESS` or `SDL_VIDEODRIVER=dummy` is in use (nobody can answer), else `ask` |
 | `PORT_FFMPEG=/path/to/ffmpeg` | which ffmpeg plays the Indeo clips (`none`: play as if there were none; default: the PATH, then the usual places) |
 | `PORT_TRACE_FN`, `PORT_FRAME_LOG`, `PORT_UI_LOG` | tracing |
 
