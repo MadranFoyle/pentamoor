@@ -13,7 +13,7 @@ controller commands only (`pad press up|down|left|right`, `pad press a|b|y`, `pa
     the hover shows: the big card on the left is the same picture as when the real mouse is put there;
   * the user's examples: from the bottom card of the hand, up goes up the hand; left goes to your territory; right comes back; up from your cards goes to the opponent's; no wrapping at an
     edge; the pointer stays when there is nothing that way;
-  * A on a card does what a click does (a land from the hand is played), the Done button is reached and pressed with A, B's menu is walked with up and down and closed with Y;
+  * A on a card does what a click does (a land from the hand is played), the Done button is reached and pressed with A, B's menu is walked with up and down and closed with Back;
   * a dialog (the coin toss) is navigated button to button, and the D-pad is still the arrow keys where there is nothing to navigate (the map).
 
 Prints one line per check, exits 1 if one failed. Needs the installed game (sources/installed) and the saved game (sources/emu_overlay), as the soak does.
@@ -378,7 +378,7 @@ def duel_checks(g, res, shots=None):
         check(a == b, "the card shown on the left after D-pad moves to %r (%s) is the one the real mouse shows there" % (x.label, x.center))
     check(len(seen) >= 3 and seen[0] != seen[1], "and it follows the pointer from card to card (%d pictures, %d different; two lands of one kind show the same)" % (len(seen), len(set(seen))))
 
-    # 5. B opens a card's menu: the D-pad walks its rows (the pointer is on each, so A would take it) and Y closes it
+    # 5. B opens a card's menu: the D-pad walks its rows (the pointer is on each, so A would take it) and Back closes it
     nv.put(*hand[2].center)
     g.pad_press("b")
     time.sleep(1.2)
@@ -396,7 +396,7 @@ def duel_checks(g, res, shots=None):
     check(len(set(landed)) == len(rows) and landed == sorted(landed, key=lambda p: p[1]), "each row once, top to bottom")
     check(nv.press("down") == landed[-1], "down from the last row: the pointer stays")
     check(nv.press("up") == landed[-2], "up goes back a row")
-    g.pad_press("y")
+    g.pad_press("back")
     time.sleep(1.0)
     check(not g.windows().items, "Y closed the menu")
 
@@ -451,7 +451,7 @@ def duel_checks(g, res, shots=None):
                 break
         if did:
             check(True, "A on card %d of the hand acted as a click does (hand %d -> %d cards, bar %r)" % (did[0], did[1], did[2], did[3][:40]))
-            g.pad_press("y")                                # Esc backs out of a spell that wants mana
+            g.pad_press("back")                                # Esc backs out of a spell that wants mana
         else:
             print("NOTE  A on the %d cards of the hand did nothing in this phase (no land to play, nothing affordable)" % len(hand), flush=True)
     else:

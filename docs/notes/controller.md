@@ -22,7 +22,8 @@ All of this is one table at the top of `pad.c` (`binds[]`, with the numbers besi
 | A | left click; held while A is held (drags: deck builder cards; the map walks toward the cursor) | |
 | B | right click (the game's menus on a card, the castle pager's previous page) | |
 | X, Start | Enter | the default button of a dialog, the Done of a prompt bar, the name entry |
-| Y, Back | Escape | cancel; "Ready to Quit?" on the map |
+| Y | a double click at the cursor | on a card in a duel the game pays its mana for you; two presses 70 ms apart, well inside the game's double-click time |
+| Back | Escape | cancel; "Ready to Quit?" on the map. Y is not Escape on purpose: Escape closes the game on some screens, and Y is easy to hit |
 | LB, RB | Page Up, Page Down, repeating | the list boxes, the file dialog and the deck builder's card row (RB scrolled the stock row a page at 1024x768) |
 | Left stick pressed in | Space | the map reads Space as "stop" (`Adventure_PlayLocationMusic`, key 0x20); not tried |
 | Right trigger (held) + left stick | **walk** on the map (below) | |
@@ -90,7 +91,7 @@ does not look at it), so the code from the event on is the real one:
 
 - `make -C src/port test` runs `test_nav` (the choice of the next target) and `test_wm` (the targets read off windows of a duel's classes, a dialog, a menu, a combo list), and `test_pad` (the dead zone, the curve, the speed at 640 and 1024 and at 1, 8 and 33 ms steps, clamping at the four edges, every button, repeats, walking, the mouse taking over, unplugging, drawing and clipping the arrow).
 - `python3 tools/soak/pad_play.py [--shots DIR]` plays with pad commands only, headless, 1024x768: the title screen, difficulty, colour, visage and name of a new game, walking on the map (trigger and stick,
-  right stick), then, from the saved game, the encounter's Duel, the coin toss dialogs, a land played from the hand with A, B's menu closed with Y, Done. It reads the game's memory and the window tree to check
+  right stick), then, from the saved game, the encounter's Duel, the coin toss dialogs, a land played from the hand with A, B's menu closed with Back, Done. It reads the game's memory and the window tree to check
   each step and keeps screenshots; it passed here. `Game.pad_goto` (`tools/soak/pentamoor_ctl.py`) moves the cursor with the stick the way a person does (closed loop on `pad pos`).
 - `python3 tools/soak/nav_play.py [--res 1024x768]` plays a duel (mouse, until both sides have permanents) and then checks the D-pad in it: `controller-nav.md`, "Tested".
 - By hand with the same driver: the deck builder (`DECK.EXE`): a card dragged from the stock row into the deck with A held and the stick (Stats 0 -> 1 cards), RB paging the stock row, and the title screen, a village's food button

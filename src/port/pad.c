@@ -13,6 +13,9 @@
 #define PAD_FAST 2.0f                 /* the PB_FAST modifier (right stick click): times the speed */
 #define PAD_STEP_FRAC (1.0f / 128)    /* one D-pad step, of the screen's width (8 pixels at 1024, 5 at 640) */
 #define PAD_STEP_MIN 2
+#define PAD_DBL_HOLD 90               /* a double click (the Y button): each press is held this long, and the button is up this long between them (ms): the two presses land well inside
+                                       * the game's double-click time (500 ms) and each is held long enough for the game to see it */
+#define PAD_DBL_GAP 70
 #define PAD_REPEAT_DELAY 400          /* ms a D-pad direction or a repeating key is held before it repeats, and how often then */
 #define PAD_REPEAT_MS 70
 #define PAD_NAV_REPEAT_MS 150         /* a D-pad direction held in a duel or dialog moves to the next target this often (after PAD_REPEAT_DELAY): a card is further than a key step */
@@ -35,9 +38,9 @@ static const PadBind binds[] = {
     {PAD_A,      PB_LCLICK, 0,    0,     -1, 0, 0,  0},       /* left click; held while held (drags, walking on the map) */
     {PAD_B,      PB_RCLICK, 0,    0,     -1, 0, 0,  0},       /* right click (a card's menu in a duel) */
     {PAD_X,      PB_KEY,    13,   0x1C,  13, 0, 0,  0},       /* Enter: the default button */
-    {PAD_Y,      PB_KEY,    27,   0x01,  27, 0, 0,  0},       /* Escape: cancel */
+    {PAD_Y,      PB_DCLICK, 0,    0,     -1, 0, 0,  0},       /* a double click at the cursor (on a card it lets the game pay its mana for you); not Escape: Escape closes the game on some screens */
     {PAD_START,  PB_KEY,    13,   0x1C,  13, 0, 0,  0},       /* Enter */
-    {PAD_BACK,   PB_KEY,    27,   0x01,  27, 0, 0,  0},       /* Escape */
+    {PAD_BACK,   PB_KEY,    27,   0x01,  27, 0, 0,  0},       /* Escape: cancel ("Ready to Quit?" on the map) */
     {PAD_LSTICK, PB_KEY,    32,   0x39,  32, 0, 0,  0},       /* Space (the stick pressed in): stops the party walking by the arrow keys on the map */
     {PAD_LB,     PB_KEY,    0x21, 0x49,  -1, 1, 0,  0},       /* Page Up */
     {PAD_RB,     PB_KEY,    0x22, 0x51,  -1, 1, 0,  0},       /* Page Down */
@@ -284,6 +287,13 @@ void pad_button(Pad *p, int btn, int down, PadOut *out)
         case PB_RCLICK:
             right_set(p, down, out);
             break;
+        case PB_DCLICK:
+            if (down && !p->dbl.phase) {
+                p->dbl.phase = 1;
+                p->dbl.t = 0;
+                left_set(p, 4, 1, out);
+            }
+            break;
         case PB_KEY:
             if (down)
                 key_down(p, btn, b->vk, b->sc, b->ch, b->rep, out);
@@ -372,6 +382,26 @@ void pad_step(Pad *p, int ms, PadOut *out)
 
     if (ms <= 0 || !p->active)
         return;
+    if (p->dbl.phase) {
+        p->dbl.t += ms;
+        while (p->dbl.phase) {
+            int need = p->dbl.phase == 2 ? PAD_DBL_GAP : PAD_DBL_HOLD;
+
+            if (p->dbl.t < need)
+                break;
+            p->dbl.t -= need;
+            if (p->dbl.phase == 1) {
+                left_set(p, 4, 0, out);
+                p->dbl.phase = 2;
+            } else if (p->dbl.phase == 2) {
+                left_set(p, 4, 1, out);
+                p->dbl.phase = 3;
+            } else {
+                left_set(p, 4, 0, out);
+                p->dbl.phase = 0;
+            }
+        }
+    }
     for (k = 0; k < sizeof(binds) / sizeof(binds[0]); k++) {
         if (!((p->down >> binds[k].btn) & 1))
             continue;
@@ -438,7 +468,8 @@ void pad_release_all(Pad *p, PadOut *out)
     int i;
 
     p->walking = 0;
-    left_set(p, 3, 0, out);
+    p->dbl.phase = 0;
+    left_set(p, 7, 0, out);
     right_set(p, 0, out);
     for (i = 0; i <= PAD_NBUTTONS; i++)
         key_up(p, i, out);

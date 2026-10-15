@@ -88,7 +88,9 @@ or Switch pad: anything SDL knows as a game controller, plugged in before or whi
 | Left stick | move the cursor (hold the left trigger to go slowly, press the right stick in to go fast) |
 | D-pad | in a duel, a dialog or a menu: jump the cursor to the next card, button or row in that direction (hold to keep going); elsewhere the arrow keys (repeating while held) |
 | A / B | left click (hold to drag) / right click |
-| X or Start / Y or Back | Enter / Escape |
+| X or Start | Enter |
+| Y | double click (on a card in a duel, the game pays its mana for you) |
+| Back | Escape (cancel; on some screens it asks to quit the game) |
 | LB / RB | Page Up / Page Down (lists, the deck builder's card row) |
 | Right trigger + left stick | walk on the map in the direction you push |
 | Right stick | arrow keys (castles, dungeons) |
