@@ -25,7 +25,7 @@ typedef struct { int type, x, y; uint32_t vk, sc; int ch, repeat; int dir; } Pad
 typedef struct { PadAct act[PAD_MAXACT]; int n; } PadOut;
 
 /* what a control is bound to (the table is at the top of pad.c) */
-enum { PB_NONE, PB_LCLICK, PB_RCLICK, PB_KEY, PB_SLOW, PB_FAST, PB_WALK, PB_STEP, PB_NAV };
+enum { PB_NONE, PB_LCLICK, PB_RCLICK, PB_KEY, PB_SLOW, PB_FAST, PB_WALK, PB_STEP, PB_NAV, PB_DCLICK };
 typedef struct {
     int btn, act;
     uint32_t vk, sc;              /* PB_KEY */
@@ -41,13 +41,14 @@ typedef struct {
     uint32_t down;                /* PAD_ buttons held (bit per button) */
     float fx, fy;                 /* the cursor, in pixels, with a fraction */
     int ix, iy;                   /* where the game was last told the pointer is */
-    int left_src;                 /* what holds the left button down: bit 0 the A button, bit 1 walking */
+    int left_src;                 /* what holds the left button down: bit 0 the A button, bit 1 walking, bit 2 a double click */
     int right_down;
     int walking;
     int ox, oy;                   /* where the avatar is on the screen (walking aims from it) */
     int dir8;                     /* the right stick as a key: -1 none, else 0..7 (see pad_dir8) */
     struct { int on, rep, ch; uint32_t vk, sc; int held, next; } key[PAD_NBUTTONS + 1];      /* keys the pad holds down: one per control, one for the right stick */
     int step_held[4], step_next[4];                                                           /* the D-pad's auto-repeat */
+    struct { int phase, t; } dbl;  /* a double click in progress (PB_DCLICK): phase 0 none, 1 first press held, 2 between, 3 second press held; t the ms in this phase */
     int nav;                      /* the game has things to move between now (a duel, a dialog, a menu): the D-pad moves the pointer between them (PB_NAV) instead of pressing its arrow key */
     struct { int on, nav, next; } dp[4];                                                      /* PB_NAV controls held: whether the press was a move (else its key is down), and the next repeat */
 } Pad;

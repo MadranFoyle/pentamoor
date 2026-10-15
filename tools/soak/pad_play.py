@@ -187,10 +187,10 @@ def duel(a):
             hand1 = [w.title for w in t.find("MAGICGAME_HandClass") if w.title.startswith("Your hand")]
             if hand1 != hand0 or t.bar()[0].title != title0:
                 break
-            g.pad_press("y")
+            g.pad_press("back")
         r.shot("played")
         check(hand0 != hand1 or t.bar()[0].title != title0, "A on a card in the hand did something: %s -> %s, bar %r -> %r" % (hand0, hand1, title0, t.bar()[0].title))
-        g.pad_press("y")                                   # Escape backs out of a spell that wants a target or mana
+        g.pad_press("back")                                   # Escape backs out of a spell that wants a target or mana
         time.sleep(1)
         t = g.windows()
         cards = hand_cards(t)
@@ -200,7 +200,7 @@ def duel(a):
         t = g.windows()
         r.shot("menu")
         check(len(t.items) > 0, "B opened a popup menu (%d rows)" % len(t.items))
-        g.pad_press("y")                                   # Escape closes it
+        g.pad_press("back")                                   # Back (Escape) closes it
         time.sleep(1)
         t = g.windows()
         check(len(t.items) == 0, "Y closed the popup menu")

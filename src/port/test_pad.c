@@ -211,14 +211,41 @@ static void test_buttons(void)
     CHECK(out.n == 2 && out.act[0].type == PA_RDOWN && out.act[1].type == PA_RUP && out.act[0].x == p.ix);
 
     out.n = 0;
-    pad_button(&p, PAD_X, 1, &out);                                    /* X, Y, Start, Back: Enter and Escape as the game takes them */
+    pad_button(&p, PAD_X, 1, &out);                                    /* X, Start, Back: Enter and Escape as the game takes them (Y is a double click) */
     pad_button(&p, PAD_X, 0, &out);
     CHECK(out.n == 2 && out.act[0].type == PA_KEYDOWN && out.act[0].vk == 13 && out.act[0].sc == 0x1C && out.act[0].ch == 13 && out.act[0].repeat == 0);
     CHECK(out.act[1].type == PA_KEYUP && out.act[1].vk == 13 && out.act[1].sc == 0x1C);
+    pad_init(&p, 1024, 768);                                           /* a pad at rest, so that the steps move nothing */
     out.n = 0;
-    pad_button(&p, PAD_Y, 1, &out);
+    pad_button(&p, PAD_Y, 1, &out);                                    /* Y: a double click, never Escape: the press goes down at once, up after 90 ms, down again after 70, up after 90 */
+    CHECK(out.n == 1 && out.act[0].type == PA_LDOWN);
+    pad_button(&p, PAD_Y, 0, &out);                                    /* letting go of Y changes nothing; the sequence runs by itself */
+    CHECK(out.n == 1);
+    pad_step(&p, 80, &out);
+    CHECK(out.n == 1);
+    pad_step(&p, 20, &out);
+    CHECK(out.n == 2 && out.act[1].type == PA_LUP);
+    pad_step(&p, 50, &out);
+    CHECK(out.n == 2);
+    pad_step(&p, 20, &out);
+    CHECK(out.n == 3 && out.act[2].type == PA_LDOWN);
+    pad_step(&p, 100, &out);
+    CHECK(out.n == 4 && out.act[3].type == PA_LUP && p.left_src == 0 && p.dbl.phase == 0);
+    CHECK(out.act[0].x == out.act[2].x && out.act[0].y == out.act[2].y);   /* both presses at the same place */
+    out.n = 0;
+    pad_button(&p, PAD_Y, 1, &out);                                    /* a big time step runs the whole thing: two presses and two releases */
     pad_button(&p, PAD_Y, 0, &out);
-    CHECK(out.n == 2 && out.act[0].vk == 27 && out.act[0].sc == 0x01 && out.act[0].ch == 27);
+    pad_step(&p, 1000, &out);
+    CHECK(count(&out, PA_LDOWN) == 2 && count(&out, PA_LUP) == 2 && p.dbl.phase == 0);
+    out.n = 0;
+    pad_button(&p, PAD_Y, 1, &out);                                    /* pressed again while it runs: ignored; unplugging in the middle lets the button go */
+    pad_button(&p, PAD_Y, 0, &out);
+    pad_button(&p, PAD_Y, 1, &out);
+    CHECK(count(&out, PA_LDOWN) == 1);
+    pad_release_all(&p, &out);
+    CHECK(count(&out, PA_LUP) == 1 && p.left_src == 0 && p.dbl.phase == 0);
+    pad_step(&p, 500, &out);
+    CHECK(count(&out, PA_LDOWN) == 1);                                 /* nothing more after the release */
     out.n = 0;
     pad_button(&p, PAD_START, 1, &out);
     pad_button(&p, PAD_START, 0, &out);
