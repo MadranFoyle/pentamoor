@@ -14,6 +14,7 @@
 #include "gdi.h"
 #include "gdi_int.h"
 #include "navwm.h"
+#include "screens.h"
 #include "plat.h"
 #include "sched.h"
 #include "test_util.h"
@@ -1793,6 +1794,168 @@ static void test_navwm_duel(void)
     screen_w = sw; screen_h = sh;
 }
 
+/* the deck builder: the cards of the deck (136 x 136 windows 24 pixels apart: strips) and its buttons are targets, the filter bar and the picture row (one window each) are not */
+static void test_navwm_deck(void)
+{
+    static const char *const cls[] = {"MAGICDECK_MainClass", "MAGICDECK_DeckSurfaceClass", "MAGICDECK_CardClass", "MAGICDECK_CardListFiltersClass", "MAGICDECK_HorzListClass"};
+    uint32_t main_w, surf, c[3], stats, exit_b, filt, horz;
+    NavTarget nt[NAV_MAXTARGETS];
+    int sw = screen_w, sh = screen_h, n, cur, i, tx = 0, ty = 0, r;
+
+    screen_w = 1024; screen_h = 768;
+    for (i = 0; i < 5; i++)
+        register_class(cls[i], port_host_function(wndproc), 0, 0);
+    CHECK(navwm_mode() == NAVWM_NONE);
+    main_w = create("MAGICDECK_MainClass", WS_VISIBLE | WS_POPUP, 0, 0, 1024, 768, 0, 0);
+    surf = create("MAGICDECK_DeckSurfaceClass", WS_CHILD | WS_VISIBLE, 304, 0, 720, 524, main_w, 7);
+    for (i = 0; i < 3; i++)
+        c[i] = create("MAGICDECK_CardClass", WS_CHILD | WS_VISIBLE, 18, 18 + 24 * i, 136, 136, surf, 1);
+    stats = create("BUTTON", WS_CHILD | WS_VISIBLE, 304, 524, 240, 28, main_w, 6);
+    exit_b = create("BUTTON", WS_CHILD | WS_VISIBLE, 784, 524, 240, 28, main_w, 20);
+    filt = create("MAGICDECK_CardListFiltersClass", WS_CHILD | WS_VISIBLE, 8, 555, 1008, 43, main_w, 3);
+    horz = create("MAGICDECK_HorzListClass", WS_CHILD | WS_VISIBLE, 8, 598, 1008, 160, main_w, 5);
+    CHECK(navwm_mode() == NAVWM_DECK);
+    n = navwm_collect(nt, NAV_MAXTARGETS, 0, 0, &cur);
+    CHECK(n == 5);
+    for (i = 0; i < 3; i++) {
+        int k = nav_index(nt, n, c[i], 0);
+
+        CHECK(k >= 0 && nt[k].kind == NAVK_CARD && nt[k].x0 == 322 && nt[k].x1 == 458 && nt[k].y0 == 18 + 24 * i && nt[k].y1 == (i < 2 ? 42 + 24 * i : 18 + 48 + 136));
+    }
+    CHECK(nav_index(nt, n, stats, 0) >= 0 && nav_index(nt, n, exit_b, 0) >= 0 && nav_index(nt, n, filt, 0) < 0 && nav_index(nt, n, horz, 0) < 0);
+    r = navwm_pick(390, 100, NAV_UP, &tx, &ty);                          /* up the strips of the deck */
+    CHECK(r >= 0 && ty == 18 + 24 + 12 - 1 + 0 && tx == 389);
+    r = navwm_pick(390, 100, NAV_DOWN, &tx, &ty);                        /* down from the last card: the buttons under it, the nearest in the beam */
+    CHECK(r >= 0 && ty == 537);
+    API("DestroyWindow", main_w);
+    CHECK(navwm_mode() == NAVWM_NONE);
+    screen_w = sw; screen_h = sh;
+}
+
+/* the screens the game draws itself (screens.c): what it keeps in memory, read as the game's own tests read it */
+
+static int game_clue_row(int mx, int my, int sw, int sh, int count)
+{
+    /* the loop of 0x48f523 as the machine code does it: 640x480 units, two columns of six rows, edges out at the left and top */
+    int x = mx * 640 / sw, y = my * 480 / sh, row;
+
+    if (x > 0x54 && x < 0x54 + 0xfb && y > 0x49 && y < 0x49 + 0x174)
+        row = (y - 0x49) / 0x3e * 2;
+    else if (x > 0x15b && x < 0x15b + 0xfd && y > 0x49 && y < 0x49 + 0x174)
+        row = (y - 0x49) / 0x3e * 2 + 1;
+    else
+        return -1;
+    return row < count ? row : -1;
+}
+
+static void test_screens(void)
+{
+    NavTarget t[16], big[NAV_MAXTARGETS];
+    int sw = screen_w, sh = screen_h, n, i, res, x, y, wrong = 0;
+    static const int sizes[3][2] = {{640, 480}, {800, 600}, {1024, 768}};
+    uint32_t rec[2] = {0x531000u, 0x531100u};
+
+    /* a record of the button table: both ends in, greyed and placeless ones are not targets */
+    CHECK(screens_record_target(294, 462, 443, 64, 0, 1024, 768, &t[0]) && t[0].x0 == 294 && t[0].x1 == 294 + 443 + 1 && t[0].y0 == 462 && t[0].y1 == 462 + 64 + 1 && t[0].kind == NAVK_BUTTON);
+    CHECK(!screens_record_target(38, 350, 49, 57, 3, 1024, 768, &t[0]));
+    CHECK(!screens_record_target(-1, -1, -1, -1, 0, 1024, 768, &t[0]));
+    CHECK(!screens_record_target(10, 10, 0, 5, 0, 1024, 768, &t[0]) && !screens_record_target(2000, 10, 5, 5, 0, 1024, 768, &t[0]));
+    CHECK(screens_record_target(1000, 700, 100, 100, 0, 1024, 768, &t[0]) && t[0].x1 == 1024 && t[0].y1 == 768);
+
+    /* the encounter's text menu, as the game had it at 1024x768: left 396, right 630, top 409, 16 high, four lines of text, two choices */
+    n = screens_textmenu_targets(396, 630, 409, 16, 4, 2, 0, 1024, 768, t, 16);
+    CHECK(n == 2 && t[0].x0 == 396 && t[0].x1 == 631 && t[0].y0 == 477 && t[0].y1 == 493 && t[1].y0 == 493 && t[1].y1 == 509 && t[0].kind == NAVK_MENU && t[0].zone == t[1].zone);
+    n = screens_textmenu_targets(396, 630, 409, 16, 4, 3, 2, 1024, 768, t, 16);                  /* the second is shut */
+    CHECK(n == 2 && t[0].y0 == 477 && t[1].y0 == 509);
+    CHECK(screens_textmenu_targets(396, 630, 409, 0, 4, 2, 0, 1024, 768, t, 16) == 0 && screens_textmenu_targets(396, 630, 409, 16, 4, 40, 0, 1024, 768, t, 16) == 0);
+    CHECK(screens_textmenu_targets(396, 630, 409, 16, 4, 2, 0, 1024, 768, t, 1) == 1);
+
+    /* the shop's cards: a sold one (id -1) is gone */
+    {
+        int32_t boxes[16] = {153, 217, 306, 370, 348, 233, 501, 386, 544, 233, 697, 386, 739, 217, 892, 370}, ids[4] = {5, -1, 7, 9};
+
+        n = screens_card_targets(boxes, ids, 4, 1024, 768, t, 16);
+        CHECK(n == 3 && t[0].x0 == 153 && t[0].x1 == 307 && t[0].y1 == 371 && t[1].x0 == 544 && t[2].x0 == 739 && t[0].kind == NAVK_CARD);
+    }
+
+    /* the clue list: every pixel of the screen belongs to the target the game's own test would give it, at three sizes and with 7 rows used */
+    for (res = 0; res < 3; res++) {
+        int w = sizes[res][0], h = sizes[res][1], cnt = 7;
+
+        n = screens_clue_targets(cnt, w, h, big, NAV_MAXTARGETS);
+        CHECK(n == cnt);
+        for (y = 0; y < h; y++)
+            for (x = 0; x < w; x++) {
+                int g = game_clue_row(x, y, w, h, cnt), mine = -1;
+
+                for (i = 0; i < n; i++)
+                    if (x >= big[i].x0 && x < big[i].x1 && y >= big[i].y0 && y < big[i].y1)
+                        mine = atoi(big[i].label + 5);
+                if (g != mine)
+                    wrong++;
+            }
+    }
+    CHECK(wrong == 0);
+
+    /* the loops: which screen is on, from the passes */
+    screen_w = 1024; screen_h = 768;
+    CHECK(screens_kind(0.0) == SCREEN_NONE);
+    screens_note(0x47a8f9, 0, SRC_TABLE, 1.0);                                              /* the title menu's loop */
+    CHECK(screens_kind(1.1) == SCREEN_TABLE && screens_kind(1.5) == SCREEN_NONE);           /* and a loop that has stopped passing is not on */
+    screens_note(0x4e78db, 0, SRC_SNAPSHOT, 2.0);                                           /* the overworld: the D-pad stays the arrow keys */
+    CHECK(screens_kind(2.0) == SCREEN_NONE);
+    screens_note(0x4e7900, 0, SRC_TABLE, 2.1);
+    CHECK(screens_kind(2.1) == SCREEN_NONE);
+    screens_note(0x40a461, 0, SRC_SNAPSHOT, 3.0);                                           /* a snapshot from a loop with nothing to read changes nothing */
+    CHECK(screens_kind(3.0) == SCREEN_NONE);
+    screens_note(0x4899a9, 0, SRC_SNAPSHOT, 3.0);
+    CHECK(screens_kind(3.1) == SCREEN_TEXTMENU);
+    screens_note(0x509c83, 0x1000, SRC_SNAPSHOT, 4.0);
+    CHECK(screens_kind(4.0) == SCREEN_BUYCARDS);
+    screens_note(0x5098ff, 0x1000, SRC_TABLE, 4.0);                                         /* its table pass, from the same function */
+    CHECK(screens_kind(4.0) == SCREEN_BUYCARDS);
+    screens_note(0x4938ad, 0, SRC_TABLE, 5.0);                                              /* the clue detail page (another function): a table */
+    CHECK(screens_kind(5.0) == SCREEN_TABLE);
+    screens_note(0x4907b7, 0x2000, SRC_TABLE, 6.0);
+    CHECK(screens_kind(6.0) == SCREEN_CLUES);
+
+    /* the table in the game's memory: context 1 with three records, one greyed, one a key with no place */
+    (void)put32(0x519c24, 1);
+    (void)put32(0x67f780 + 4, 3);
+    for (i = 0; i < 3; i++)
+        (void)put32(0x67f7d0 + 200 + 4 * i, (int32_t)(i == 2 ? rec[1] : rec[0] + 0x54 * (uint32_t)i));
+    (void)put32(rec[0] + 0x10, 100); (void)put32(rec[0] + 0x14, 50); (void)put32(rec[0] + 0x18, 200); (void)put32(rec[0] + 0x1c, 40); (void)put32(rec[0] + 0x24, 0x507b44); (void)put32(rec[0] + 0x40, 0);
+    (void)put32(rec[0] + 0x54 + 0x10, 100); (void)put32(rec[0] + 0x54 + 0x14, 120); (void)put32(rec[0] + 0x54 + 0x18, 200); (void)put32(rec[0] + 0x54 + 0x1c, 40); (void)put32(rec[0] + 0x54 + 0x24, 0x507b44); (void)put32(rec[0] + 0x54 + 0x40, 3);
+    (void)put32(rec[1] + 0x10, -1); (void)put32(rec[1] + 0x14, -1); (void)put32(rec[1] + 0x18, -1); (void)put32(rec[1] + 0x1c, -1); (void)put32(rec[1] + 0x40, 0);
+    screens_note(0x47a8f9, 0, SRC_TABLE, 7.0);
+    n = screens_collect(t, 16, 7.0);
+    CHECK(n == 1 && t[0].x0 == 100 && t[0].x1 == 301 && t[0].y0 == 50 && t[0].y1 == 91 && t[0].zone == 0x507b44);
+    CHECK(screens_collect(t, 16, 8.0) == 0);                                                  /* not live any more */
+    (void)put32(0x519c24, 99);                                                                      /* a context that does not exist: nothing, not a crash */
+    CHECK(screens_collect(t, 16, 7.0) == 0);
+    (void)put32(0x519c24, 1);
+
+    /* the text menu in memory, and the mode: a screen with targets is the D-pad's, one without is not */
+    (void)put32(0x539dec, 396); (void)put32(0x539df0, 409); (void)put32(0x676d44, 630); (void)put32(0x527b30, 16); (void)put32(0x676d50, 4); (void)put32(0x676d40, 2); (void)put32(0x676d58, 0);
+    screens_note(0x4899a9, 0, SRC_SNAPSHOT, 9.0);
+    n = screens_collect(t, 16, 9.0);
+    CHECK(n == 2 && t[1].y0 == 493);
+    screens_note(0x4899a9, 0, SRC_SNAPSHOT, port_now());
+    CHECK(navwm_mode() == NAVWM_SCREEN);
+    {   /* the pointer is on nothing: the first press takes the nearest line, whatever the direction */
+        int tx = 0, ty = 0, r = navwm_pick(100, 100, NAV_LEFT, &tx, &ty);
+
+        CHECK(r == 0 && tx == 513 && ty == 484);
+        r = navwm_pick(513, 484, NAV_DOWN, &tx, &ty);
+        CHECK(r == 1 && ty == 500);
+        r = navwm_pick(513, 500, NAV_DOWN, &tx, &ty);
+        CHECK(r == NAV_NONE);
+    }
+    (void)put32(0x676d40, 0);                                                                       /* no choices: no targets, so the mode is none and the D-pad is the arrow keys */
+    CHECK(navwm_mode() == NAVWM_NONE);
+    screen_w = sw; screen_h = sh;
+}
+
 int main(void)
 {
     guest_init();
@@ -1828,6 +1991,8 @@ int main(void)
     test_yesno();
     test_auto_controls();
     test_navwm_duel();
+    test_navwm_deck();
+    test_screens();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

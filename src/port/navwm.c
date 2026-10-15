@@ -8,6 +8,7 @@
 #include "gdi.h"
 #include "sched.h"
 #include "navwm.h"
+#include "screens.h"
 #include "wm.h"
 
 #define MF_GRAYED 1
@@ -278,6 +279,27 @@ static void collect_duel(Out *o)
     }
 }
 
+/* ---- the deck builder --------------------------------------------------------------------------------------------------------------------------------------- */
+/* DECKDLL.DLL's (and DECK.EXE's) window is made of windows too: a MAGICDECK_CardClass child for each card of the deck (136 x 136, laid 24 pixels apart so a strip of each shows, as the duel's hand
+ * is), and push buttons (Stats, Exit, the three decks). The filter bar and the row of pictures under it are one window each and draw their parts themselves (the icons are laid out by a function of
+ * the game's: DECKDLL.DLL 0x10001294), which are not targets: the stick reaches those. */
+static void collect_deck(Out *o)
+{
+    int i, n = wm_window_count();
+
+    for (i = 0; i < n; i++) {
+        Window *w = wm_window_at_index(i);
+        const Window *p;
+
+        if (!w || !w->visible || !shown(w))
+            continue;
+        if (cls_is(w, "MAGICDECK_CardClass"))
+            add_window(o, w, (int)w->parent, NAVK_CARD);
+        else if (!w->proc && cls_is(w, "BUTTON") && (p = parent_of(w)) != NULL && cls_is(p, "MAGICDECK_MainClass") && w->enabled)
+            add_window(o, w, (int)p->hwnd, NAVK_BUTTON);
+    }
+}
+
 /* ---- a dialog -------------------------------------------------------------------------------------------------------------------------------------------- */
 static int has_hit_child(const Window *w)
 {
@@ -386,14 +408,15 @@ static void collect_combo(Out *o)
 }
 
 /* ---- ---------------------------------------------------------------------------------------------------------------------------------------------------- */
-static int duel_on(void)
+
+static int class_shown(const char *name)
 {
     int i, n = wm_window_count();
 
     for (i = 0; i < n; i++) {
         Window *w = wm_window_at_index(i);
 
-        if (w && w->visible && cls_is(w, "MAGICGAME_MainClass") && shown(w))
+        if (w && w->visible && cls_is(w, name) && shown(w))
             return 1;
     }
     return 0;
@@ -407,7 +430,15 @@ int navwm_mode(void)
         return NAVWM_COMBO;
     if (wm_top_dialog())
         return NAVWM_DIALOG;
-    return duel_on() ? NAVWM_DUEL : NAVWM_NONE;
+    if (class_shown("MAGICGAME_MainClass"))
+        return NAVWM_DUEL;
+    if (class_shown("MAGICDECK_MainClass"))
+        return NAVWM_DECK;
+    {
+        NavTarget one;
+
+        return screens_collect(&one, 1, port_now()) > 0 ? NAVWM_SCREEN : NAVWM_NONE;          /* with no button on it the D-pad stays the arrow keys */
+    }
 }
 
 static int cmp_target(const void *a, const void *b)
@@ -429,11 +460,13 @@ int navwm_collect(NavTarget *out, int max, int x, int y, int *cur)
     case NAVWM_COMBO: collect_combo(&o); break;
     case NAVWM_DIALOG: collect_dialog(&o, wm_top_dialog()); break;
     case NAVWM_DUEL: collect_duel(&o); break;
+    case NAVWM_DECK: collect_deck(&o); break;
+    case NAVWM_SCREEN: o.n = screens_collect(out, max, port_now()); break;
     default: break;
     }
     qsort(out, (size_t)o.n, sizeof(NavTarget), cmp_target);
     *cur = nav_find(out, o.n, x, y);
-    if (*cur < 0 && mode != NAVWM_MENU && mode != NAVWM_COMBO) {          /* on a part of a window other than its biggest visible piece: the window's own target */
+    if (*cur < 0 && mode != NAVWM_MENU && mode != NAVWM_COMBO && mode != NAVWM_SCREEN) {          /* on a part of a window other than its biggest visible piece: the window's own target */
         uint32_t h = wm_hit_test(x, y);
         long best = 0;
 
@@ -459,12 +492,14 @@ int navwm_pick(int x, int y, int dir, int *tx, int *ty)
     int n, cur;
 
     n = navwm_collect(t, NAV_MAXTARGETS, x, y, &cur);
+    if (cur < 0 && navwm_mode() == NAVWM_SCREEN)                 /* the pointer is on nothing of a screen the game drew: the first press takes the nearest */
+        return nav_nearest(t, n, x, y, tx, ty);
     return nav_pick(t, n, cur, x, y, dir, tx, ty);
 }
 
 void navwm_dump(FILE *f, int x, int y)
 {
-    static const char *const modes[] = {"none", "menu", "combo", "dialog", "duel"};
+    static const char *const modes[] = {"none", "menu", "combo", "dialog", "duel", "deck", "screen"};
     NavTarget t[NAV_MAXTARGETS];
     int n, cur, i;
     double t0 = port_now();

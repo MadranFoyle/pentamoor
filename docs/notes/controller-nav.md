@@ -2,8 +2,8 @@
 
 The vision: in a duel the D-pad is enough. From the card under the cursor, a direction goes to the nearest card that way (up the hand, left to your cards, up again to the opponent's), crosses from
 one zone to the next at an edge, and reaches the other things a click can act on (the Done button, the life totals, the piles, the phase icons). The stick stays for free pointing. The same goes
-for a dialog's buttons and fields and for a popup menu's rows. Where the game has nothing of the kind (the map, the castles, the deck builder, the title and village screens, which the game draws
-itself) the D-pad is still the arrow keys (`controller.md`).
+for a dialog's buttons and fields and for a popup menu's rows. The screens the game draws itself (title, new game, village, shops, world map, clues, encounter boxes) have their targets read from the game's
+own button table instead (`controller-screens.md`), and the deck builder's cards and buttons are windows like these. On the map and in castles and dungeons the D-pad is still the arrow keys (`controller.md`).
 
 This note is the research (where the game keeps its cards, and how the program gets at them), the rules, and what was tested.
 
@@ -151,4 +151,5 @@ plays the duel to a board with lands and creatures on both sides; the life total
   pile windows when clicked (the lists they open are windows of other classes that are not targets yet), a wizard's face while a spell asks for a player, the card choice windows of a dialog (the Sorcerer's "casts..."
   dialog has one target and no button: the D-pad does nothing there, as the arrow keys did), a menu with a sub-menu (the Concede item), a list box that scrolls (a dialog's list, the file dialogs: the rows are targets and
   the arrow key is tapped at the edge, by unit test and by the combo list only), and a duel at a window size other than the screen's.
-- **The deck builder, the village, the castles, the title menus** have no windows and no targets: the D-pad is the arrow keys there, as before. A D-pad for them needs the game's own hotspot tables.
+- **The deck builder** has windows (its cards and buttons are targets now: mode `deck`, `controller-screens.md`); **the village, the title menus, the shops** have no windows, and are read from the game's button
+  table (`controller-screens.md`). The castles' mazes stay on the arrow keys.

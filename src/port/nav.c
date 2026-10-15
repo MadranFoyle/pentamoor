@@ -114,3 +114,24 @@ int nav_pick(const NavTarget *t, int n, int cur, int x, int y, int dir, int *hx,
     nav_point(&t[best], hx, hy);
     return best;
 }
+
+int nav_nearest(const NavTarget *t, int n, int x, int y, int *hx, int *hy)
+{
+    int i, best = -1;
+    long best_d = 0;
+
+    for (i = 0; i < n; i++) {
+        long dx = x < t[i].x0 ? t[i].x0 - x : x >= t[i].x1 ? x - (t[i].x1 - 1) : 0;
+        long dy = y < t[i].y0 ? t[i].y0 - y : y >= t[i].y1 ? y - (t[i].y1 - 1) : 0;
+        long d = dx * dx + dy * dy;
+
+        if (best < 0 || d < best_d) {
+            best = i;
+            best_d = d;
+        }
+    }
+    if (best < 0)
+        return NAV_NONE;
+    nav_point(&t[best], hx, hy);
+    return best;
+}

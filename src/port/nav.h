@@ -47,5 +47,8 @@ int nav_find(const NavTarget *t, int n, int x, int y);
 /* The target to go to from `cur` (an index, or -1: look under the pointer at x, y) in direction `dir`: its index, with the point to put the pointer at in *hx, *hy; NAV_NONE; or
  * NAV_SCROLL. With no current target the nearest one in the direction is chosen, and with none in that direction the nearest of all (so the pointer can always get back on the targets). */
 int nav_pick(const NavTarget *t, int n, int cur, int x, int y, int dir, int *hx, int *hy);
+/* The target nearest to the pointer (x, y), whatever the direction (0 when the pointer is in it; the nearest edge otherwise; a tie goes to the earlier), its pointer place in *hx, *hy; NAV_NONE
+ * if there are no targets. For a screen the game draws itself, where the pointer is wherever the last click left it: the first press takes hold of what is nearest. */
+int nav_nearest(const NavTarget *t, int n, int x, int y, int *hx, int *hy);
 
 #endif

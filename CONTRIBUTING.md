@@ -115,7 +115,7 @@ python3 tools/install/install.py --self-test   # the module build in Python (com
 python3 tools/release/check_tree.py            # nothing tracked looks like decompiler output
 ```
 
-`tools/soak/` plays many duels through the control pipe and reports crashes and hangs (`soak.py`); `pad_play.py` plays a new game and a duel with controller commands only, and `nav_play.py` checks the D-pad's moves between cards, buttons and menu rows in a duel. All need the
+`tools/soak/` plays many duels through the control pipe and reports crashes and hangs (`soak.py`); `pad_play.py` plays a new game and a duel with controller commands only, `nav_play.py` checks the D-pad's moves between cards, buttons and menu rows in a duel, and `screen_nav_play.py` checks it on the screens the game draws itself (title, new game, village, shops, clues, stats, the deck builder). All need the
 installed game.
 
 ## Environment switches
