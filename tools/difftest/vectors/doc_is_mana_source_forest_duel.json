@@ -1,0 +1,29 @@
+{
+  "function": "Magic_IsManaSource",
+  "program": "DUEL",
+  "address": "0x0048ca2a",
+  "description": "Forest: record +0x18 = 0x1000, returns 1",
+  "source": "docs/SYMBOL_VERIFICATION.md, `Magic_IsManaSource` (emulator)",
+  "args": [
+    1,
+    4
+  ],
+  "expected_return": 1,
+  "memory_in": [
+    {
+      "addr": "0x004ff610",
+      "dwords": [
+        "0x00001000"
+      ]
+    },
+    {
+      "addr": "0x00688664",
+      "dwords": [
+        "0x00000002"
+      ]
+    }
+  ],
+  "calls": [],
+  "memory_out_expected": [],
+  "memory_out_exhaustive": true
+}

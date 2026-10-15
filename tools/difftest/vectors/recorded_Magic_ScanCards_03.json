@@ -1,0 +1,854 @@
+{
+ "function": "Magic_ScanCards",
+ "program": "DUEL",
+ "address": "0x0048c5a8",
+ "description": "recorded from DUEL at virtual 43.733s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [
+  127
+ ],
+ "expected_return": 0,
+ "memory_in": [
+  {
+   "addr": "0x004ff608",
+   "bytes": "cfa24700"
+  },
+  {
+   "addr": "0x005ef980",
+   "bytes": "03000000"
+  },
+  {
+   "addr": "0x00665ed0",
+   "bytes": "bf010000"
+  },
+  {
+   "addr": "0x00666418",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00666728",
+   "bytes": "09000000"
+  },
+  {
+   "addr": "0x00681eb0",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00681ee0",
+   "bytes": "000000000000000001000000010000000200000002000000030000000300000004000000040000000500000005000000060000000600000002000000"
+  },
+  {
+   "addr": "0x006826c4",
+   "bytes": "38000000"
+  },
+  {
+   "addr": "0x006826cc",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x006826f4",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x006827e4",
+   "bytes": "3d000000"
+  },
+  {
+   "addr": "0x006827ec",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x00682814",
+   "bytes": "02000000"
+  },
+  {
+   "addr": "0x00682904",
+   "bytes": "02000000"
+  },
+  {
+   "addr": "0x0068290c",
+   "bytes": "82"
+  },
+  {
+   "addr": "0x00682934",
+   "bytes": "0e000000"
+  },
+  {
+   "addr": "0x00682a24",
+   "bytes": "86000000"
+  },
+  {
+   "addr": "0x00682a2c",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x00682a54",
+   "bytes": "06000000"
+  },
+  {
+   "addr": "0x00682b44",
+   "bytes": "3d000000"
+  },
+  {
+   "addr": "0x00682b4c",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x00682b74",
+   "bytes": "08000000"
+  },
+  {
+   "addr": "0x00682c64",
+   "bytes": "43010000"
+  },
+  {
+   "addr": "0x00682c6c",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x00682c94",
+   "bytes": "0a000000"
+  },
+  {
+   "addr": "0x00682d84",
+   "bytes": "02000000"
+  },
+  {
+   "addr": "0x00682d8c",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x00682db4",
+   "bytes": "0c000000"
+  },
+  {
+   "addr": "0x00682ea4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00682fc4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006830e4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00683204",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00683324",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00683444",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00683564",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00683684",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006837a4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006838c4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006839e4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00683b04",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00683c24",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00683d44",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00683e64",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00683f84",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006840a4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006841c4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006842e4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00684404",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00684524",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00684644",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00684764",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00684884",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006849a4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00684ac4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00684be4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00684d04",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00684e24",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00684f44",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00685064",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00685184",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006852a4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006853c4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006854e4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00685604",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00685724",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00685844",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00685964",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00685a84",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00685ba4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00685cc4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00685de4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00685f04",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00686024",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00686144",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00686264",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00686384",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006864a4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006865c4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006866e4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00686804",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00686924",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00686a44",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00686b64",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00686c84",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00686da4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00686ec4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00686fe4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00687104",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00687224",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00687344",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00687464",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00687584",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006876a4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006877c4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006878e4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00687a04",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00687b24",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00687c44",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00687d64",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00687e84",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00687fa4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006881e4",
+   "bytes": "88000000"
+  },
+  {
+   "addr": "0x006881ec",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x00688214",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x00688304",
+   "bytes": "89000000"
+  },
+  {
+   "addr": "0x0068830c",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x00688334",
+   "bytes": "03000000"
+  },
+  {
+   "addr": "0x00688424",
+   "bytes": "38000000"
+  },
+  {
+   "addr": "0x0068842c",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x00688454",
+   "bytes": "05000000"
+  },
+  {
+   "addr": "0x00688544",
+   "bytes": "02000000"
+  },
+  {
+   "addr": "0x0068854c",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x00688574",
+   "bytes": "07000000"
+  },
+  {
+   "addr": "0x00688664",
+   "bytes": "02000000"
+  },
+  {
+   "addr": "0x0068866c",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x00688694",
+   "bytes": "09000000"
+  },
+  {
+   "addr": "0x00688784",
+   "bytes": "7c010000"
+  },
+  {
+   "addr": "0x0068878c",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x006887b4",
+   "bytes": "0b000000"
+  },
+  {
+   "addr": "0x006888a4",
+   "bytes": "62000000"
+  },
+  {
+   "addr": "0x006888ac",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x006888d4",
+   "bytes": "0d000000"
+  },
+  {
+   "addr": "0x006889c4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00688ae4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00688c04",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00688d24",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00688e44",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00688f64",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00689084",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006891a4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006892c4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006893e4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00689504",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00689624",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00689744",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00689864",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00689984",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00689aa4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00689bc4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00689ce4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00689e04",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00689f24",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068a044",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068a164",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068a284",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068a3a4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068a4c4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068a5e4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068a704",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068a824",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068a944",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068aa64",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068ab84",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068aca4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068adc4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068aee4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068b004",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068b124",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068b244",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068b364",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068b484",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068b5a4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068b6c4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068b7e4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068b904",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068ba24",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068bb44",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068bc64",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068bd84",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068bea4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068bfc4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068c0e4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068c204",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068c324",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068c444",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068c564",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068c684",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068c7a4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068c8c4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068c9e4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068cb04",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068cc24",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068cd44",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068ce64",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068cf84",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068d0a4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068d1c4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068d2e4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068d404",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068d524",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068d644",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068d764",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068d884",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068d9a4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068dac4",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068ef48",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00690320",
+   "bytes": "000000000100000000000000010000000000000001000000000000000100000000000000010000000000000001000000000000000100000000000000ffffffff"
+  }
+ ],
+ "calls": [
+  {
+   "callee": "0x0047a2cf",
+   "name": "card_handler",
+   "args": [
+    0,
+    2,
+    127
+   ],
+   "return": 0,
+   "memory_writes": [
+    {
+     "addr": "0x0068ed1c",
+     "bytes": "01000000"
+    },
+    {
+     "addr": "0x0068ed2c",
+     "bytes": "01000000"
+    },
+    {
+     "addr": "0x0068f360",
+     "bytes": "08000000"
+    }
+   ]
+  }
+ ],
+ "memory_out_expected": [
+  {
+   "addr": "0x005ef980",
+   "bytes": "03000000"
+  },
+  {
+   "addr": "0x00666408",
+   "bytes": "0700000007000000"
+  },
+  {
+   "addr": "0x00666448",
+   "bytes": "02000000"
+  },
+  {
+   "addr": "0x00666728",
+   "bytes": "0a000000"
+  },
+  {
+   "addr": "0x0068dd04",
+   "bytes": "7f000000"
+  },
+  {
+   "addr": "0x0068ef48",
+   "bytes": "00000000"
+  }
+ ],
+ "memory_out_exhaustive": true
+}

@@ -1,0 +1,26 @@
+{
+  "function": "Magic_ClearSpellStack",
+  "program": "DUEL",
+  "address": "0x0048d3bf",
+  "description": "Start of a turn: count 0 and the object list terminated (DUEL.EXE layout)",
+  "source": "docs/SYMBOL_VERIFICATION.md, the spell stack",
+  "args": [],
+  "expected_return": 0,
+  "memory_in": [],
+  "calls": [],
+  "memory_out_expected": [
+    {
+      "addr": "0x006764b8",
+      "dwords": [
+        "0x00000000"
+      ]
+    },
+    {
+      "addr": "0x0068efb0",
+      "dwords": [
+        "0xffffffff"
+      ]
+    }
+  ],
+  "memory_out_exhaustive": true
+}

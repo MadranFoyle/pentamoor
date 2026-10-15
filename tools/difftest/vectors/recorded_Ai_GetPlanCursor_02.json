@@ -1,0 +1,22 @@
+{
+ "function": "Ai_GetPlanCursor",
+ "program": "DUEL",
+ "address": "0x004308cf",
+ "description": "recorded from DUEL at virtual 50.735s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [],
+ "expected_return": 1,
+ "memory_in": [
+  {
+   "addr": "0x0050b37c",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x00681eb0",
+   "bytes": "01000000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [],
+ "memory_out_exhaustive": true
+}

@@ -1,0 +1,22 @@
+{
+  "function": "Card_RemapColorIndexFF",
+  "program": "DUEL",
+  "address": "0x004af74c",
+  "description": "Remap byte at slot + 0xff + 3 is 0x00: returns 3 (the index comes back unchanged)",
+  "source": "docs/SYMBOL_VERIFICATION.md, round 6 (`Card_RemapColorIndexFF`; synthetic, decompiled body)",
+  "args": [
+    0,
+    5,
+    3
+  ],
+  "expected_return": 3,
+  "memory_in": [
+    {
+      "addr": "0x00682d62",
+      "bytes": "00"
+    }
+  ],
+  "calls": [],
+  "memory_out_expected": [],
+  "memory_out_exhaustive": true
+}

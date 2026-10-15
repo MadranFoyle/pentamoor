@@ -1,0 +1,73 @@
+{
+ "function": "Magic_PushSpellStack",
+ "program": "DUEL",
+ "address": "0x0048d878",
+ "description": "recorded from DUEL at virtual 119.907s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [
+  1,
+  8,
+  114,
+  1,
+  0
+ ],
+ "expected_return": 0,
+ "memory_in": [
+  {
+   "addr": "0x0066aaf4",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x006764b8",
+   "bytes": "02000000"
+  },
+  {
+   "addr": "0x00681eb0",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x00688ae4",
+   "bytes": "03000000"
+  },
+  {
+   "addr": "0x00688af2",
+   "bytes": "ff"
+  },
+  {
+   "addr": "0x00688b08",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068f230",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068f2c4",
+   "bytes": "14000000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [
+  {
+   "addr": "0x00666968",
+   "bytes": "14000000"
+  },
+  {
+   "addr": "0x006764b8",
+   "bytes": "03000000"
+  },
+  {
+   "addr": "0x0068efc0",
+   "bytes": "0100000008000000ffffffff"
+  },
+  {
+   "addr": "0x0068f130",
+   "bytes": "ffffffffffffffff"
+  },
+  {
+   "addr": "0x0068f248",
+   "bytes": "03007201"
+  }
+ ],
+ "memory_out_exhaustive": true
+}

@@ -1,0 +1,26 @@
+{
+  "function": "Magic_ClearSpellStack",
+  "program": "MAGIC",
+  "address": "0x00474d1e",
+  "description": "Start of a turn: count 0 and the object list terminated (MAGIC.EXE layout)",
+  "source": "docs/SYMBOL_VERIFICATION.md, the spell stack",
+  "args": [],
+  "expected_return": 0,
+  "memory_in": [],
+  "calls": [],
+  "memory_out_expected": [
+    {
+      "addr": "0x006a3f78",
+      "dwords": [
+        "0x00000000"
+      ]
+    },
+    {
+      "addr": "0x006fecc0",
+      "dwords": [
+        "0xffffffff"
+      ]
+    }
+  ],
+  "memory_out_exhaustive": true
+}

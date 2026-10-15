@@ -1,0 +1,27 @@
+{
+ "function": "Magic_ClearSpellStack",
+ "program": "DUEL",
+ "address": "0x0048d3bf",
+ "description": "recorded from DUEL at virtual 66.806s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [],
+ "expected_return": 0,
+ "memory_in": [
+  {
+   "addr": "0x00681eb0",
+   "bytes": "01000000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [
+  {
+   "addr": "0x006764b8",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x0068efb0",
+   "bytes": "ffffffff"
+  }
+ ],
+ "memory_out_exhaustive": true
+}

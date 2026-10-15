@@ -1,0 +1,41 @@
+{
+ "function": "Card_GetColorAndTypeFlags",
+ "program": "DUEL",
+ "address": "0x004521e2",
+ "description": "recorded from DUEL at virtual 119.907s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [
+  1,
+  5
+ ],
+ "expected_return": 147456,
+ "memory_in": [
+  {
+   "addr": "0x005036fc",
+   "bytes": "04"
+  },
+  {
+   "addr": "0x00681eb0",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x00688784",
+   "bytes": "42010000"
+  },
+  {
+   "addr": "0x0068879d",
+   "bytes": "10"
+  },
+  {
+   "addr": "0x0068887d",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x0068eee0",
+   "bytes": "b5010000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [],
+ "memory_out_exhaustive": true
+}

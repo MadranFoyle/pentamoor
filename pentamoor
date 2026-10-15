@@ -1,0 +1,92 @@
+#!/bin/sh
+# ./pentamoor [deck|duel] [more arguments]: run the game (or its standalone deck builder or duel program).
+# ./pentamoor "path/to/MTG v1.0.iso": install the game from that disc image first (also offered when the game is not installed yet), then run it.
+# It starts the runtime (pentamoor-run, no game code in it) with the game module (game_magic.so, .dylib or .dll: the C made from your own files) for that program.
+# Where it looks: pentamoor-run and game_*.so beside this file (a release), else src/port/build/ (a build from source). The game: sources/installed/Magic/Program,
+# or $PENTAMOOR_GAME (the folder that holds MAGIC.EXE). Saves go to ./port_overlay. PORT_RES=640x480 gives the original's size (the default is 1024x768),
+# PENTAMOOR_RUN names another runtime binary, PENTAMOOR_MODULE another game module. On Windows: pentamoor.bat (this one too, in an MSYS2 shell).
+cd "$(dirname "$0")" || exit 1
+GAME=${PENTAMOOR_GAME:-sources/installed/Magic/Program}
+case "$(uname -s)" in
+  Darwin) EXT=dylib ;;
+  MINGW*|MSYS*|CYGWIN*) EXT=dll ;;        # an MSYS2 shell on Windows (pentamoor.bat is the launcher for cmd.exe and a double click)
+  *)      EXT=so ;;
+esac
+if [ -f ./pentamoor-run ]; then BUILD=.; else BUILD=src/port/build; fi
+RUN=${PENTAMOOR_RUN:-$BUILD/pentamoor-run}
+
+# how to install: the release's (or this checkout's) installer
+if [ -f ./pentamoor-install ]; then
+  INSTALL='./pentamoor-install'
+else
+  INSTALL='python3 tools/install/install.py "path/to/MTG v1.0.iso" --build'
+fi
+find_python() { for p in python3 python; do command -v "$p" >/dev/null 2>&1 && { echo "$p"; return; }; done; }
+
+run_installer() {   # [iso]: the installer asks for the disc image itself when it is not given one
+  PY=$(find_python)
+  if [ -z "$PY" ]; then
+    echo "pentamoor: Python 3 was not found (the installer is a Python program). Install it (macOS: xcode-select --install, or python.org; Linux: your package manager) and run this again." >&2
+    return 1
+  fi
+  if [ -f ./pentamoor-install ]; then "$PY" ./pentamoor-install "$@"; else "$PY" tools/install/install.py "$@" --build; fi
+}
+
+# an .iso given as the first argument (a file dropped on the launcher): install from it
+case "$1" in
+  *.iso|*.ISO)
+    if [ -f "$1" ]; then
+      run_installer "$1" || exit 1
+      shift
+    fi ;;
+esac
+
+case "$1" in
+  deck) shift; PROG=deck; EXE=DECK.EXE ;;
+  duel) shift; PROG=duel; EXE=DUEL.EXE ;;
+  *)    PROG=magic; EXE=MAGIC.EXE ;;
+esac
+MODULE=${PENTAMOOR_MODULE:-$BUILD/game_$PROG.$EXT}
+
+offer_install() {   # $1: what is missing. At a terminal, in a release: offer to run the installer now (it asks for the disc image itself); returns 1 when it did not
+  [ -t 0 ] && [ -f ./pentamoor-install ] && [ -z "$PENTAMOOR_GAME$PENTAMOOR_MODULE$PENTAMOOR_RUN" ] || return 1
+  echo "pentamoor: $1"
+  echo "Pentamoor builds the game from your own copy of it: a disc image (.iso) of the retail Magic: The Gathering CD, version 1.0."
+  echo "That takes a few minutes (2 to 15, depending on the computer), once, and up to 1 GB of free disk space while it works."
+  printf "Install it now? [Y/n] "
+  read -r ANSWER
+  case "$ANSWER" in
+    n*|N*) echo "Run  $INSTALL  when you are ready."; exit 1 ;;
+  esac
+  run_installer || exit 1
+}
+
+[ -f "$GAME/$EXE" ] || offer_install "the game is not installed yet ($GAME/$EXE is missing)."
+[ -f "$MODULE" ] || [ ! -f "$GAME/$EXE" ] || offer_install "the game module is not built yet ($MODULE is missing)."
+# Started with no terminal (a menu entry, a double click) and not installed: the Steam Deck download has an installer with windows (a file picker, a progress bar); desktop mode only,
+# Game mode (Gamescope) has no place for its dialogs
+if { [ ! -f "$GAME/$EXE" ] || [ ! -f "$MODULE" ]; } && [ ! -t 0 ] && [ -f tools/steamdeck/install-gui.sh ] && [ -n "${DISPLAY}${WAYLAND_DISPLAY}" ] \
+   && [ -z "$GAMESCOPE_WAYLAND_DISPLAY$PENTAMOOR_GAME$PENTAMOOR_MODULE$PENTAMOOR_RUN" ]; then
+  exec sh tools/steamdeck/install-gui.sh
+fi
+if [ ! -f "$GAME/$EXE" ]; then
+  echo "pentamoor: the game is not installed ($GAME/$EXE is missing)." >&2
+  echo "  $INSTALL" >&2
+  exit 1
+fi
+if [ ! -x "$RUN" ]; then
+  echo "pentamoor: the runtime is not built yet ($RUN is missing)." >&2
+  echo "  $INSTALL     (or: make -C src/port runtime)" >&2
+  exit 1
+fi
+if [ ! -f "$MODULE" ]; then
+  echo "pentamoor: the game module is not built yet ($MODULE is missing)." >&2
+  echo "  $INSTALL     (or: tools/lift/lift_all.sh, then make -C src/port modules)" >&2
+  exit 1
+fi
+# Linux: a runtime that needs libSDL2 and cannot find it says so only as the loader's one line; say what to do
+if [ "$(uname -s)" = Linux ] && command -v ldd >/dev/null 2>&1 && ldd "$RUN" 2>/dev/null | grep -q "libSDL2.*not found"; then
+  echo "pentamoor: SDL2 is not installed. Debian/Ubuntu: sudo apt install libsdl2-2.0-0   Fedora: sudo dnf install SDL2   Arch: sudo pacman -S sdl2" >&2
+  exit 1
+fi
+exec "$RUN" -m "$MODULE" "$GAME/$EXE" "$@"

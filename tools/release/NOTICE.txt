@@ -1,0 +1,36 @@
+Pentamoor: notices
+==================
+
+What this is
+------------
+A native port of MicroProse's 1997 "Magic: The Gathering" (Shandalar). The game's machine code is
+translated into C on YOUR computer, from YOUR copy of the game, and compiled there into the game
+modules (game_magic, game_deck, game_duel). This download contains the part that has no game-derived code
+(the runtime, pentamoor-run), the tools that do the translation and the build, and the headers they use.
+It contains no game files, nothing translated from them and no decompiler output, and the game modules are never published:
+each one is built from its owner's own disc.
+
+Do not redistribute the game files, the C made from them, or the game modules you build.
+
+What Pentamoor's own source holds besides the runtime and the translating tools: hand-written C that reimplements some of the game's engine functions
+(written after studying the original's code), notes on how the game works, and facts about the executables such as function and variable addresses.
+Pentamoor started as a fork of https://github.com/benprew/microprose-shandalar-source, whose decompilation of the game was the starting point for understanding it;
+that decompilation is not part of this download or of Pentamoor's source tree.
+
+Trademarks
+----------
+"Magic: The Gathering" is a trademark of Wizards of the Coast. "Shandalar" and "MicroProse" belong to their
+owners. Pentamoor is not affiliated with or endorsed by them. This is preservation and research work.
+
+Licences of what is bundled
+---------------------------
+Pentamoor's own source has no licence file in its repository; it is published for reading and for
+building from your own copy of the game. See https://github.com/MadranFoyle/pentamoor.
+
+Third-party files carried in this download (where present; the licence texts are in licenses/ or beside
+the files):
+* SDL2 (https://libsdl.org): zlib licence. Linked into pentamoor-run on macOS; SDL2.dll beside it on Windows;
+  the system's libSDL2 on Linux.
+* pefile (MIT) and capstone (BSD-3-Clause): the Python packages in tools/pydeps, used by the lifter.
+* Python (Python Software Foundation licence): the embeddable Python in python\ (Windows only).
+* Zig (MIT): tools/local/ziglang (Windows only; other systems download it only if there is no C compiler).

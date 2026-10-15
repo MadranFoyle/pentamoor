@@ -1,0 +1,59 @@
+{
+ "function": "Ai_CommitBestPlan",
+ "program": "DUEL",
+ "address": "0x0043081e",
+ "description": "recorded from DUEL at virtual 66.899s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [],
+ "expected_return": 0,
+ "memory_in": [
+  {
+   "addr": "0x0050b37c",
+   "bytes": "02000000"
+  },
+  {
+   "addr": "0x0050f170",
+   "bytes": "03110000ffffffff"
+  },
+  {
+   "addr": "0x00511a00",
+   "bytes": "0300000001000000"
+  },
+  {
+   "addr": "0x00512d78",
+   "bytes": "0200000000000000"
+  },
+  {
+   "addr": "0x00513178",
+   "bytes": "0100000002000000"
+  },
+  {
+   "addr": "0x00681eb0",
+   "bytes": "01000000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [
+  {
+   "addr": "0x0050ed70",
+   "bytes": "03110000ffffffff"
+  },
+  {
+   "addr": "0x00510a30",
+   "bytes": "0100000002000000"
+  },
+  {
+   "addr": "0x00511600",
+   "bytes": "030000000100000063000000"
+  },
+  {
+   "addr": "0x00512978",
+   "bytes": "0200000000000000"
+  },
+  {
+   "addr": "0x0067650c",
+   "bytes": "01000000"
+  }
+ ],
+ "memory_out_exhaustive": true
+}

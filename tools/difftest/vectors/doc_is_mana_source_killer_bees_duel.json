@@ -1,0 +1,29 @@
+{
+  "function": "Magic_IsManaSource",
+  "program": "DUEL",
+  "address": "0x0048ca2a",
+  "description": "Killer Bees: record +0x18 = 0x19, returns 0",
+  "source": "docs/SYMBOL_VERIFICATION.md, `Magic_IsManaSource` (emulator)",
+  "args": [
+    1,
+    4
+  ],
+  "expected_return": 0,
+  "memory_in": [
+    {
+      "addr": "0x00503744",
+      "dwords": [
+        "0x00000019"
+      ]
+    },
+    {
+      "addr": "0x00688664",
+      "dwords": [
+        "0x00000143"
+      ]
+    }
+  ],
+  "calls": [],
+  "memory_out_expected": [],
+  "memory_out_exhaustive": true
+}

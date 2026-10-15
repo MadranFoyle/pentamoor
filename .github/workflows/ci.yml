@@ -1,0 +1,147 @@
+# Tests that need no game files: the C unit tests, the installer's tests, the lifter's tests.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL2 (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsdl2-dev
+
+      - name: Install SDL2 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install sdl2
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+          cache: pip
+          cache-dependency-path: .github/requirements-ci.txt
+
+      - name: Install Python packages
+        run: python -m pip install -r .github/requirements-ci.txt
+
+      - name: Nothing tracked looks like decompiler output
+        run: python tools/release/check_tree.py
+
+      - name: C unit tests (window manager, graphics, sound, movies)
+        run: make -C src/port test
+
+      - name: SDL front end compiles
+        run: make -C src/port check-front
+
+      - name: Runtime builds with no generated sources, and loads a game module
+        run: |
+          test ! -e sources/generated
+          make -C src/port all
+          ! nm src/port/build/pentamoor-run | grep -q lifted_
+          make -C src/port check-module
+          make -C src/port check-run
+          make -C src/port check-program
+
+      - name: Installer tests
+        run: python -m pytest tools/install
+
+      - name: Lifter tests (the lifter, the scan that finds the game's functions)
+        run: python -m pytest tools/lift/test_lift.py
+
+      - name: Release-check tests (what is in an archive, what looks like decompiler output)
+        run: python -m pytest tools/release
+
+      - name: Steam Deck tools tests (the Steam shortcut writer, the installer's windows and progress, the controller layout)
+        run: python -m pytest tools/steamdeck
+
+  # The release archives (Windows, Linux, macOS), built the way a release builds them (package.yml) and checked: unpacked in an empty folder, the installer's own Python and compiler
+  # step builds a small stub game module and the archive's runtime loads it. No game files are needed, and none are in the archives. A tag (release.yml) publishes the same ones.
+  package:
+    name: release archives
+    uses: ./.github/workflows/package.yml
+    with:
+      version: 0.0.0-ci.${{ github.run_number }}
+
+  # The runtime on Windows: MSYS2's MinGW-w64 (gcc, winpthreads, SDL2 from pacman). The same Makefile, the same unit tests; nothing is run on the game's own files
+  # (there are none here), but the stub game module is built as a DLL and loaded by the .exe, and its lifted-style functions run in the unit tests.
+  windows:
+    name: windows (MSYS2 MinGW-w64)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: msys2 {0}
+    env:
+      CI_NOTICE: "1"      # .github/ci-run.sh also leaves the tail of each step's output as an annotation
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2.32.0
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            make
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-SDL2
+
+      - name: Toolchain
+        run: |
+          gcc --version | head -1
+          make --version | head -1
+          sdl2-config --version
+          sdl2-config --cflags
+          sdl2-config --libs
+
+      - name: C unit tests (window manager, graphics, sound, movies, paths, game module)
+        run: bash .github/ci-run.sh make -C src/port test
+
+      - name: SDL front end compiles
+        run: make -C src/port check-front
+
+      - name: Runtime builds with no generated sources, and loads a game module
+        run: |
+          test ! -e sources/generated
+          bash .github/ci-run.sh make -C src/port all
+          ! nm src/port/build/pentamoor-run.exe | grep -q lifted_
+          bash .github/ci-run.sh make -C src/port check-module
+          bash .github/ci-run.sh make -C src/port check-run
+          bash .github/ci-run.sh make -C src/port check-program
+
+      - name: What the runtime and the module need beside them
+        run: |
+          for f in pentamoor-run.exe game_stub.dll; do
+            echo "== $f"; objdump -p src/port/build/$f | grep "DLL Name"
+            echo "::notice title=DLLs of $f::$(objdump -p src/port/build/$f | grep 'DLL Name' | sed 's/.*DLL Name: //' | tr '\n' ' ')"
+          done
+          ls -l src/port/build/pentamoor-run.exe src/port/build/game_stub.dll
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer, release packaging and launcher tests (native Windows Python; none need the game)
+        shell: pwsh
+        run: |
+          python -m pip install --quiet -r .github/requirements-ci.txt
+          python -m pytest tools/install -q

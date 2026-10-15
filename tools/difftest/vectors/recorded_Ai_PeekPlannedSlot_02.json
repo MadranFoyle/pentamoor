@@ -1,0 +1,37 @@
+{
+ "function": "Ai_PeekPlannedSlot",
+ "program": "DUEL",
+ "address": "0x0043071d",
+ "description": "recorded from DUEL at virtual 68.935s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [
+  1
+ ],
+ "expected_return": 0,
+ "memory_in": [
+  {
+   "addr": "0x0050b37c",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x0050ed78",
+   "bytes": "07110000"
+  },
+  {
+   "addr": "0x0066aaf4",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00681eb0",
+   "bytes": "01000000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [
+  {
+   "addr": "0x0068f0bc",
+   "bytes": "07010000"
+  }
+ ],
+ "memory_out_exhaustive": true
+}

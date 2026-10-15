@@ -1,0 +1,158 @@
+# Builds the release archives: the runtime (no game-derived code) for Windows, Linux (also as the Steam Deck's download) and macOS, with the installer, the lifter and everything else a user needs to build
+# the game modules from their own disc image. Called by release.yml on a version tag (which then publishes the archives) and by ci.yml on every push (so the packaging is
+# tested all the time, and the archives are there to download from the run for a week). Nothing here has the game's files, and nothing generated from them: the
+# game modules are built on the user's machine, never here.
+name: Package
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "the version in the archive names; a leading v (a tag) is taken off"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: windows-x86_64
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884   # v2.32.0
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            make
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-SDL2
+
+      - name: Build the runtime (MinGW-w64, winpthreads linked in), list the DLLs it needs
+        shell: msys2 {0}
+        run: |
+          test ! -e sources/generated
+          make -C src/port -j4 runtime
+          make -C src/port check-module check-run
+          if nm src/port/build/pentamoor-run.exe | grep -q lifted_; then echo 'game-derived code in the runtime'; exit 1; fi
+          mkdir -p dist
+          bash tools/release/win_libs.sh dist/libs.txt
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Package (embeddable Python, Zig, pefile and capstone go in the archive)
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}".TrimStart("v")
+          $libs = @()
+          foreach ($l in Get-Content dist\libs.txt) { if ($l) { $libs += "--lib"; $libs += $l } }
+          foreach ($l in Get-Content dist\libs.txt.licenses) { if ($l) { $libs += "--license"; $libs += $l } }
+          python tools/release/package.py --platform windows-x86_64 --version $version --runtime src\port\build\pentamoor-run.exe `
+            --fetch-pydeps --embed-python --bundle-zig --out dist @libs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Check the archive (unpacked on its own, with its Python, its Zig and its SDL2.dll)
+        shell: pwsh
+        run: python tools/release/check_archive.py (Get-ChildItem dist\pentamoor-*.zip).FullName --compiler zig
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        with:
+          name: pentamoor-windows-x86_64
+          path: dist/pentamoor-*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  linux:
+    name: linux-x86_64
+    # An older Ubuntu on purpose: the runtime needs only the glibc and the SDL2 of the system it was built on, and an older one runs on newer systems, not the other way round.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsdl2-dev
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Build the runtime
+        run: |
+          test ! -e sources/generated
+          make -C src/port -j4 runtime
+          make -C src/port check-module check-run
+          if nm src/port/build/pentamoor-run | grep -q lifted_; then echo 'game-derived code in the runtime'; exit 1; fi
+          echo "needs:"; ldd src/port/build/pentamoor-run
+          echo "newest glibc symbol:"; objdump -T src/port/build/pentamoor-run | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+
+      - name: Package
+        run: |
+          version="${{ inputs.version }}"
+          python tools/release/package.py --platform linux-x86_64 --version "${version#v}" --runtime src/port/build/pentamoor-run --fetch-pydeps --out dist
+
+      - name: Check the archive (unpacked on its own; the stub module is built with the runner's gcc)
+        run: python tools/release/check_archive.py dist/pentamoor-*-linux-x86_64.tar.gz
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        with:
+          name: pentamoor-linux-x86_64
+          path: dist/pentamoor-*-linux-x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+      # The Steam Deck's download: the same runtime and tools as the Linux archive (the Deck is x86-64 Linux with SDL2 and Python 3), plus tools/steamdeck: the installer with windows
+      # (a file picker and a progress bar, for desktop mode), the Steam shortcut writer, the controller layout, and the two icons that start them. It is checked the same way, and then
+      # its own files are tried on a fake Steam folder (check_archive.py, check_steamdeck).
+      - name: Package the Steam Deck archive
+        run: |
+          version="${{ inputs.version }}"
+          python tools/release/package.py --platform steamdeck --version "${version#v}" --runtime src/port/build/pentamoor-run --fetch-pydeps --out dist
+
+      - name: Check the Steam Deck archive
+        run: python tools/release/check_archive.py dist/pentamoor-*-steamdeck.tar.gz
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        with:
+          name: pentamoor-steamdeck
+          path: dist/pentamoor-*-steamdeck.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: macos-universal
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Build the runtime, arm64 and x86-64, with SDL2 built from its source and linked in
+        run: |
+          test ! -e sources/generated
+          sh tools/release/build_macos.sh universal dist/macos
+          if nm dist/macos/pentamoor-run | grep -q lifted_; then echo 'game-derived code in the runtime'; exit 1; fi
+
+      - name: Package
+        run: |
+          version="${{ inputs.version }}"
+          python tools/release/package.py --platform macos-universal --version "${version#v}" --runtime dist/macos/pentamoor-run --fetch-pydeps --out dist
+
+      - name: Check the archive (the arm64 half runs here; the x86-64 half is built but not run)
+        run: python tools/release/check_archive.py dist/pentamoor-*.tar.gz
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        with:
+          name: pentamoor-macos-universal
+          path: dist/pentamoor-*.tar.gz
+          if-no-files-found: error
+          retention-days: 7

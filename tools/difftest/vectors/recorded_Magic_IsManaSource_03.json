@@ -1,0 +1,29 @@
+{
+ "function": "Magic_IsManaSource",
+ "program": "DUEL",
+ "address": "0x0048ca2a",
+ "description": "recorded from DUEL at virtual 18.547s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [
+  0,
+  2
+ ],
+ "expected_return": 1,
+ "memory_in": [
+  {
+   "addr": "0x004ff610",
+   "bytes": "0010"
+  },
+  {
+   "addr": "0x00681eb0",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00682904",
+   "bytes": "02000000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [],
+ "memory_out_exhaustive": true
+}

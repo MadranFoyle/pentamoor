@@ -1,0 +1,152 @@
+{
+ "function": "Magic_QueryCardAttribute",
+ "program": "DUEL",
+ "address": "0x0048b81a",
+ "description": "recorded from DUEL at virtual 18.271s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [
+  0,
+  4,
+  50,
+  -1
+ ],
+ "expected_return": 4,
+ "memory_in": [
+  {
+   "addr": "0x0048be1a",
+   "bytes": "a4b84800"
+  },
+  {
+   "addr": "0x0048be36",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x004fab4c",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x005001fa",
+   "bytes": "08"
+  },
+  {
+   "addr": "0x005001fe",
+   "bytes": "0400"
+  },
+  {
+   "addr": "0x005ef980",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x006663e0",
+   "bytes": "0d000000"
+  },
+  {
+   "addr": "0x0066642c",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00681eb0",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00681ecc",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00682b44",
+   "bytes": "3d000000"
+  },
+  {
+   "addr": "0x00682b4c",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00682b54",
+   "bytes": "0400"
+  },
+  {
+   "addr": "0x00682b58",
+   "bytes": "0000"
+  },
+  {
+   "addr": "0x00682b7f",
+   "bytes": "00"
+  },
+  {
+   "addr": "0x0068ecb0",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x0068ecfc",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x0068ee64",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x0068eed8",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x00690310",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00690c48",
+   "bytes": "00000000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [
+  {
+   "addr": "0x004fab4c",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x005ef980",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00665ee0",
+   "bytes": "00000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "addr": "0x006663e0",
+   "bytes": "0e000000"
+  },
+  {
+   "addr": "0x0066642c",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00681ecc",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00682b54",
+   "bytes": "0400"
+  },
+  {
+   "addr": "0x0068ecb0",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x0068ecfc",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x0068ee64",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00690310",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00690c48",
+   "bytes": "00000000"
+  }
+ ],
+ "memory_out_exhaustive": true
+}

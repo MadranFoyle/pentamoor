@@ -1,0 +1,79 @@
+# A release: push a tag v<version> (for example v0.1.0; v0.1.0-rc1 makes a pre-release) and this builds the runtime for Windows, Linux (also packed as the Steam Deck's download) and macOS, packs each with the installer and the
+# lifter (package.yml), checks that nothing made from the game is in any archive, and publishes the four archives and a SHA256SUMS file as a GitHub release.
+#
+# What is published: the RUNTIME only (pentamoor-run, which holds no game-derived code), the tools that build a game module from the user's own disc image, and the headers and glue
+# that build needs. NEVER a game module (game_*.so/.dylib/.dll) and never a file of the game or C generated from it: those are built on the user's machine, from their own copy.
+# CONTRIBUTING.md ("Making a release") says how to cut one.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/package.yml
+    with:
+      version: ${{ github.ref_name }}          # package.yml takes the v off
+
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write          # create the release and attach the files
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4.3.0
+        with:
+          pattern: pentamoor-*
+          merge-multiple: true
+          path: dist
+
+      - name: Look inside every archive for anything made from the game (it fails the release if there is)
+        run: |
+          ls -l dist
+          test "$(find dist -name 'pentamoor-*' | wc -l)" -eq 4
+          for a in dist/pentamoor-*; do python tools/release/check_archive.py --static "$a"; done
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum pentamoor-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          flags=""
+          case "$TAG" in *-*) flags="--prerelease" ;; esac
+          cat > notes.md <<'EOF'
+          Play Pentamoor on Windows, Linux or macOS: download the archive for your system, unpack it, and run `pentamoor` (Windows: double-click `pentamoor.bat`). The first run asks for your own
+          disc image of the retail *Magic: The Gathering* CD (version 1.0, an `.iso`) and builds the game from it on your computer in a few minutes (2 to 15, depending on the computer). After that it just starts.
+
+          | System | Archive |
+          |---|---|
+          | Windows 10/11, x86-64 | `pentamoor-VERSION-windows-x86_64.zip`: carries its own Python and C compiler; nothing to install |
+          | Linux, x86-64 (glibc 2.35 or newer) | `pentamoor-VERSION-linux-x86_64.tar.gz`: needs Python 3 and SDL2 (`libsdl2-2.0-0`); fetches a C compiler if there is none |
+          | macOS 11 or newer, Apple Silicon and Intel | `pentamoor-VERSION-macos-universal.tar.gz`: needs Python 3 (Apple's command line tools); fetches a C compiler if there is none |
+          | Steam Deck (SteamOS 3) | `pentamoor-VERSION-steamdeck.tar.gz`: the Linux archive plus a window installer, the Steam shortcut and a controller layout; unpack it in your home folder, double-click "Install Pentamoor" in desktop mode, then switch to Gaming Mode. Not yet tried on a real Deck |
+
+          `SHA256SUMS` lists the checksums of the four archives.
+
+          **There are no game files, no game-derived code and no decompiler output in these downloads.** They hold the runtime (no code from the game), the installer, and the tools that translate your own game files
+          on your own computer. The game modules are built there, from your disc, and are not published. The files are not code-signed: Windows SmartScreen and macOS Gatekeeper will warn
+          (the `README.txt` inside says what to click). The x86-64 half of the macOS build and the Windows build have only been built and unit tested by CI; the game itself has not been run on them yet.
+          EOF
+          sed -i "s/VERSION/${TAG#v}/g" notes.md
+          gh release create "$TAG" dist/pentamoor-* dist/SHA256SUMS --title "Pentamoor ${TAG#v}" --notes-file notes.md --verify-tag $flags

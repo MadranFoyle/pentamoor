@@ -1,0 +1,100 @@
+{
+  "function": "Magic_PushSpellStack",
+  "program": "DUEL",
+  "address": "0x0048d878",
+  "description": "Pay for the Elves with the Forest: PushSpellStack(0, 2, 114, 0, 0) on top; card index 2 < 5, no stand-in",
+  "source": "docs/SYMBOL_VERIFICATION.md, live results from the in-process emulator (`DUEL.EXE`)",
+  "args": [
+    0,
+    2,
+    114,
+    0,
+    0
+  ],
+  "expected_return": 0,
+  "memory_in": [
+    {
+      "addr": "0x0066aaf4",
+      "dwords": [
+        "0x00000000"
+      ]
+    },
+    {
+      "addr": "0x006764b8",
+      "dwords": [
+        "0x00000001"
+      ]
+    },
+    {
+      "addr": "0x00682904",
+      "dwords": [
+        "0x00000002"
+      ]
+    },
+    {
+      "addr": "0x00682912",
+      "bytes": "00"
+    },
+    {
+      "addr": "0x00682928",
+      "dwords": [
+        "0xffffffff"
+      ]
+    },
+    {
+      "addr": "0x0068f230",
+      "dwords": [
+        "0xffffffff"
+      ]
+    },
+    {
+      "addr": "0x0068f2c4",
+      "dwords": [
+        "0x00000007"
+      ]
+    }
+  ],
+  "calls": [],
+  "memory_out_expected": [
+    {
+      "addr": "0x00666464",
+      "dwords": [
+        "0x00000000"
+      ]
+    },
+    {
+      "addr": "0x00666964",
+      "dwords": [
+        "0x00000007"
+      ]
+    },
+    {
+      "addr": "0x006764b8",
+      "dwords": [
+        "0x00000002"
+      ]
+    },
+    {
+      "addr": "0x0068efb8",
+      "dwords": [
+        "0x00000000",
+        "0x00000002",
+        "0xffffffff"
+      ]
+    },
+    {
+      "addr": "0x0068f128",
+      "dwords": [
+        "0x00000000",
+        "0xffffffff"
+      ]
+    },
+    {
+      "addr": "0x0068f244",
+      "dwords": [
+        "0x00720002"
+      ]
+    }
+  ],
+  "memory_out_exhaustive": true
+}

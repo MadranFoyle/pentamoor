@@ -1,0 +1,27 @@
+{
+ "function": "Ai_PlanCursorBack",
+ "program": "DUEL",
+ "address": "0x004308e4",
+ "description": "recorded from DUEL at virtual 282.491s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [],
+ "expected_return": 0,
+ "memory_in": [
+  {
+   "addr": "0x0050b37c",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x00681eb0",
+   "bytes": "01010000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [
+  {
+   "addr": "0x0050b37c",
+   "bytes": "00000000"
+  }
+ ],
+ "memory_out_exhaustive": true
+}

@@ -1,0 +1,29 @@
+{
+  "function": "Magic_IsManaSource",
+  "program": "MAGIC",
+  "address": "0x00474389",
+  "description": "Forest: record +0x18 = 0x1000, returns 1 (MAGIC.EXE layout; assumes its card table has the same record)",
+  "source": "docs/SYMBOL_VERIFICATION.md, `Magic_IsManaSource` (emulator)",
+  "args": [
+    1,
+    4
+  ],
+  "expected_return": 1,
+  "memory_in": [
+    {
+      "addr": "0x0051af38",
+      "dwords": [
+        "0x00001000"
+      ]
+    },
+    {
+      "addr": "0x006abed4",
+      "dwords": [
+        "0x00000002"
+      ]
+    }
+  ],
+  "calls": [],
+  "memory_out_expected": [],
+  "memory_out_exhaustive": true
+}

@@ -1,0 +1,29 @@
+{
+ "function": "Card_IsInPlay",
+ "program": "DUEL",
+ "address": "0x0048a33f",
+ "description": "recorded from DUEL at virtual 66.899s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [
+  0,
+  2
+ ],
+ "expected_return": 1,
+ "memory_in": [
+  {
+   "addr": "0x00681eb0",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x00682904",
+   "bytes": "02000000"
+  },
+  {
+   "addr": "0x0068290c",
+   "bytes": "9a000300"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [],
+ "memory_out_exhaustive": true
+}

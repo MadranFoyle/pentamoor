@@ -1,0 +1,20 @@
+{
+ "function": "Card_ColorMaskToColorIndex",
+ "program": "DUEL",
+ "address": "0x0048c367",
+ "description": "recorded from DUEL at virtual 18.273s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [
+  8
+ ],
+ "expected_return": 3,
+ "memory_in": [
+  {
+   "addr": "0x00681eb0",
+   "bytes": "00000000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [],
+ "memory_out_exhaustive": true
+}

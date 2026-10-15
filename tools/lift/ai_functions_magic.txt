@@ -1,0 +1,110 @@
+# The AI-search functions of ai_functions.txt in MAGIC.EXE: each DUEL.EXE function's twin (the same function in the other program, found by comparing the two programs' code).
+# The pairing is a static resemblance; the lifted code is checked by running the game hosted (tools/lift/compare_hosted.py).
+# address   DUEL address
+0x004f8672  duel=0x00402cc1
+0x004f88ae  duel=0x00402efd
+0x00403250  duel=0x0041bcf0
+0x0040360b  duel=0x0041c0ab
+0x00505c74  duel=0x0042a99c
+0x00505d20  duel=0x0042aa48
+0x00505e3f  duel=0x0042ab67
+0x00506102  duel=0x0042ae2a
+0x005062b1  duel=0x0042afdb
+0x004aa830  duel=0x0042fbf0
+0x004aaaea  duel=0x0042fea9
+0x004aad61  duel=0x00430120
+0x004aafa8  duel=0x00430367
+0x004ab214  duel=0x004305d3
+0x004ab552  duel=0x00430911
+0x0040a1d2  duel=0x00439892
+0x0040a1ff  duel=0x004398be
+0x0040a240  duel=0x004398fe
+0x004b8e4d  duel=0x0044a314
+0x004b90de  duel=0x0044a5a4
+0x004cbc65  duel=0x00450725
+0x004cbcd9  duel=0x00450799
+0x004ccca3  duel=0x00451760
+0x004cced8  duel=0x00451995
+0x004cd715  duel=0x00452185
+0x004cd72a  duel=0x0045219a
+0x004d683f  duel=0x00457fdc
+0x004e2101  duel=0x0046388d
+0x004468dc  duel=0x0046c7d0
+0x00446d52  duel=0x0046cc45
+0x004475a4  duel=0x0046d497
+0x004485d6  duel=0x0046e4c9
+0x004488a0  duel=0x0046e793
+0x004c4210  duel=0x00472fc0
+0x004c4c84  duel=0x00473a32
+0x004c5fc9  duel=0x00474d83
+0x004c7aa8  duel=0x00476868
+0x004c7be5  duel=0x004769a5
+0x004c7d69  duel=0x00476b29
+0x004cab92  duel=0x00479952
+0x004528c0  duel=0x0047a090
+0x00452aff  duel=0x0047a2cf
+0x0046ff50  duel=0x00488662
+0x00470b36  duel=0x00489247
+0x00472905  duel=0x0048afc2
+0x00472f0c  duel=0x0048b5c9
+0x00472fae  duel=0x0048b64f
+0x00473e69  duel=0x0048c50b
+0x00474266  duel=0x0048c907
+0x00474939  duel=0x0048cfda
+0x00474d7d  duel=0x0048d41e
+0x004756a1  duel=0x0048dd43
+0x00475c8a  duel=0x0048e32b
+0x00475d64  duel=0x0048e405
+0x00476205  duel=0x0048e8a8
+0x0047624f  duel=0x0048e8f2
+0x00476482  duel=0x0048eb25
+0x00433c62  duel=0x004c6a69
+0x00452551  duel=0x004d7c20
+
+# Callers of the functions above that are not lifted themselves, found with `HOST_CALLERS=1` (native_host.py) in a hosted run: each
+# guest->hosted crossing costs about as much as the call's work, so lifting the caller makes its calls plain C.
+# address   (crossings into hosted code in a scripted duel, 310 virtual seconds)
+0x00452276  # 2.6M: shuffles a library (100 passes of random swaps)
+0x00452b25  # 0.73M
+0x004cc9c5  # 1.5M
+0x004458b0  # 3.3M: calls three hosted functions (and a hook through a global)
+0x004a99a0  # 60k
+0x00470ea3  # 56k
+0x0040dcca  # 1.7k
+0x0045134b  # 4.2k
+0x0046f5d1  # 4.2k
+
+# The AI's search driver (1.1M crossings). It polls the clock (the game's timer driver) for its time budget, and the clock only moves
+# between guest slices, so hosted code sees it advance by the work it has done (lift_bridge.h, clock model); it calls out rarely
+# (Sleep, a debug line at the end), so native_host.py runs it on a thread from the start (NATIVE_THREAD_ONLY) instead of trying it first.
+0x00501f50
+
+# Callees of the callers above that went out to the guest on every call (found with the list of "run again on a thread" calls that
+# HOST_CALLERS=1 prints): each is a thread hand-off for the hosted code that calls it.
+0x004cd6e3  # the game's timer driver (DeviceIoControl on MPSTIME.VXD, answered in C from the clock in guest memory)
+0x0040a305
+0x00451b1c
+0x0040d949  # 98k callouts
+0x004f7eee  # 84k
+0x00451291  # 17k
+0x004523fd  # 17k
+0x004d0a30  # 6k
+0x0040d7e9  # 4.6k
+0x0040d901  # 1.5k
+0x004cbc36  # 3k
+0x004bd4f0  # 3k
+0x004be192  # 3k
+0x004bd5af  # 3k
+
+# Round 3: what the hosted code still called out to (a few thousand calls each in the scripted duel). Only 772 hosted calls still run on a thread after it.
+0x00471bc0
+0x0045245e
+0x00447b57
+0x004ba890
+0x004f823a
+0x0040d82b
+0x0040d875
+0x0044867e
+0x00472fae
+0x004cc3c4
+0x0044724d

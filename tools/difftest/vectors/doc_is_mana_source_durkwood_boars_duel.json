@@ -1,0 +1,29 @@
+{
+  "function": "Magic_IsManaSource",
+  "program": "DUEL",
+  "address": "0x0048ca2a",
+  "description": "Durkwood Boars: record +0x18 = 0x0, returns 0",
+  "source": "docs/SYMBOL_VERIFICATION.md, `Magic_IsManaSource` (emulator)",
+  "args": [
+    1,
+    4
+  ],
+  "expected_return": 0,
+  "memory_in": [
+    {
+      "addr": "0x0050020c",
+      "dwords": [
+        "0x00000000"
+      ]
+    },
+    {
+      "addr": "0x00688664",
+      "dwords": [
+        "0x0000003d"
+      ]
+    }
+  ],
+  "calls": [],
+  "memory_out_expected": [],
+  "memory_out_exhaustive": true
+}

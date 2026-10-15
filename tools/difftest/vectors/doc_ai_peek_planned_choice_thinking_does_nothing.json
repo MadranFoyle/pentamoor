@@ -1,0 +1,22 @@
+{
+  "function": "Ai_PeekPlannedChoice",
+  "program": "DUEL",
+  "address": "0x00430768",
+  "description": "Cursor 2, offset 0, planned choice 5, thinking 1: nothing is written; returns 0",
+  "source": "docs/SYMBOL_VERIFICATION.md, round 3 (`Ai_PeekPlannedChoice`; never entered live, synthetic, decompiled body)",
+  "args": [
+    0
+  ],
+  "expected_return": 0,
+  "memory_in": [
+    {
+      "addr": "0x0066aaf4",
+      "dwords": [
+        "0x00000001"
+      ]
+    }
+  ],
+  "calls": [],
+  "memory_out_expected": [],
+  "memory_out_exhaustive": true
+}

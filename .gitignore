@@ -1,0 +1,39 @@
+# ==============================================================================
+# Git Ignore - Pentamoor
+# ==============================================================================
+
+# Build Output & Binaries
+build/
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+*.dll
+
+# Temporary / Scratch Files
+*.swp
+*.swo
+*~
+.DS_Store
+__pycache__/
+*.pyc
+
+# Local-only source material (game installers, disc images, the installed game, the C
+# lifted from it, private research archives) -- never commit these: copyrighted, large,
+# and not something to publish.
+sources/
+
+# built native libraries (made from the game's machine code: never committed)
+tools/difftest/build_*/
+
+# the native port's other builds (DECK.EXE, coverage)
+src/port/build_*/
+
+# the native program's own files (saves, maps), written by running it
+port_overlay/
+
+# the installer's own downloads (the Zig compiler, pefile and capstone) and the release archives
+tools/local/
+tools/pydeps/
+dist/

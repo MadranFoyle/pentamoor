@@ -1,0 +1,113 @@
+program,address,name,kind,evidence,section,notes
+MAGIC,0x00405802,Duel_ChooseTarget,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; confidence medium-high; was Action_ValidateTarget_*; old name given as a pattern
+MAGIC,0x0041d963,Card_RemapColorIndexFF,function,static,"Round 6: six more native functions, and three misnamed ones they exposed (2026-10-01)","was Card_UntapCard, Duel_GetCardModifiedPower"
+MAGIC,0x0041d9d2,Card_RemapColorIndexF9,function,natural,"Round 6: six more native functions, and three misnamed ones they exposed (2026-10-01)","was Card_SetTapState, Duel_GetCardColorOverride"
+MAGIC,0x004468dc,Ai_ChooseChainResponse,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; confidence medium-high; was Pic_Subsystem_004468dc
+MAGIC,0x004485d6,Magic_BroadcastCardEventInStep,function,static,The step code and the other event-context writers (MAGIC.EXE),evidence: default; no live observation stated for the row; was Pic_Subsystem_004485d6
+MAGIC,0x0046f5d1,Magic_ExecuteDrawPhase,function,qemu,Renames applied (MAGIC.EXE),was FUN_0046f5d1
+MAGIC,0x00471c32,Card_IsInPlay,function,natural,"Round 6: six more native functions, and three misnamed ones they exposed (2026-10-01)","was Card_IsTapped, Duel_CardIsTapped"
+MAGIC,0x00473179,Magic_QueryCardAttribute,function,qemu,Two more mislabels found by the same run (renamed) | The step code and the other event-context writers (MAGIC.EXE),was Card_TapForMana
+MAGIC,0x00473cc5,Card_ColorMaskToColorIndex,function,natural,"Round 6: six more native functions, and three misnamed ones they exposed (2026-10-01)",was Duel_ColorMaskToIndex
+MAGIC,0x00473e69,Magic_BroadcastCardEvent,function,static,The step code and the other event-context writers (MAGIC.EXE),"evidence: default; no live observation stated for the row; was FUN_00473e69, Rules_ApplyContinuousDamage"
+MAGIC,0x00474428,Magic_PushEventContext,function,natural,"Two more mislabels found by the same run (renamed) | Round 6: six more native functions, and three misnamed ones they exposed (2026-10-01)",was FUN_0048cac9
+MAGIC,0x004744de,Magic_PopEventContext,function,qemu,"Two more mislabels found by the same run (renamed) | Round 6: six more native functions, and three misnamed ones they exposed (2026-10-01)","evidence: prose: ""The pop ran 98 times and always restored `g_CardEventResult` to 0""; was Magic_TapCardForMana"
+MAGIC,0x0047496b,Duel_PlaySoundById,function,qemu,Renames applied (MAGIC.EXE),was Magic_UpkeepPhase
+MAGIC,0x00474c7f,Duel_PreloadSoundEffects,function,qemu,Renames applied (MAGIC.EXE),was Magic_DrawCardPhase
+MAGIC,0x00474d1e,Magic_ClearSpellStack,function,qemu,"The spell stack (MAGIC.EXE): push and resolve seen live, the rest static","evidence: prose: ""`Magic_ClearSpellStack` is entered once at the start of every turn ... Its name is confirmed.""; was Mem_AllocOrFree_00474d1e"
+MAGIC,0x004751d7,Magic_PushSpellStack,function,qemu,"The spell stack (MAGIC.EXE): push and resolve seen live, the rest static","evidence: prose: ""Push and resolve were watched once on the live game""; was Magic_CombatPhase"
+MAGIC,0x004756a1,Magic_ResolveTopSpell,function,qemu,"The spell stack (MAGIC.EXE): push and resolve seen live, the rest static","evidence: prose: ""Push and resolve were watched once on the live game""; was Magic_EndTurnPhase"
+MAGIC,0x00475bb0,Magic_DropTopSpell,function,qemu,"The spell stack (MAGIC.EXE): push and resolve seen live, the rest static","evidence: prose: ""`Magic_DropTopSpell` was entered from `0x004717b4` ... Its name is confirmed.""; was Magic_DiscardToHandSize"
+MAGIC,0x0047624f,Magic_RunTurnStep,function,qemu,The step code and the other event-context writers (MAGIC.EXE),"evidence: prose: ""The step runner and `g_CurrentStepCode` are **verified live**""; was FUN_0047624f"
+MAGIC,0x00493e70,Palette_LoadTRFile,function,natural,"Colour, palette and sound helpers (emulator, 2026-09-26)",was Catalog_LoadPaletteMap
+MAGIC,0x00494310,Color_RGBToOctreePath,function,natural,"Colour, palette and sound helpers (emulator, 2026-09-26)",was Color_QuantizeRGBToPalette
+MAGIC,0x004a99a0,Ai_ChooseCardToPlay,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was Palette_Subsystem_004a99a0
+MAGIC,0x004ab1ef,Ai_ClearPlan,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; confidence medium-high; was Ai_ResetEvaluationState
+MAGIC,0x004ab214,Ai_BeginTrial,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was Ai_GetActivePlayerScore
+MAGIC,0x004ab28b,Ai_RecordChoice,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was Ai_EvaluateCreaturePower
+MAGIC,0x004ab35e,Ai_PeekPlannedSlot,function,natural,"Round 3: the five reported-but-unapplied AI names, resolved with the twin table (2026-09-27)",was Ai_GetOpponentPlayerScore
+MAGIC,0x004ab3a9,Ai_PeekPlannedChoice,function,static,"Round 3: the five reported-but-unapplied AI names, resolved with the twin table (2026-09-27)",was Ai_CalcLifeAdvantage
+MAGIC,0x004ab3f3,Ai_ReplayChoice,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was Ai_CalcCardAdvantage
+MAGIC,0x004ab45f,Ai_CommitBestPlan,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was Ai_ScoreBoardPosition
+MAGIC,0x004ab510,Ai_GetPlanCursor,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was Ai_Util_004ab510
+MAGIC,0x004ab525,Ai_PlanCursorBack,function,natural,"Round 3: the five reported-but-unapplied AI names, resolved with the twin table (2026-09-27)",was Ai_Util_004ab525
+MAGIC,0x004ab552,Ai_EvaluateBoard,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was Ai_SimulateCombatRound
+MAGIC,0x004abff4,Ai_PenalizeCounterattack,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; confidence medium-high; was Ai_ChooseAttackers
+MAGIC,0x004ac940,Ai_FormatPlanDebugText,function,static,"Round 3: the five reported-but-unapplied AI names, resolved with the twin table (2026-09-27)",was Ai_ChooseBlockers
+MAGIC,0x004acb7f,Ai_GetLandColorMasks,function,natural,"Round 3: the five reported-but-unapplied AI names, resolved with the twin table (2026-09-27)",was Ai_FilterValidBlockers
+MAGIC,0x004acc20,Duel_ShowStartOfDuelDialog,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was Ai_AssignCombatDamage
+MAGIC,0x004b4a3f,Duel_RefreshAllWindows,function,natural,"The spell-chain window family (emulator, 2026-09-26)",was Ai_EvalAttackCandidate_004b4a3f
+MAGIC,0x004cc9c5,Duel_UpdateBoardState,function,natural,"Round 3: the five reported-but-unapplied AI names, resolved with the twin table (2026-09-27)",was Ai_Subsystem_004cc9c5
+MAGIC,0x004cf8b6,SpellChain_FindEntryIndex,function,natural,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_GetCardCount
+MAGIC,0x004cf965,SpellChain_RemoveEntry,function,natural,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_UpdateTargetPositions
+MAGIC,0x004cfab2,SpellChain_EntryTargetsMatch,function,natural,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_HasActiveSpells
+MAGIC,0x004cfb2f,SpellChain_InsertEntry,function,natural,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_CreateCardSlot
+MAGIC,0x004cfd68,SpellChain_ClearEntryTargets,function,synthetic,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_RemoveCardSlot
+MAGIC,0x004cfe4d,SpellChain_RebuildEntryTargets,function,synthetic,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_CreateTargetSlot
+MAGIC,0x004d05e8,SpellChain_GetContentRect,function,synthetic,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_SetWindowRect
+MAGIC,0x004d0965,SpellChain_MinimizeIfShown,function,synthetic,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_IsVisible
+MAGIC,0x004d09bd,SpellChain_RestoreIfMinimized,function,synthetic,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_IsMinimized
+MAGIC,0x004d0a30,Card_DefaultEventHandler,function,natural,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_GetActiveCount
+MAGIC,0x004d0a42,Card_GetColorAndTypeFlags,function,synthetic,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_ProcessTriggerEvent
+MAGIC,0x004ebe1a,Adventure_Audio_PlayTrack,function,synthetic,"Colour, palette and sound helpers (emulator, 2026-09-26)",was Adventure_Audio_StopEffectChannel
+MAGIC,0x004ec32f,Adventure_Audio_LoadWalkAndBirdSounds,function,natural,"Colour, palette and sound helpers (emulator, 2026-09-26)",was Adventure_Audio_PlayFootstep
+MAGIC,0x0050da40,Surface_GetPixelValue,function,synthetic,"Colour, palette and sound helpers (emulator, 2026-09-26)",was Surface_GetPixelPtr
+MAGIC,0x00552938,g_AiSavedSpellStackEntries,global,static,"The spell stack (MAGIC.EXE): push and resolve seen live, the rest static",evidence: default; no live observation stated for the row; was g_AiSavedPlayerManaPool
+MAGIC,0x0068a660,g_CardEventResult,global,qemu,Globals renamed (MAGIC.EXE): VERIFIED live,evidence: the section heading; was g_ActivePalette
+MAGIC,0x0068a71c,g_TurnPlayer,global,natural,"Globals checked with write watches (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was g_DefendingPlayer
+MAGIC,0x006a3f78,g_SpellStackCount,global,static,"The spell stack (MAGIC.EXE): push and resolve seen live, the rest static",evidence: default; no live observation stated for the row; was DAT_006a3f78
+MAGIC,0x006a4a08,g_DuelModeFlags,global,natural,"Globals checked with write watches (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was g_PlayerHandCardCount
+MAGIC,0x006a4f70,g_EventCardId,global,static,Globals renamed (MAGIC.EXE): VERIFIED live,evidence: the paragraph above the table; was DAT_006a4f70
+MAGIC,0x006b2534,g_EventSourcePlayer,global,qemu,Globals renamed (MAGIC.EXE): VERIFIED live,evidence: the section heading; was g_OverworldPlayerCoordX
+MAGIC,0x006b2d5c,g_EventTargetSlot,global,static,Globals renamed (MAGIC.EXE): VERIFIED live,evidence: the paragraph above the table; was DAT_006b2d5c
+MAGIC,0x006b2fe4,g_EventCardColorMask,global,static,The step code and the other event-context writers (MAGIC.EXE),evidence: default; no live observation stated for the row; was DAT_006b2fe4
+MAGIC,0x006fd3f4,g_StackObjectCardId,global,static,"The spell stack (MAGIC.EXE): push and resolve seen live, the rest static",evidence: default; no live observation stated for the row; was DAT_006fd3f4
+MAGIC,0x006fecc0,g_SpellStackObjects,global,static,"The spell stack (MAGIC.EXE): push and resolve seen live, the rest static",evidence: default; no live observation stated for the row; was DAT_006fecc0
+MAGIC,0x006ff4c0,g_CurrentStepCode,global,qemu,The step code and the other event-context writers (MAGIC.EXE),"evidence: prose: ""The step runner and `g_CurrentStepCode` are **verified live**""; was g_PlayerManaPool"
+MAGIC,0x006ff4d0,g_SpellStackEntries,global,static,"The spell stack (MAGIC.EXE): push and resolve seen live, the rest static",evidence: default; no live observation stated for the row; was DAT_006ff4d0
+MAGIC,0x007006c8,g_EventTargetPlayer,global,static,Globals renamed (MAGIC.EXE): VERIFIED live,evidence: the paragraph above the table; was DAT_007006c8
+MAGIC,0x0070100c,g_EventSourceSlot,global,qemu,Globals renamed (MAGIC.EXE): VERIFIED live,evidence: the section heading; was g_OverworldMapGrid
+DUEL,0x0041e2a2,Duel_ChooseTarget,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; confidence medium-high
+DUEL,0x0042ed60,Ai_ChooseCardToPlay,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade
+DUEL,0x004305ae,Ai_ClearPlan,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; confidence medium-high
+DUEL,0x004305d3,Ai_BeginTrial,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade
+DUEL,0x0043064a,Ai_RecordChoice,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade
+DUEL,0x0043071d,Ai_PeekPlannedSlot,function,natural,"Round 3: the five reported-but-unapplied AI names, resolved with the twin table (2026-09-27) | Round 5: the `Mana_GetCardColorRequirement` anomaly and the remaining twin conflicts (static evidence only, 2026-09-27)",was Ai_GetOpponentPlayerScore
+DUEL,0x00430768,Ai_PeekPlannedChoice,function,static,"Round 3: the five reported-but-unapplied AI names, resolved with the twin table (2026-09-27)",was Ai_CalcLifeAdvantage
+DUEL,0x004307b2,Ai_ReplayChoice,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade
+DUEL,0x0043081e,Ai_CommitBestPlan,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade
+DUEL,0x004308cf,Ai_GetPlanCursor,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade
+DUEL,0x004308e4,Ai_PlanCursorBack,function,natural,"Round 3: the five reported-but-unapplied AI names, resolved with the twin table (2026-09-27)",was Ai_Util_004ab525
+DUEL,0x00430911,Ai_EvaluateBoard,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade
+DUEL,0x004313b9,Ai_PenalizeCounterattack,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; confidence medium-high
+DUEL,0x00431d05,Ai_FormatPlanDebugText,function,static,"Round 3: the five reported-but-unapplied AI names, resolved with the twin table (2026-09-27)",was Ai_ChooseBlockers
+DUEL,0x00431f41,Ai_GetLandColorMasks,function,natural,"Round 3: the five reported-but-unapplied AI names, resolved with the twin table (2026-09-27)",was Ai_FilterValidBlockers
+DUEL,0x00434a43,Palette_LoadTRFile,function,natural,"Colour, palette and sound helpers (emulator, 2026-09-26)",was Catalog_LoadPaletteMap
+DUEL,0x0043504d,Color_RGBToOctreePath,function,natural,"Colour, palette and sound helpers (emulator, 2026-09-26)",was Color_QuantizeRGBToPalette
+DUEL,0x0043e0e0,Duel_ShowStartOfDuelDialog,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade
+DUEL,0x00445f05,Duel_RefreshAllWindows,function,natural,"The spell-chain window family (emulator, 2026-09-26)",was Ai_EvalAttackCandidate_004b4a3f
+DUEL,0x00451482,Duel_UpdateBoardState,function,natural,"Round 3: the five reported-but-unapplied AI names, resolved with the twin table (2026-09-27)",was Ai_Subsystem_004cc9c5
+DUEL,0x004521d0,Card_DefaultEventHandler,function,natural,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_GetActiveCount
+DUEL,0x004521e2,Card_GetColorAndTypeFlags,function,synthetic,"The spell-chain window family (emulator, 2026-09-26) | Round 5: the `Mana_GetCardColorRequirement` anomaly and the remaining twin conflicts (static evidence only, 2026-09-27)",was SpellChain_ProcessTriggerEvent
+DUEL,0x0046c7d0,Ai_ChooseChainResponse,function,natural,"The AI: a random-rollout search with a recorded plan (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; confidence medium-high
+DUEL,0x00487ce1,Magic_ExecuteDrawPhase,function,qemu,Renames applied (MAGIC.EXE),was FUN_00487ce1
+DUEL,0x0048a33f,Card_IsInPlay,function,natural,"Round 6: six more native functions, and three misnamed ones they exposed (2026-10-01)","was Card_IsTapped, Duel_CardIsTapped"
+DUEL,0x0048c367,Card_ColorMaskToColorIndex,function,natural,"Round 6: six more native functions, and three misnamed ones they exposed (2026-10-01)",was Duel_ColorMaskToIndex
+DUEL,0x0048c907,Magic_TriggerCardEvent,function,static,"Round 5: the `Mana_GetCardColorRequirement` anomaly and the remaining twin conflicts (static evidence only, 2026-09-27)",was Duel_PlayCardSoundEffect
+DUEL,0x0048cac9,Magic_PushEventContext,function,natural,"Round 6: six more native functions, and three misnamed ones they exposed (2026-10-01)",was FUN_0048cac9
+DUEL,0x0048cb7f,Magic_PopEventContext,function,natural,"Round 6: six more native functions, and three misnamed ones they exposed (2026-10-01)",was FUN_0048cb7f
+DUEL,0x0048d00c,Sound_PlayTrackById,function,qemu,Renames applied (MAGIC.EXE),name unchanged
+DUEL,0x0048d320,Duel_PreloadSoundEffects,function,qemu,Renames applied (MAGIC.EXE),was FUN_0048d320
+DUEL,0x004a197e,SpellChain_FindEntryIndex,function,natural,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_GetCardCount
+DUEL,0x004a1a2d,SpellChain_RemoveEntry,function,natural,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_UpdateTargetPositions
+DUEL,0x004a1b7a,SpellChain_EntryTargetsMatch,function,natural,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_HasActiveSpells
+DUEL,0x004a1e30,SpellChain_ClearEntryTargets,function,synthetic,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_RemoveCardSlot
+DUEL,0x004a26ac,SpellChain_GetContentRect,function,synthetic,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_SetWindowRect
+DUEL,0x004a2a2f,SpellChain_MinimizeIfShown,function,synthetic,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_IsVisible
+DUEL,0x004a2a87,SpellChain_RestoreIfMinimized,function,synthetic,"The spell-chain window family (emulator, 2026-09-26)",was SpellChain_IsMinimized
+DUEL,0x004af74c,Card_RemapColorIndexFF,function,static,"Round 6: six more native functions, and three misnamed ones they exposed (2026-10-01)","was Card_UntapCard, Duel_GetCardModifiedPower"
+DUEL,0x004af7bb,Card_RemapColorIndexF9,function,natural,"Round 6: six more native functions, and three misnamed ones they exposed (2026-10-01)","was Card_SetTapState, Duel_GetCardColorOverride"
+DUEL,0x0066642c,g_CardEventResult,global,natural,"Globals checked with write watches (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was g_DuelCurrentTurnPhase
+DUEL,0x00666458,g_TurnPlayer,global,natural,"Globals checked with write watches (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was g_DuelDefendingPlayer
+DUEL,0x00681eb0,g_DuelModeFlags,global,natural,"Globals checked with write watches (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was g_DuelPlayerManaPool
+DUEL,0x0068ecb0,g_EventSourcePlayer,global,natural,"Globals checked with write watches (emulator, 2026-09-26)",evidence: an emulator section; the row names no grade; was g_DuelActivePlayer
+DUEL,0x00690c48,g_EventSourceSlot,global,static,"Globals checked with write watches (emulator, 2026-09-26)",was g_DuelActiveCardSlot

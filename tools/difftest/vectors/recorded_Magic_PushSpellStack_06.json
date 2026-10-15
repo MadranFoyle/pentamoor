@@ -1,0 +1,129 @@
+{
+ "function": "Magic_PushSpellStack",
+ "program": "DUEL",
+ "address": "0x0048d878",
+ "description": "recorded from DUEL at virtual 83.838s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [
+  0,
+  7,
+  114,
+  0,
+  0
+ ],
+ "expected_return": 0,
+ "memory_in": [
+  {
+   "addr": "0x004d99e8",
+   "bytes": "209a4d00"
+  },
+  {
+   "addr": "0x0066aaf4",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x006764b8",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00681eb0",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00682ea0",
+   "bytes": "ab010000ab01000000000000020000000000ffff00000000000000000101ff000000000000000000ffffffffffffffff000000000f0000000000000000000008010000000000000000000000000000000000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "addr": "0x0068eee0",
+   "bytes": "b5010000"
+  },
+  {
+   "addr": "0x0068f230",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068f2c4",
+   "bytes": "0a000000"
+  }
+ ],
+ "calls": [
+  {
+   "callee": "0x004d695b",
+   "name": "find_free_slot",
+   "args": [
+    0,
+    437
+   ],
+   "return": 8,
+   "memory_writes": [
+    {
+     "addr": "0x00666408",
+     "bytes": "09000000"
+    },
+    {
+     "addr": "0x00681f20",
+     "bytes": "08000000"
+    },
+    {
+     "addr": "0x00682fc0",
+     "bytes": "ab010000b501000000000000020000000000ffff00000000000000000101ff0000"
+    },
+    {
+     "addr": "0x00682fe4",
+     "bytes": "00000000ffffffffffffffff0000000010000000000000000000000801000000"
+    },
+    {
+     "addr": "0x0068300c",
+     "bytes": "0000000000000000"
+    },
+    {
+     "addr": "0x00683018",
+     "bytes": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000000700000000000000000000000000000000"
+    },
+    {
+     "addr": "0x006830c8",
+     "bytes": "0000000000000000000000"
+    },
+    {
+     "addr": "0x006830d4",
+     "bytes": "0000000000000000000000"
+    },
+    {
+     "addr": "0x00690360",
+     "bytes": "00000000"
+    }
+   ]
+  }
+ ],
+ "memory_out_expected": [
+  {
+   "addr": "0x00666460",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x00666960",
+   "bytes": "0a000000"
+  },
+  {
+   "addr": "0x006764b8",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x00682fc0",
+   "bytes": "ab010000b501000000000000020000000000ffff00000000000000000101ff000000000000000000ffffffffffffffff00000000100000000000000000000008010000000000000000000000000000000000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000000700000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "addr": "0x0068efb0",
+   "bytes": "0000000008000000ffffffff"
+  },
+  {
+   "addr": "0x0068f120",
+   "bytes": "ffffffffffffffff"
+  },
+  {
+   "addr": "0x0068f240",
+   "bytes": "ab017200"
+  }
+ ],
+ "memory_out_exhaustive": true
+}

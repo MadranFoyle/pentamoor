@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Install Pentamoor
+GenericName=Magic: The Gathering (Shandalar), native port
+Comment=Install Pentamoor from your own Magic: The Gathering disc image (.iso)
+Exec=sh -c 'exec "$(dirname "${1#file://}")/tools/steamdeck/install-gui.sh"' sh %k
+Icon=applications-games
+Terminal=false
+Categories=Game;
+StartupNotify=true

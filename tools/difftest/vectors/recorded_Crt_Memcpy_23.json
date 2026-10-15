@@ -1,0 +1,36 @@
+{
+ "function": "Crt_Memcpy",
+ "program": "DUEL",
+ "address": "0x004d99b0",
+ "description": "recorded from DUEL at virtual 18.273s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [
+  5902209,
+  1346896129,
+  66
+ ],
+ "stack_pointer": 3138748,
+ "expected_return": 5902209,
+ "memory_in": [
+  {
+   "addr": "0x004d99f4",
+   "bytes": "f8994d00"
+  },
+  {
+   "addr": "0x00681eb0",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x50480101",
+   "bytes": "80ba9df22860d7a718e0610034fcf714f02c00e1079ef22e80ffc10d8f02f01daa1f2aef024d3591366e431eab869702c62b06e31961785218de0896f785e52586fc"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [
+  {
+   "addr": "0x005a0f81",
+   "bytes": "80ba9df22860d7a718e0610034fcf714f02c00e1079ef22e80ffc10d8f02f01daa1f2aef024d3591366e431eab869702c62b06e31961785218de0896f785e52586fc"
+  }
+ ],
+ "memory_out_exhaustive": true
+}

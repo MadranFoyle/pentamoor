@@ -1,0 +1,41 @@
+{
+  "function": "Card_GetColorAndTypeFlags",
+  "program": "DUEL",
+  "address": "0x004521e2",
+  "description": "green creature elves: type byte 0x02, colour mask 0x8, returns 0x2000",
+  "source": "docs/SYMBOL_VERIFICATION.md, spell-chain window family table (`Card_GetColorAndTypeFlags`, synthetic)",
+  "args": [
+    0,
+    5
+  ],
+  "expected_return": 8192,
+  "memory_in": [
+    {
+      "addr": "0x005000f4",
+      "bytes": "02"
+    },
+    {
+      "addr": "0x00682c64",
+      "dwords": [
+        "0x00000038"
+      ]
+    },
+    {
+      "addr": "0x00682c7d",
+      "bytes": "08"
+    },
+    {
+      "addr": "0x00682d5c",
+      "bytes": "00"
+    },
+    {
+      "addr": "0x0068eee0",
+      "dwords": [
+        "0x000001c0"
+      ]
+    }
+  ],
+  "calls": [],
+  "memory_out_expected": [],
+  "memory_out_exhaustive": true
+}

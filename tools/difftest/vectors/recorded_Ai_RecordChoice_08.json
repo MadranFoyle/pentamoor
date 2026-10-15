@@ -1,0 +1,75 @@
+{
+ "function": "Ai_RecordChoice",
+ "program": "DUEL",
+ "address": "0x0043064a",
+ "description": "recorded from DUEL at virtual 66.899s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [],
+ "expected_return": 0,
+ "memory_in": [
+  {
+   "addr": "0x004f3c6c",
+   "bytes": "02000000"
+  },
+  {
+   "addr": "0x0050b37c",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x00511600",
+   "bytes": "63000000"
+  },
+  {
+   "addr": "0x00511a00",
+   "bytes": "03000000"
+  },
+  {
+   "addr": "0x00681eb0",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x0068f0bc",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x0068f2c8",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x0069a0c4",
+   "bytes": "00000000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [
+  {
+   "addr": "0x004f3c6c",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x0050b37c",
+   "bytes": "02000000"
+  },
+  {
+   "addr": "0x0050f174",
+   "bytes": "ffffffff"
+  },
+  {
+   "addr": "0x00511a04",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x00512d7c",
+   "bytes": "00000000"
+  },
+  {
+   "addr": "0x0051317c",
+   "bytes": "02000000"
+  },
+  {
+   "addr": "0x0068f0bc",
+   "bytes": "ffffffff"
+  }
+ ],
+ "memory_out_exhaustive": true
+}

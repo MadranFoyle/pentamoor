@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Add Pentamoor to Steam
+Comment=Add Pentamoor to your Steam Library (and its controller layout)
+Exec=sh -c 'exec "$(dirname "${1#file://}")/tools/steamdeck/install-gui.sh" --steam-only' sh %k
+Icon=steam
+Terminal=false
+Categories=Game;
+StartupNotify=true

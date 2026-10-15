@@ -1,0 +1,24 @@
+{
+ "function": "Ai_ResetRandomCursor",
+ "program": "DUEL",
+ "address": "0x004398fe",
+ "description": "recorded from DUEL at virtual 3.003s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [],
+ "stack_pointer": 1356609232,
+ "expected_return": 0,
+ "memory_in": [
+  {
+   "addr": "0x00681eb0",
+   "bytes": "00000000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [
+  {
+   "addr": "0x00516744",
+   "bytes": "00000000"
+  }
+ ],
+ "memory_out_exhaustive": true
+}

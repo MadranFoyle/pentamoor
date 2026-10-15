@@ -1,0 +1,41 @@
+{
+  "function": "Card_GetColorAndTypeFlags",
+  "program": "DUEL",
+  "address": "0x004521e2",
+  "description": "green sorcery: type byte 0x08, colour mask 0x8, returns 0x102000; card index and colour mask are illustrative, the result is the doc's",
+  "source": "docs/SYMBOL_VERIFICATION.md, spell-chain window family table (`Card_GetColorAndTypeFlags`, synthetic)",
+  "args": [
+    0,
+    5
+  ],
+  "expected_return": 1056768,
+  "memory_in": [
+    {
+      "addr": "0x005046d4",
+      "bytes": "08"
+    },
+    {
+      "addr": "0x00682c64",
+      "dwords": [
+        "0x00000190"
+      ]
+    },
+    {
+      "addr": "0x00682c7d",
+      "bytes": "08"
+    },
+    {
+      "addr": "0x00682d5c",
+      "bytes": "00"
+    },
+    {
+      "addr": "0x0068eee0",
+      "dwords": [
+        "0x000001c0"
+      ]
+    }
+  ],
+  "calls": [],
+  "memory_out_expected": [],
+  "memory_out_exhaustive": true
+}

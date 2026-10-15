@@ -1,0 +1,57 @@
+{
+  "function": "Crt_Memcpy",
+  "program": "DUEL",
+  "address": "0x004d99b0",
+  "description": "16 bytes from +0x0 to +0x40: four whole dwords between aligned buffers",
+  "source": "the C runtime's memcpy (a memmove), expected bytes by definition",
+  "args": [
+    7340096,
+    7340032,
+    16
+  ],
+  "expected_return": 7340096,
+  "memory_in": [
+    {
+      "addr": "0x00700000",
+      "dwords": [
+        "0x18110a03",
+        "0x342d261f",
+        "0x5049423b",
+        "0x6c655e57",
+        "0x88817a73",
+        "0xa49d968f",
+        "0xc0b9b2ab",
+        "0xdcd5cec7",
+        "0xf8f1eae3",
+        "0x140d06ff",
+        "0x3029221b",
+        "0x4c453e37",
+        "0x68615a53",
+        "0x847d766f",
+        "0xa099928b",
+        "0xbcb5aea7",
+        "0xd8d1cac3",
+        "0xf4ede6df",
+        "0x100902fb",
+        "0x2c251e17",
+        "0x48413a33",
+        "0x645d564f",
+        "0x8079726b",
+        "0x9c958e87"
+      ]
+    }
+  ],
+  "calls": [],
+  "memory_out_expected": [
+    {
+      "addr": "0x00700040",
+      "dwords": [
+        "0x18110a03",
+        "0x342d261f",
+        "0x5049423b",
+        "0x6c655e57"
+      ]
+    }
+  ],
+  "memory_out_exhaustive": true
+}

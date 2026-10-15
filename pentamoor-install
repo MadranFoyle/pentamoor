@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+# pentamoor-install ["path/to/MTG v1.0.iso"] [options]: install the game from your own disc image and build its game modules, ready for ./pentamoor.
+# It is tools/install/install.py with the build switched on: in a release it extracts the game, lifts it to C and compiles the three game modules next to the runtime
+# (a few minutes, once); with no file name it asks for one. `pentamoor-install --help` lists the options (--check, --compiler, --no-download ...).
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "install"))
+import install  # noqa: E402
+
+install.main(default_build=True)

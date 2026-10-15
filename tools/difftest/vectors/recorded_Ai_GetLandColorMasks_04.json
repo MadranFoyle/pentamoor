@@ -1,0 +1,34 @@
+{
+ "function": "Ai_GetLandColorMasks",
+ "program": "DUEL",
+ "address": "0x00431f41",
+ "description": "recorded from DUEL at virtual 50.735s",
+ "source": "tools/difftest/record_vectors.py (emulator recording)",
+ "args": [
+  1356607016,
+  1356607020
+ ],
+ "expected_return": 0,
+ "memory_in": [
+  {
+   "addr": "0x00681eb0",
+   "bytes": "01000000"
+  },
+  {
+   "addr": "0x0068ef54",
+   "bytes": "0000000000000000010000000000000000000000"
+  },
+  {
+   "addr": "0x0068ef74",
+   "bytes": "0000000000000000000000000000000000000000"
+  }
+ ],
+ "calls": [],
+ "memory_out_expected": [
+  {
+   "addr": "0x50dc2e28",
+   "bytes": "0000000004000000"
+  }
+ ],
+ "memory_out_exhaustive": true
+}
