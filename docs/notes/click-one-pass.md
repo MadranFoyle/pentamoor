@@ -41,3 +41,24 @@ main window's procedure: 1 on `WM_LBUTTONDOWN`, 2 on `WM_RBUTTONDOWN`, 0 on eith
 - The "carried over" rule (walk onto a village with the button held): the village opened only after the press ended in the tries (monsters and quest chases kept interrupting the walk).
 - The castle pager (0x40b4e8): not reached.
 - Right-button presses (`DAT_007039c4 = 2`) go through the same code but were not clicked in a screen of this loop.
+
+## A release that lands on the window the press opened: the black screen after the deck builder
+
+Report: leaving the deck builder (Exit, or Exit and "Remove Extra Cards" when the deck holds more than four of a card) from the village's "Edit deck/Sell cards" left the main window black. A click anywhere
+brought the village back (checked below: both variables 0 and the deck at 45 of 47 after the removal). From the map (F1) it did not happen (no press opens the builder there); a plain `click` of the control pipe hit it too.
+
+**Cause.** "Edit deck" acts on the *press*: the game opens the deck builder (its own top-level window, a popup the main window owns) while the button is still down. The release then goes to the window under the pointer,
+which is the builder's, so the main window never gets `WM_LBUTTONUP` and its window procedure leaves `DAT_007039c4` at 1 (and `DAT_0067bda0`, the snapshot of it, at 1). When the builder returns, the village's loop
+runs `App_ProcessPendingMessages` (0x40a3e1), which spins on `DAT_0067bda0 != 0` *before it redraws anything* (the first part of this note: it waits for the button to come up). It waits for a release that has already
+happened; the screen is the black the builder's exit left, until the next click, whose press and release both reach the main window. `game.log` shows nothing, the CPU is the spin, `windows` shows the main window alone.
+The original on a 1997 machine took a good part of a second to put the builder on the screen (it reads the card lists first), so a click was over before the window existed and the release found the main window.
+Here the window is up in a few milliseconds.
+
+**Reproduced headless** (1024x768, a village, `Edit deck` as `down`, 150 ms, `up`; the deck builder's `Exit`; for the extra cards `poke 0x321cded4 6` on the stock list's first entry before Exit, then the dialog's
+"Remove Extra Cards" button): before the change a black screen with `DAT_007039c4 = 1` and `DAT_0067bda0 = 1`; the same through F1 on the map: the map is back at once with the deck at 45 of 47, both variables 0.
+
+**Fix** (`input.c`, `wm_inject_mouse`): the window that took a left press is remembered, with the handle the next window would get at that moment. The release goes to that window when a top-level window
+has come into being since (its handle is not below the remembered one) and is not the press window's own top-level; in every other case it goes where the pointer is, as before (a card dragged inside the builder,
+a button that is pressed and released on itself). `test_wm` +6 checks (`test_release_follows_press`: it fails without the change).
+Checked: the sequence above before and after (the village comes back at once after Exit and after "Remove Extra Cards", both variables 0), F1 as before.
+Not checked: with a controller (A is a press and a release like the mouse's, so the same), a very long press (the same path), the standalone `DECK.EXE` (it opens no window on a press).

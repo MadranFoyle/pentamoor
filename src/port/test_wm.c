@@ -502,6 +502,62 @@ static void test_input(void)
     }
 }
 
+/* The release of a press goes to the window that took the press when a top-level window has come up under the pointer in between (the village's "Edit deck" opens the deck
+ * builder on the press; the release then belongs to the main window, whose button state the game waits on: input.c). */
+static uint32_t press_proc(const uint32_t *a)
+{
+    return a[1] == WM_NCCREATE;                      /* refusing WM_NCCREATE would end the window's creation */
+}
+
+static uint32_t drain_for(uint32_t msgno)          /* the window the last message `msgno` was posted to (0: none) */
+{
+    uint32_t msg = scratch(28), found = 0;
+    int i;
+
+    for (i = 0; i < 4000; i++) {
+        if (!API("PeekMessageA", msg, 0, 0, 0, 1))
+            break;
+        if (RD32(msg + 4) == msgno)
+            found = RD32(msg);
+    }
+    return found;
+}
+
+static void test_release_follows_press(void)
+{
+    uint32_t proc = port_host_function(press_proc), main_w, kid, builder, builder_kid;
+
+    register_class("PressClass", proc, 0, 0);
+    main_w = create("PressClass", WS_VISIBLE | WS_POPUP, 500, 380, 130, 90, 0, 0);
+    kid = create("PressClass", WS_CHILD | WS_VISIBLE, 10, 10, 50, 50, main_w, 1);
+    wm_inject_mouse(IN_UP, 500, 380);                                           /* nothing pressed: a plain release */
+    drain_for(WM_LBUTTONUP);
+    /* a press on the main window's child, then a new top-level window (with a child of its own) over that place: the release goes to the child that took the press */
+    wm_inject_mouse(IN_DOWN, 520, 400);
+    CHECK(drain_for(WM_LBUTTONDOWN) == kid);
+    builder = create("PressClass", WS_VISIBLE | WS_POPUP, 500, 380, 130, 90, main_w, 0);       /* owned by the main window, as the deck builder's is */
+    builder_kid = create("PressClass", WS_CHILD | WS_VISIBLE, 10, 10, 50, 50, builder, 1);
+    wm_inject_mouse(IN_UP, 520, 400);
+    CHECK(drain_for(WM_LBUTTONUP) == kid);
+    /* the window was there before the press: the release goes to the window under the pointer, as ever */
+    wm_inject_mouse(IN_DOWN, 520, 400);
+    CHECK(drain_for(WM_LBUTTONDOWN) == builder_kid);
+    wm_inject_mouse(IN_UP, 520, 400);
+    CHECK(drain_for(WM_LBUTTONUP) == builder_kid);
+    /* a press that moves on within its own top-level window: the release goes where the pointer is (a card dragged onto another window of the builder) */
+    wm_inject_mouse(IN_DOWN, 520, 400);
+    drain_for(WM_LBUTTONDOWN);
+    wm_inject_mouse(IN_UP, 620, 460);
+    CHECK(drain_for(WM_LBUTTONUP) == builder);
+    /* the window that took the press is gone by the release: the window under the pointer gets it */
+    wm_inject_mouse(IN_DOWN, 620, 460);
+    drain_for(WM_LBUTTONDOWN);
+    API("DestroyWindow", builder);
+    wm_inject_mouse(IN_UP, 520, 400);
+    CHECK(drain_for(WM_LBUTTONUP) == kid);
+    API("DestroyWindow", main_w);
+}
+
 /* The front end's guest half: events queued from another thread arrive as input, a pressed button stays down for a while before the next
  * event, and a frame is published. */
 static void test_front(void)
@@ -1975,6 +2031,7 @@ int main(void)
     test_message_range();
     test_window_from_point();
     test_input();
+    test_release_follows_press();
     test_front();
     test_front_press();
     test_window_fit();

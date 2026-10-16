@@ -10,6 +10,7 @@
 #include "wm.h"
 
 uint32_t wm_get_capture(void);
+uint32_t wm_next_hwnd(void);
 uint32_t wm_desktop_hwnd(void);
 uint32_t wm_top_dialog(void);
 int wm_popup_open(void);
@@ -21,7 +22,17 @@ static uint32_t hover_hwnd, press_hwnd;
 uint32_t wm_pressed_button(void) { return press_hwnd; }
 static uint32_t last_down_t, last_down_h;
 static uint32_t clip_press;                  /* the held clip a left press went to (its release goes there too) */
+static uint32_t press_target, press_serial; /* the window a left press went to, and the handle the next window would have got then (windows from there on came after the press) */
 static int last_down_x, last_down_y;
+
+static uint32_t top_of(uint32_t h)
+{
+    const Window *w;
+
+    while ((w = wm_window(h)) && (w->style & WS_CHILD) && w->parent && wm_window(w->parent))      /* an owned popup (the deck builder's window is owned by the main window) is a top-level window */
+        h = w->parent;
+    return h;
+}
 
 static int popup_depth(const Window *w)
 {
@@ -160,8 +171,23 @@ int wm_inject_mouse(int kind, int x, int y)
         }
     }
     h = wm_get_capture();
-    if (!h)
+    if (!h) {
         h = window_at(x, y);
+        if (kind == IN_UP && press_target) {
+            /* The release of a press goes to the window that took the press when a top-level window has come up under the pointer since: the game
+             * reacts to a press at once (the village's "Edit deck" opens the deck builder on it), the original took a good part of a second to put
+             * that window on the screen (it reads its card lists first), so a click of the usual length was over before it was there and the main
+             * window got its own release. Here the window is up in a few milliseconds and the release would land on it, leaving the main window's
+             * button "down" for good: the game then waits for that release (0x40a3e1, which it runs when the builder returns) with the screen
+             * not yet redrawn, black, until the next click anywhere. */
+            const Window *pt = wm_window(press_target);
+
+            if (pt && pt->visible && h && h != press_target && top_of(h) != top_of(press_target) && top_of(h) >= press_serial)
+                h = press_target;
+        }
+    }
+    if (kind == IN_UP)
+        press_target = 0;
     if (!h)
         h = wm_main_hwnd();
     if (!h)
@@ -169,6 +195,10 @@ int wm_inject_mouse(int kind, int x, int y)
     tw = wm_window(h);
     if (!tw)
         return 0;
+    if (kind == IN_DOWN) {
+        press_target = h;
+        press_serial = wm_next_hwnd();
+    }
     if (kind == IN_DOWN) {        /* a second press at the same spot within the double-click time is WM_LBUTTONDBLCLK, for windows whose class asks (CS_DBLCLKS) */
         uint32_t now = port_now_ms();
 
