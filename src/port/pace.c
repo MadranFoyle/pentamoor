@@ -52,6 +52,7 @@ static uint32_t read_and_clear_ticks(const uint32_t *a)
  * Now the first pass of a press that sees the button down is the click: it runs as it is, and front.c ends the press at once (front_ui_saw). A later pass of the same press sees the
  * button up (the argument and the game's variable are cleared), until the press has lasted REPEAT_MS: then it repeats, a pass per frame period, as a held button did. The map's loop
  * (Adventure_EnterTownLocation, 0x4e73a0..0x4e7936: it walks the party while the button is held, and reads the button elsewhere than here) is left to the frame pacing alone. */
+#define PASS_BUDGET 20000                       /* back-edges a pass of the table may need (a few hundred in fact: the records' loops and their drawing); a budget below this is renewed at its start */
 #define REPEAT_MS 400u                          /* a button held this long repeats */
 
 static double ui_last;
@@ -60,26 +61,36 @@ static int suppressed, carried, ui_log;
 
 static uint32_t pace_ui_pass(const uint32_t *a)
 {
-    uint32_t ret = RD32(port_sp), arg = port_sp + 12, id, held;      /* a[2] is at port_sp + 12 */
+    uint32_t ret = RD32(port_sp), arg = port_sp + 12, id, held, btn = a[2];      /* a[2], the button state pushed for the call, is at port_sp + 12 (a is a copy: the state is kept in btn) */
     int down;
     double now = port_now(), wait = ui_last + period - now;
 
     if (ret >= profile->pace.map_loop.lo && ret < profile->pace.map_loop.hi) {      /* the map: nothing but the frame period between passes with the button down */
-        if (a[2] == 0)
+        if (btn == 0)
             return 0;
         if (period > 0 && ui_last > 0 && wait > 0)
             sched_sleep(wait);
         ui_last = port_now();
         return 0;
     }
+    /* A pass is not to be preempted in the middle: the window's thread runs only when this one offers the baton (a loop back-edge whose budget ran out), and a press that is dispatched
+     * after the argument was pushed, while the pass is running, is a press the pass does not see but the loop's own read of the variable after the call does (the Journal's and the
+     * castle pager's loop at 0x40b4e8: it turns it into "next page" and waits for the button to come up, so Done never got the click). The baton is offered here, where the argument
+     * can still be made right, and the pass starts with a full budget. */
+    if (sched_yield_if_low(PASS_BUDGET) && btn == 0 && RD32(profile->buttons.mouse_var) != 0) {
+        btn = RD32(profile->buttons.mouse_var);
+        WR32(arg, btn);
+        if (ui_log)
+            port_log("ui pass from 0x%x: the press came in while the baton was offered: state %u", ret, btn);
+    }
     down = front_ui_pass(&id, &held);
-    if (id != 0 && id != cur_press && a[2] != 0) {     /* the first pass that sees this press down: the click */
+    if (id != 0 && id != cur_press && btn != 0) {     /* the first pass that sees this press down: the click */
         cur_press = id;
-        press_val = a[2];
+        press_val = btn;
         suppressed = 0;
         carried = held >= REPEAT_MS;                    /* a press that began on the map and walked the party onto this screen is not a click on it */
         if (ui_log)
-            port_log("ui pass from 0x%x: %s (press %u, state %u, down for %u ms)", ret, carried ? "carried over" : "click", id, a[2], held);
+            port_log("ui pass from 0x%x: %s (press %u, state %u, down for %u ms)", ret, carried ? "carried over" : "click", id, btn, held);
         if (!carried) {
             front_ui_saw();
             ui_last = now;
@@ -90,7 +101,7 @@ static uint32_t pace_ui_pass(const uint32_t *a)
         return 0;
     /* the press has been acted on */
     if (!down || held < REPEAT_MS || carried) {                    /* it is over (the release is on its way to the game) or too young to repeat: the game sees the button up */
-        if (a[2] != 0 || RD32(profile->buttons.mouse_var) != 0) {
+        if (btn != 0 || RD32(profile->buttons.mouse_var) != 0) {
             WR32(arg, 0);
             WR32(profile->buttons.mouse_var, 0);
             suppressed = down;

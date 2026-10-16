@@ -13,7 +13,7 @@ name) with the D-pad and A, then, on the map, put at a place by `poke` (the loca
   village      the buttons (hover checked at every one), A on "Buy 10 food" (once: 15 gold, +10 food), "Buy Cards": the cards and Done as targets, a card bought with A, A (the Y/N question: A is Y)
   worldmap     the four buttons of the world map, A on Done
   clues        the clue list: the twelve rows, Done and the arrows; A on a row opens its page, Done comes back
-  stats        Wiz Stats: the table's buttons and the owned world magics
+  stats        Wiz Stats: the table's buttons and the owned world magics; the Journal opened and left with its Done eight times (each press must count)
   deck         F1 opens the deck builder: its cards' strips and buttons are targets; A on Exit leaves
   map          on the map `pad nav` says none and the D-pad is the arrow keys (the party walks); B opens the game's menu of the map, whose eight lines are targets
 
@@ -392,10 +392,32 @@ def stats(s):
     top = sorted([t for t in tl if t.y1 < 0.1 * s.h], key=lambda t: t.x0)
     check(len(top) == 3, "Wiz Stats, Journal and Done on the top row")
     if len(top) == 3:
+        journal_rounds(s, 8)
         n = s.dpad_to(lambda tl: sorted([t for t in tl if t.y1 < 0.1 * s.h], key=lambda t: t.x0)[2])
         s.press_a(4)
         mode, tl2 = s.wait_nav(is_screen(9), 10)
         check(len(tl2) == 9, "Done leaves the stats: the village (%d targets)" % len(tl2))
+
+
+def journal_rounds(s, rounds):
+    """The Journal (the loop at 0x40b4e8) and its Done, `rounds` times with the D-pad and A: every Done must come back to Wiz Stats. The press used to be lost about half the time (docs/notes/journal-done.md):
+    the loop reads the button again after its pass and takes a press that came in meanwhile for "next page"."""
+    bad = []
+    for i in range(rounds):
+        n = s.dpad_to(lambda tl: sorted([t for t in tl if t.y1 < 0.1 * s.h], key=lambda t: t.x0)[1])
+        s.press_a(2.5)
+        mode, tl = s.wait_nav(lambda m, t: m == "screen" and len(t) == 2, 8)
+        if not (mode == "screen" and len(tl) == 2):
+            bad.append("round %d: the Journal did not open (%d targets)" % (i, len(tl)))
+            break
+        n = s.dpad_to(lambda tl: [t for t in tl if t.y1 < 0.1 * s.h][0])
+        s.press_a(1.5)
+        mode, tl = s.wait_nav(lambda m, t: m == "screen" and len(t) >= 8, 4)
+        if len(tl) < 8:
+            bad.append("round %d: Done left the Journal on the screen (%d targets)" % (i, len(tl)))
+            break
+    s.shot("journal")
+    check(not bad, "the Journal opens and its Done leaves it, %d times in a row, each with one A%s" % (rounds, (" (" + bad[0] + ")") if bad else ""))
 
 
 def deck(s):

@@ -45,7 +45,7 @@ At 1024x768 (every screen below), 800x600 (title, new game, the map walked, a vi
 | Village | 640, 800, 1024 | the five buttons, the wise man's quest, "Buy Cards" and its "Cards for Sale" page (800), food, "Leave the village" |
 | Edit deck / Sell cards (the deck builder inside the game) | 640, 1024 | drawn, a card dragged from the deck to the stock |
 | World map, Dungeon & Castle Clues (list, detail page), spell book | 640, 800, 1024 | drawn, hit regions right, the list's hover highlight under the mouse |
-| Wiz Stats, Journal | 640, 800, 1024 | drawn at the DLL's own layout for the size; its own Done leaves to the map; the Journal's Done is flaky (see below) |
+| Wiz Stats, Journal | 640, 800, 1024 | drawn at the DLL's own layout for the size; its own Done leaves to the map; the Journal's Done was flaky (fixed, see below) |
 | Castle gate, castle interior (a maze), a free dungeon, "Ready to Quit?" on Escape | 1024 (the first two also 640, 800 in `castle-dungeon-stats.md`) | drawn, keys and clicks move the party, Escape leaves |
 | `DECK.EXE` standalone | 640, 800, 1024 | the deck builder with its larger layout at each size, a card dragged from the stock row to the deck, Stats window |
 | `DUEL.EXE` standalone | 1024 | setup dialog, Gauntlet Options, Duel Options, the Load saved game file dialog, coin toss, ante screen |
@@ -65,8 +65,8 @@ Nothing printed "is not implemented" on stderr at any size, and nothing crashed.
   readable on grey bars. Not looked into.
 - **The Journal's Done button did not always answer a scripted click** (the screen's loop at 0x40b4e8; it showed in the first try and then stayed on the Journal in the next, with
   `click`, with `move` + `click` and with `down`/`up` alike). It is the same at 640x480 with the build from before this change, so it is not the size; `castle-dungeon-stats.md` had
-  it working at 640x480 and 800x600 with a plain `click`. The loop sat in its redraw pass (tens of thousands of `FillRect` calls a second) and the pass that tests the button never took the press.
-  Not found why; Wiz Stats' own Done (leaving to the map) worked each time. Not investigated further.
+  it working at 640x480 and 800x600 with a plain `click`. **Found and fixed** (`journal-done.md`): the Journal's loop reads the button a second time after the table's pass and turns a press that came
+  in meanwhile into "next page"; the scheduler preempted inside the pass about half the time. The pass now starts with a fresh budget.
 - **The coin toss movie** stays 320x240 in the middle of the screen (`video.c`); it was not played again at these sizes.
 
 ## Choosing the default
