@@ -64,7 +64,7 @@ endif
 DL_LIBS = $(if $(filter Linux,$(UNAME)),-ldl,)
 PLAT = plat_posix.c plat_win.c
 SRC = main.c $(PLAT) guest.c pe.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c lzw.c modules.c sound.c video.c movie.c pace.c gamemod.c pad.c nav.c navwm.c screens.c steamdeck.c textin.c textfocus.c yesno.c profile.c $(FRONT)
-HEADERS = plat.h port.h profile.h wm.h gdi.h gdi_int.h sched.h front.h pad.h nav.h navwm.h screens.h steamdeck.h textin.h yesno.h filedlg.h winhelp.h msgbox.h ../native/lift_rt.h ../native/lift_tables.h
+HEADERS = plat.h port.h profile.h wm.h gdi.h gdi_int.h sched.h front.h pad.h nav.h navwm.h screens.h steamdeck.h textin.h yesno.h filedlg.h winhelp.h msgbox.h ../native/lift_rt.h ../native/lift_tables.h padlog.h
 RTFLAGS = -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native
 
 PROGRAMS = magic deck duel
@@ -131,7 +131,7 @@ clean:
 
 # The tests of the window manager and the graphics layer: host functions stand in for the game's window procedures, so no game files are needed.
 LIB_SRC = $(PLAT) nav.c navwm.c screens.c lzw.c guest.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c front.c yesno.c pace.c textfocus.c profile.c steamdeck.c modules.c sound.c video.c movie.c
-TEST_DEPS = test_stubs.c $(LIB_SRC) nav.h navwm.h screens.h port.h wm.h gdi.h gdi_int.h sched.h front.h filedlg.h winhelp.h msgbox.h yesno.h profile.h
+TEST_DEPS = test_stubs.c $(LIB_SRC) nav.h navwm.h screens.h port.h wm.h gdi.h gdi_int.h sched.h front.h filedlg.h winhelp.h msgbox.h yesno.h profile.h padlog.h
 
 $(BUILD)/test_wm$(EXE): test_wm.c $(TEST_DEPS)
 	mkdir -p $(BUILD)
@@ -165,7 +165,7 @@ $(BUILD)/test_nav$(EXE): test_nav.c nav.c nav.h
 	$(CC) $(CFLAGS) $(WINFLAGS) -iquote . -o $@ test_nav.c nav.c $(WINLIBS)
 
 # The Steam Deck decisions and typed text with no key: pure (steamdeck.c, textin.c).
-$(BUILD)/test_steamdeck$(EXE): test_steamdeck.c steamdeck.c steamdeck.h textin.c textin.h
+$(BUILD)/test_steamdeck$(EXE): test_steamdeck.c steamdeck.c steamdeck.h textin.c textin.h padlog.h
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(WINFLAGS) -iquote . -o $@ test_steamdeck.c steamdeck.c textin.c $(WINLIBS)
 
@@ -237,6 +237,8 @@ check-build: runtime module-stub $(BUILD)/stub.exe
 check-run: runtime module-stub
 	@out=$$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy $(BUILD)/pentamoor-run$(EXE) -m $(BUILD)/game_stub.$(SOEXT) no-such-folder/Program/MAGIC.EXE 2>&1); status=$$?; \
 	  echo "$$out" | grep -q "cannot open no-such-folder/Program/MAGIC.EXE" && [ $$status -eq 2 ] || { echo "check-run: unexpected (exit $$status): $$out"; exit 1; }
+	@out=$$(PORT_PAD_LOG=stderr SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy $(BUILD)/pentamoor-run$(EXE) -m $(BUILD)/game_stub.$(SOEXT) no-such-folder/Program/MAGIC.EXE 2>&1); \
+	  echo "$$out" | grep -q "padlog: start: SDL .*video driver dummy" && echo "$$out" | grep -q "padlog: [0-9]* joystick(s) at start" || { echo "check-run: PORT_PAD_LOG wrote no start-up lines: $$out"; exit 1; }
 	@echo "check-run: ok"
 
 

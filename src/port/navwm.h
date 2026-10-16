@@ -16,6 +16,7 @@ enum { NAVWM_NONE, NAVWM_MENU, NAVWM_COMBO, NAVWM_DIALOG, NAVWM_DUEL, NAVWM_DECK
 /* Cheap and always safe to ask: a popup menu is open, a combo box's list is down, a dialog is open, a duel is on the screen (its window, MAGICGAME_MainClass, is shown), the deck builder is (MAGICDECK_MainClass), or a screen the game
  * draws itself is on that has buttons or choices to move between (screens.c: the title menus, the village, the encounter box ...). */
 int navwm_mode(void);
+const char *navwm_mode_name(int mode);            /* "none", "menu", "combo", "dialog", "duel", "deck", "screen" (the log and `nav` print it) */
 /* The targets of the current mode, sorted top to bottom and left to right; returns how many (0 in NAVWM_NONE). *cur: the one under (x, y), or -1. */
 int navwm_collect(NavTarget *out, int max, int x, int y, int *cur);
 /* The D-pad pressed with the pointer at (x, y): nav_pick over navwm_collect. Returns the index of the target chosen (its pointer place in *tx, *ty), NAV_NONE or NAV_SCROLL. */

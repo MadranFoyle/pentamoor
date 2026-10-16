@@ -12,6 +12,7 @@ build/
 *.dll
 
 # Temporary / Scratch Files
+pentamoor-input.log
 *.swp
 *.swo
 *~
