@@ -47,7 +47,7 @@ jobs:
       - name: Nothing tracked looks like decompiler output
         run: python tools/release/check_tree.py
 
-      - name: C unit tests (window manager, graphics, sound, movies)
+      - name: C unit tests (window manager, graphics, sound, movies, build profiles)
         run: make -C src/port test
 
       - name: SDL front end compiles
@@ -61,6 +61,7 @@ jobs:
           make -C src/port check-module
           make -C src/port check-run
           make -C src/port check-program
+          make -C src/port check-build
 
       - name: Installer tests
         run: python -m pytest tools/install
@@ -113,7 +114,7 @@ jobs:
           sdl2-config --cflags
           sdl2-config --libs
 
-      - name: C unit tests (window manager, graphics, sound, movies, paths, game module)
+      - name: C unit tests (window manager, graphics, sound, movies, paths, game module, build profiles)
         run: bash .github/ci-run.sh make -C src/port test
 
       - name: SDL front end compiles
@@ -127,6 +128,7 @@ jobs:
           bash .github/ci-run.sh make -C src/port check-module
           bash .github/ci-run.sh make -C src/port check-run
           bash .github/ci-run.sh make -C src/port check-program
+          bash .github/ci-run.sh make -C src/port check-build
 
       - name: What the runtime and the module need beside them
         run: |

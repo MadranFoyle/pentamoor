@@ -80,7 +80,7 @@ address space, a pointer to one `LiftState` block, and the few runtime functions
 coverage build's three). The module keeps the pointers in its own hidden globals (`lift_guest`, `lift_S`, `lift_host`), and `lift_rt.h` defines the names the generated code
 uses (`G`, `lift_in`, `lift_call`, `lift_ret_edx`, `lift_budget`, `X87`...) as those pointers' fields, so the lifter's output did not change and no file in `sources/generated` is edited. What
 comes back is a `LiftGame` (`src/native/lift_tables.h`): the program's name, its table of lifted functions and their signatures, the import signatures and the lifted DLLs
-(`LiftModule`). Both structs carry `LIFT_ABI` and their size, and a module built for another runtime is refused with a message.
+(`LiftModule`). Both structs carry `LIFT_ABI` and their size, and a module built for another runtime is refused with a message. `LiftGame` and `LiftModule` also carry the **build id** of the file they were lifted from (`LIFT_ABI` 2; see "Build profiles").
 
 `LiftState` also replaces what were thread-locals (`lift_ret_edx`, the x87 registers and control word): a library cannot name a thread-local of the executable without a
 by-name symbol (and on macOS reaching one costs a call), so the block holds the running thread's copy and the scheduler swaps it when the baton passes (`set_cur` in `sched.c`; only
@@ -189,6 +189,44 @@ What is published is the runtime and the tools; the game modules are always buil
   versions). `libsdl2` is a stated requirement; the launcher names it if it is missing. A static libSDL2 was not tried.
 - **What is checked without the game**: `test_release.py` (compiler choice with fake `which` and probe, the flags equal to the Makefile's, progress and incremental behaviour, the error text, Zig's
   checksum and unpacking including a path-escaping wheel, the lifter command lines, the archive layout and `check_archive.py`'s refusals, the launcher with a dropped ISO) and `check_archive.py` on a real archive in CI.
+
+### Build profiles
+
+The port is made from one build of the game, the retail disc's version 1.0, and it is keyed to it in two ways: the lifted C is that build's machine code, and `src/port` hooks, overrides and writes the game at fixed addresses (the frame
+pacing, the D-pad's reading of the screens, the (Y/N) questions, the picture decompressor, the screen size). In another build those addresses name something else; in Spells of the Ancients 2.x the two screen-size globals are inside code
+(`docs/notes/sota-comparison.md`: 0 of 54 addresses survive), and until the profiles the hooks looked at the program's *name* and nothing else, so on another build they would have silently not fired or written into the wrong place.
+Now each build is a **profile**: a row of a table, found by the **build id** of the file.
+
+- **The build id** is the SHA-256 of the file (a program or a library), 64 lower-case hex characters. The whole file, not its code alone: the hooks also read and write the program's data at fixed addresses, any byte that differs can move them, it costs one pass
+  over a megabyte, needs no PE parsing and can be checked with `sha256sum`. They are the same ids the installer has always checked the extracted game against (`tools/lift/builds.py`, which the lifter, the installer and a test share).
+- **The lifter writes the id of the file it lifted** into the module: `LIFT_BUILD_ID` of `handlers_gen.c` (`LiftGame.build_id`) and a field of each library's record (`LiftModule.build_id`); `LIFT_ABI` is 2. For version 1.0 that is the only change in the generated C
+  (one added line in each program's `handlers_gen.c`, and in each library's file one added line and the library's record, which gains a last field; the rest of the three generated folders is byte for byte what the lifter wrote before). A module without one (an older lifter's, or hand-made) has no build.
+- **The runtime hashes the file it loads** (`profile_init` in `main.c`, before any hook is installed; `module_map` in `modules.c` for each library before it is mapped), checks that it is the file the module was lifted from, and looks the id up in the table
+  (`src/port/profile.c`). MAGSND.DLL and MAGVID.DLL are not checked: the port provides them itself (`sound.c`, `video.c`, exports by name) and never loads the files.
+- **The profile** (`profile.h`, `BuildProfile`) holds every address of the game that `src/port` uses, and the hook installers read `profile->field` and do nothing when theirs is 0. Its fields, by who uses them:
+
+  | group | fields | used by |
+  |---|---|---|
+  | identity | `id`, `build` ("v1.0"), `file`, `program` ("MAGIC", "DUEL", "DECK"; "" for a library), `base` (a library: where it is lifted for) | the lookup, the messages |
+  | `lzw` | `header`, `read`, `read2` (entries), `block` (the dictionary and the state behind it), `in_ptr`, `in_end`, `refill`, `callback`; the offsets inside the block are `LZW_*` in `profile.h` | `lzw.c`: MAGIC.EXE, DUEL.EXE, DECKDLL.DLL |
+  | `pace` | `tick_fn` (overridden), `ticks`, `frame_ret`, `map_loop` | `pace.c` |
+  | `buttons` | `pass`, `mouse_var`, `snapshot`, `ctx_cur`, `ctx_count`, `ctx_ptrs`, the six offsets in a record | `pace.c`, `screens.c` |
+  | `textmenu`, `buycards`, `clues` | the loops' code ranges, the text menu's seven globals, the cards' ids, the frame offsets of the loops' locals | `screens.c` |
+  | `keys` | `wait`, `pop`, `wait_loop_ret`, the (Y/N) `sites`, `name_loop` | `yesno.c`, `textfocus.c` |
+  | `display` | `width`, `height` (the globals the screen size is written into) | `main.c` through `profile_write_screen_size` |
+
+  The table has five rows, for version 1.0: MAGIC.EXE (all the groups), DUEL.EXE (`lzw`), DECK.EXE (nothing), DECKDLL.DLL (`lzw`, at its base 0x32000000) and STATWIN.DLL (nothing; it is there so that a library of another build is refused). Their values are exactly the
+  literals the sources had; `test_profile.c` compares every field with the old literal, and `test_lift.py` fails when a game address is written in the code of `src/port` anywhere but `profile.c` (comments may name them).
+- **An unknown build** (an id no row has, a module without an id, or a file that is not the one the module was lifted from) **is refused**: the runtime prints
+  `pentamoor: <file> is build <id>, which this version does not support (supported: v1.0 MAGIC.EXE)` and ends with **exit status 3**, before anything of the game has run. The game cannot run without the picture decompressor override, so an unknown build could not get past its
+  first picture anyway. **`PORT_UNKNOWN_BUILD=1`** starts it anyway for research, with a warning and `PROFILE_NONE` as the profile: no pre-call hook, no override and no write is made (`test_profile.c` counts them: `port_hook_count()` and `profile_guest_writes` stay 0; `make -C src/port check-build` runs
+  it on a real program through the loader, `check-program` runs the stub program with the switch).
+- **The installer** says which build it found: `install.py --check` prints `build:  v1.0 (MAGIC.EXE, DUEL.EXE, ...: the retail disc)` or the files that are of no known build, and the warning after extracting names them and says that the runtime will refuse them.
+- **What the profile does not hold**: `src/native/layout.c` (the hand-written engine's function table) is the lifter's input and is keyed by the program's name (`LAYOUT_MAGIC`, `LAYOUT_DUEL`; `tools/lift/gen_handlers.py` `native_entries`), not by build; the strides of the engine's records
+  (`src/native/engine.h`); the geometry of the 640x480 layouts the D-pad's clue rows and text menu assume (`screens.c`); and the window class names the duel's navigation looks for (`navwm.c`, `MAGICGAME_*`). A second build needs those looked at too. The guest's own address plan
+  (heap, stacks, import stubs: `guest.c`, `sched.c`, `pe.c`) is the runtime's, not the game's.
+
+To add a build: CONTRIBUTING.md, "Adding a build".
 
 ### The window manager (item 3, first part)
 

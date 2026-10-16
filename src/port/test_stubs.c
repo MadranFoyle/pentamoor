@@ -7,7 +7,7 @@ static const LiftedFn no_lifted[] = {{0, 0, 0}};
 static const CalleeRow no_functions[] = {{0, 0, 0}};
 static const LiftImportSig no_sigs[] = {{0, 0, 0, 0}};
 static const LiftModule *const no_modules[] = {0};
-static const LiftGame test_game = {LIFT_ABI, sizeof(LiftGame), "TEST", no_lifted, 0, no_functions, 0, no_sigs, 0, no_modules};
+static const LiftGame test_game = {LIFT_ABI, sizeof(LiftGame), "TEST", no_lifted, 0, no_functions, 0, no_sigs, 0, no_modules, ""};
 const LiftGame *lift_game = &test_game;
 #endif
 

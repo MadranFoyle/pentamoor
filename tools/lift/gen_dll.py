@@ -27,6 +27,7 @@ sys.path.insert(0, HERE)
 from x86lift import Lifter, Unsupported  # noqa: E402
 from import_signatures import signature  # noqa: E402
 from gen_handlers import KNOWN_IMPORTS  # noqa: E402
+from builds import file_build_id  # noqa: E402
 
 PROLOGUES = (0x55, 0x53, 0x56, 0x57, 0x8B, 0x83, 0x81, 0xA1, 0x6A, 0x33, 0x31, 0xC3, 0xB8, 0x64, 0xFF, 0x68, 0xE9)
 
@@ -49,6 +50,7 @@ def main():
         return
 
     pe = pefile.PE(args.dll)
+    build_id = file_build_id(args.dll)
     old_base = pe.OPTIONAL_HEADER.ImageBase
     base = args.base if args.base is not None else old_base
     # the image as the loader will make it at `base`: the sections in place, then every base relocation applied
@@ -222,11 +224,13 @@ def main():
         f.write(f"{st}const LiftImportSig LIFT_IMPORT_SIGS{suffix}[] = {{\n" + "".join(sigs) + "    {0, 0, 0, 0}\n};\n")
         if args.main:
             f.write(f"const int LIFTED_COUNT = {len(ids)};\nconst char LIFT_PROGRAM[] = \"{name}\";\n")
+            f.write(f"const char LIFT_BUILD_ID[] = \"{build_id}\"; /* SHA-256 of the file it was lifted from (tools/lift/builds.py) */\n")
             f.write("const CalleeRow LIFT_CALLEES[] = {{0, 0, 0}};\nconst int LIFT_CALLEE_COUNT = 0;\n")
             f.write(f"const int LIFT_FUNCTION_COUNT = {len(ids)};\nconst int LIFT_IMPORT_SIG_COUNT = {len(sigs)};\n")
         else:
+            f.write(f"static const char LIFT_BUILD_ID_{name}[] = \"{build_id}\"; /* SHA-256 of the file it was lifted from (tools/lift/builds.py) */\n")
             f.write(f"const LiftModule LIFT_MODULE_{name} = {{\"{os.path.basename(args.dll).lower()}\", 0x{base:08x}u, 0x{base + pe.OPTIONAL_HEADER.AddressOfEntryPoint:08x}u, "
-                    f"LIFTED_{name}, {len(ids)}, LIFT_FUNCTIONS_{name}, {len(ids)}, LIFT_IMPORT_SIGS_{name}, {len(sigs)}}};\n")
+                    f"LIFTED_{name}, {len(ids)}, LIFT_FUNCTIONS_{name}, {len(ids)}, LIFT_IMPORT_SIGS_{name}, {len(sigs)}, LIFT_BUILD_ID_{name}}};\n")
     with open(os.path.join(args.out, f"{name.lower()}_spec.json"), "w") as f:
         json.dump(dict(lifted=[hex(a) for a in ids], extents={hex(a): [hex(spec[a]["extent"][0]), hex(spec[a]["extent"][1])] for a in ids},
                        failed={hex(a): r for a, r in sorted(failed.items())}, exports={k: hex(v) for k, v in exports.items()}), f, indent=1)

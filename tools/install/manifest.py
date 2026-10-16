@@ -39,7 +39,7 @@ STEAMDECK_DESKTOP = ["Install Pentamoor.desktop", "Add Pentamoor to Steam.deskto
 
 # Present in every release (the installer's --check looks for these).
 REQUIRED = (["tools/install/install.py", "tools/install/modbuild.py", "tools/install/liftrun.py", "tools/install/zigdl.py", "tools/install/manifest.py",
-             "tools/lift/gen_handlers.py", "tools/lift/gen_dll.py", "tools/lift/x86lift.py", "tools/lift/import_signatures.py", "tools/lift/fnscan.py"]
+             "tools/lift/gen_handlers.py", "tools/lift/gen_dll.py", "tools/lift/x86lift.py", "tools/lift/import_signatures.py", "tools/lift/fnscan.py", "tools/lift/builds.py"]
             + LIFTER_DATA + MODULE_SOURCES)
 
 

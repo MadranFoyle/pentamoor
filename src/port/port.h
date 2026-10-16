@@ -99,12 +99,16 @@ typedef uint32_t (*HostGuestFn)(const uint32_t *args);
 uint32_t port_host_function(HostGuestFn fn);
 void port_override(uint32_t addr, HostGuestFn fn, int nargs, uint32_t cleanup);
 void port_prehook(uint32_t addr, HostGuestFn fn);    /* runs before the lifted function at addr, which then runs as usual */
-void lzw_install(void);
+struct BuildProfile;
+void lzw_install(void);          /* the program's own copy of the picture decompressor, if the active profile has one (lzw.c) */
 void pace_install(void);         /* the overworld's frame rate (pace.c) */
 void textfocus_install(void);    /* when the game waits for typed text (textfocus.c) */
 void screens_install(void);      /* which screen of the game is on, for the D-pad (screens.c) */
 void yesno_install(void);        /* when the game asks a (Y/N) question (yesno.c) */
-void lzw_install_deckdll(uint32_t base);
+void lzw_install_library(const struct BuildProfile *lib, uint32_t base);     /* a library's copy, when it is mapped at `base` (modules.c) */
+void port_hooks_reset(void);     /* forget them all (the tests) */
+int port_hook_count(void);      /* how many pre-call hooks and overrides are installed (the tests; an unknown build must have none) */
+int port_hook_at(int i, uint32_t *addr, int *is_override);      /* the i'th of them, pre-call hooks first, then overrides, in the order they were installed */
 
 /* DLLs (modules.c): the game's libraries, lifted or provided by the host */
 typedef struct HostExport { const char *name; int ordinal; HostGuestFn fn; } HostExport;     /* ends with {0} */

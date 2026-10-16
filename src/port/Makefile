@@ -63,8 +63,8 @@ endif
 # dlopen is in libc on macOS and current glibc; older glibc wants -ldl. Windows: LoadLibrary (plat_win.c), nothing to link.
 DL_LIBS = $(if $(filter Linux,$(UNAME)),-ldl,)
 PLAT = plat_posix.c plat_win.c
-SRC = main.c $(PLAT) guest.c pe.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c lzw.c modules.c sound.c video.c movie.c pace.c gamemod.c pad.c nav.c navwm.c screens.c steamdeck.c textin.c textfocus.c yesno.c $(FRONT)
-HEADERS = plat.h port.h wm.h gdi.h gdi_int.h sched.h front.h pad.h nav.h navwm.h screens.h steamdeck.h textin.h yesno.h filedlg.h winhelp.h msgbox.h ../native/lift_rt.h ../native/lift_tables.h
+SRC = main.c $(PLAT) guest.c pe.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c lzw.c modules.c sound.c video.c movie.c pace.c gamemod.c pad.c nav.c navwm.c screens.c steamdeck.c textin.c textfocus.c yesno.c profile.c $(FRONT)
+HEADERS = plat.h port.h profile.h wm.h gdi.h gdi_int.h sched.h front.h pad.h nav.h navwm.h screens.h steamdeck.h textin.h yesno.h filedlg.h winhelp.h msgbox.h ../native/lift_rt.h ../native/lift_tables.h
 RTFLAGS = -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native
 
 PROGRAMS = magic deck duel
@@ -130,8 +130,8 @@ clean:
 	rm -rf $(BUILD)
 
 # The tests of the window manager and the graphics layer: host functions stand in for the game's window procedures, so no game files are needed.
-LIB_SRC = $(PLAT) nav.c navwm.c screens.c lzw.c guest.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c front.c yesno.c steamdeck.c modules.c sound.c video.c movie.c
-TEST_DEPS = test_stubs.c $(LIB_SRC) nav.h navwm.h screens.h port.h wm.h gdi.h gdi_int.h sched.h front.h filedlg.h winhelp.h msgbox.h yesno.h
+LIB_SRC = $(PLAT) nav.c navwm.c screens.c lzw.c guest.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c front.c yesno.c pace.c textfocus.c profile.c steamdeck.c modules.c sound.c video.c movie.c
+TEST_DEPS = test_stubs.c $(LIB_SRC) nav.h navwm.h screens.h port.h wm.h gdi.h gdi_int.h sched.h front.h filedlg.h winhelp.h msgbox.h yesno.h profile.h
 
 $(BUILD)/test_wm$(EXE): test_wm.c $(TEST_DEPS)
 	mkdir -p $(BUILD)
@@ -169,6 +169,11 @@ $(BUILD)/test_steamdeck$(EXE): test_steamdeck.c steamdeck.c steamdeck.h textin.c
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(WINFLAGS) -iquote . -o $@ test_steamdeck.c steamdeck.c textin.c $(WINLIBS)
 
+# Build profiles (profile.c): the table of known builds and their addresses, the build id, the choice of the profile, the hooks an unknown build gets (none).
+$(BUILD)/test_profile$(EXE): test_profile.c $(TEST_DEPS)
+	mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native -o $@ test_profile.c test_stubs.c $(LIB_SRC) $(PTHREAD_LIBS) -lm $(WINLIBS)
+
 $(BUILD)/test_paths$(EXE): test_paths.c $(TEST_DEPS)
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native -o $@ test_paths.c test_stubs.c $(LIB_SRC) $(PTHREAD_LIBS) -lm $(WINLIBS)
@@ -178,7 +183,7 @@ check-front:
 	@test -n "$(SDL_CFLAGS)" || { echo "check-front: sdl2-config not found"; exit 1; }
 	$(CC) $(CFLAGS) -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native $(SDL_CFLAGS) -fsyntax-only front_sdl.c
 
-.PHONY: clean test check-front check-module check-run check-program
+.PHONY: clean test check-front check-module check-run check-program check-build
 
 # The loading path without any game: a module with no functions (stubgame/) is built and loaded by the runtime, which then stops because the program it was given is not there.
 # A missing module and a module that is not one are refused with their own messages. CI runs it. (The program path is relative: MSYS rewrites an argument that starts with / when it starts a Windows program.)
@@ -204,10 +209,28 @@ $(BUILD)/stub.exe: $(BUILD)/mkpe$(EXE)
 check-program: runtime module-stub $(BUILD)/stub.exe
 	rm -rf $(BUILD)/prog_overlay $(BUILD)/prog_game
 	mkdir -p $(BUILD)/prog_game
-	@PORT_HEADLESS=1 PORT_OVERLAY=$(BUILD)/prog_overlay $(BUILD)/pentamoor-run$(EXE) -m $(BUILD)/game_stub.$(SOEXT) $(BUILD)/stub.exe $(BUILD)/prog_game > $(BUILD)/prog.log 2>&1; status=$$?; \
+	@PORT_UNKNOWN_BUILD=1 PORT_HEADLESS=1 PORT_OVERLAY=$(BUILD)/prog_overlay $(BUILD)/pentamoor-run$(EXE) -m $(BUILD)/game_stub.$(SOEXT) $(BUILD)/stub.exe $(BUILD)/prog_game > $(BUILD)/prog.log 2>&1; status=$$?; \
 	  [ $$status -eq 7 ] || { echo "check-program: exit status $$status, not 7"; cat $(BUILD)/prog.log; exit 1; }
 	@[ "`wc -c < $(BUILD)/prog_overlay/HELLO.TXT`" -eq 24 ] && grep -q "hello from lifted code" $(BUILD)/prog_overlay/HELLO.TXT || { echo "check-program: HELLO.TXT is not what the program wrote"; cat $(BUILD)/prog.log; exit 1; }
+	@grep -q "PORT_UNKNOWN_BUILD=1 is set" $(BUILD)/prog.log || { echo "check-program: no warning about the unknown build"; cat $(BUILD)/prog.log; exit 1; }
 	@echo "check-program: ok"
+
+# An unsupported build is refused: the same program and module as check-program, but a build no profile has (stub.exe is not a build of the game), without PORT_UNKNOWN_BUILD:
+# exit status 3, the message names the file, the build id and what is supported, and the program has not run (no HELLO.TXT). A program that is not the one the module was lifted from
+# is refused too (the module's build id is stub.exe's). CI runs it.
+check-build: runtime module-stub $(BUILD)/stub.exe
+	rm -rf $(BUILD)/build_overlay $(BUILD)/prog_game
+	mkdir -p $(BUILD)/prog_game
+	cp $(BUILD)/stub.exe $(BUILD)/other.exe
+	printf 'x' >> $(BUILD)/other.exe
+	@PORT_HEADLESS=1 PORT_OVERLAY=$(BUILD)/build_overlay $(BUILD)/pentamoor-run$(EXE) -m $(BUILD)/game_stub.$(SOEXT) $(BUILD)/stub.exe $(BUILD)/prog_game > $(BUILD)/build.log 2>&1; status=$$?; \
+	  [ $$status -eq 3 ] || { echo "check-build: exit status $$status, not 3"; cat $(BUILD)/build.log; exit 1; }
+	@grep -q "pentamoor: stub.exe is build a619942cb4f2a8284c233ba23f401a2fb0302dcfc84e469462a6be84ba871382, which this version does not support (supported: " $(BUILD)/build.log || { echo "check-build: no message about the unsupported build"; cat $(BUILD)/build.log; exit 1; }
+	@[ ! -e $(BUILD)/build_overlay/HELLO.TXT ] || { echo "check-build: the unsupported program ran"; exit 1; }
+	@PORT_HEADLESS=1 PORT_OVERLAY=$(BUILD)/build_overlay $(BUILD)/pentamoor-run$(EXE) -m $(BUILD)/game_stub.$(SOEXT) $(BUILD)/other.exe $(BUILD)/prog_game > $(BUILD)/build.log 2>&1; status=$$?; \
+	  [ $$status -eq 3 ] || { echo "check-build: another file: exit status $$status, not 3"; cat $(BUILD)/build.log; exit 1; }
+	@grep -q "but the game module was made from build a619942c" $(BUILD)/build.log || { echo "check-build: no message about the file that is not the module's"; cat $(BUILD)/build.log; exit 1; }
+	@echo "check-build: ok"
 
 # The window half of the front end started for real, on SDL's dummy drivers (no display, no sound device): SDL is initialised, the window, the renderer and the audio device are
 # made, the game runs on its thread (the window loop on this one), and the program, which is not there, ends it with an error. CI runs it.
@@ -217,7 +240,8 @@ check-run: runtime module-stub
 	@echo "check-run: ok"
 
 
-test: $(BUILD)/test_steamdeck$(EXE) $(BUILD)/test_wm$(EXE) $(BUILD)/test_gdi$(EXE) $(BUILD)/test_sound$(EXE) $(BUILD)/test_movie$(EXE) $(BUILD)/test_paths$(EXE) $(BUILD)/test_pad$(EXE) $(BUILD)/test_nav$(EXE) $(BUILD)/test_module$(EXE) module-stub
+test: $(BUILD)/test_profile$(EXE) $(BUILD)/test_steamdeck$(EXE) $(BUILD)/test_wm$(EXE) $(BUILD)/test_gdi$(EXE) $(BUILD)/test_sound$(EXE) $(BUILD)/test_movie$(EXE) $(BUILD)/test_paths$(EXE) $(BUILD)/test_pad$(EXE) $(BUILD)/test_nav$(EXE) $(BUILD)/test_module$(EXE) module-stub
+	$(BUILD)/test_profile$(EXE)
 	$(BUILD)/test_wm$(EXE)
 	$(BUILD)/test_pad$(EXE)
 	$(BUILD)/test_nav$(EXE)

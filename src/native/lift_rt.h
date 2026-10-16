@@ -48,7 +48,7 @@ typedef struct LiftState {
 
 /* The one table the runtime hands the game module (pentamoor_game_init): everything lifted code needs from it. Only ever append to it,
  * and raise LIFT_ABI when the meaning of a field changes. */
-#define LIFT_ABI 1
+#define LIFT_ABI 2                                            /* 2: LiftGame and LiftModule carry the build id of the file they were lifted from (lift_tables.h) */
 typedef struct LiftHost {
     uint32_t abi, size;                                       /* LIFT_ABI, sizeof(LiftHost) */
     uint8_t *guest;                                           /* the guest's 4 GB address space: a guest address is an offset */

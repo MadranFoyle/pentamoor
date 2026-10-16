@@ -24,6 +24,7 @@ sys.path.insert(0, HERE)
 from x86lift import Lifter, Unsupported  # noqa: E402
 from import_signatures import signature  # noqa: E402
 from fnscan import scan_pe  # noqa: E402
+from builds import file_build_id  # noqa: E402
 
 # Imports a handler may call, as (argument count, bytes the callee pops). Anything else is refused.
 KNOWN_IMPORTS = {"Sleep": (1, 4), "_assert": (3, 0), "_itoa": (3, 0), "rand": (0, 0), "memcpy": (3, 0), "memset": (3, 0),      # the last two: the C runtime DLL's (cdecl), which MAGIC.EXE imports where DUEL.EXE carries its own copies
@@ -82,6 +83,7 @@ def main():
     cfg = PROGRAMS[args.program]
 
     pe = pefile.PE(args.exe)
+    build_id = file_build_id(args.exe)
     base = pe.OPTIONAL_HEADER.ImageBase
     lifter = Lifter()
     import_dll = {}
@@ -196,7 +198,8 @@ def main():
         for e in lifted:
             f.write(f'    {{"{e["name"]}", {e["addr"]}u, lifted_{int(e["addr"], 16):08x}}},\n')
         f.write("    {0, 0, 0}\n};\n")
-        f.write(f"const int LIFTED_COUNT = {len(lifted)};\nconst char LIFT_PROGRAM[] = \"{args.program.upper()}\"; /* whose machine code this is */\n\nconst CalleeRow LIFT_CALLEES[] = {{\n")
+        f.write(f"const int LIFTED_COUNT = {len(lifted)};\nconst char LIFT_PROGRAM[] = \"{args.program.upper()}\"; /* whose machine code this is */\n"
+                f"const char LIFT_BUILD_ID[] = \"{build_id}\"; /* SHA-256 of the file it was lifted from (tools/lift/builds.py) */\n\nconst CalleeRow LIFT_CALLEES[] = {{\n")
         for t in sorted(callee_rows):
             r = callee_rows[t]
             f.write(f"    {{0x{t:08x}u, {r['nargs']}, {r['cleanup']}u}},\n")

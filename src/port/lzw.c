@@ -12,18 +12,18 @@
 #include <string.h>
 
 #include "port.h"
+#include "profile.h"
 
-/* The same code is in MAGIC.EXE (0x70d000) and DECKDLL.DLL (its MPS_CODE section), with its state at other addresses: the block holding the dictionary and the
- * flags is the same length and moved as a whole (`delta`); the input pointer and its end, the refill callback and the function it calls are placed apart. */
-typedef struct Lz {
-    uint32_t delta, in_ptr, in_end, refill, callback;
-} Lz;
-static __thread const Lz *lz;
-#define B(x) (lz->delta + (x))
+/* The same code is in MAGIC.EXE (0x70d000), DUEL.EXE (0x6c5000) and DECKDLL.DLL (its MPS_CODE section), with its state at other addresses: the block holding the dictionary and the
+ * flags is the same length and moved as a whole; the input pointer and its end, the refill callback and the function it calls are placed apart. Where each copy is, is in the
+ * build's profile (profile.c: `lzw`, ProfLzw); what is inside the block is the same in every copy (profile.h, LZW_*: offsets from the dictionary). The addresses in the
+ * comments below are MAGIC.EXE 1.0's. */
+static __thread const ProfLzw *lz;
+#define Z(off) (lz->block + (off))
 
 typedef struct State {
     uint32_t eax, ebx, ecx, edx, esi, edi;
-    uint32_t sp;            /* the private data stack: grows down from 0x536c8bu */
+    uint32_t sp;            /* the private data stack: grows down from the block's LZW_STACK_BASE (0x536c8b in MAGIC.EXE) */
 } State;
 
 /* esi = the input pointer, refilled from the callback when it has reached the end; ebx, ecx and edx survive the call, as the original saves them. */
@@ -50,14 +50,14 @@ static void reset_codes(State *s)
 {
     uint32_t i;
 
-    WR8(B(0x536876), 9);
-    WR32(B(0x536878), 0x1ff);
+    WR8(Z(LZW_WIDTH), 9);
+    WR32(Z(LZW_MASK), 0x1ff);
     s->edx = 0x100;
-    WR32(B(0x53687c), s->edx);
+    WR32(Z(LZW_NEXT), s->edx);
     for (i = 0; i < 0x800; i++)
-        WR16(B(0x532860u) + 3 * i, 0xFFFF);
+        WR16(Z(LZW_DICT) + 3 * i, 0xFFFF);
     for (i = 0; i < 0x100; i++)
-        WR8(B(0x532860u) + 3 * i + 2, (uint8_t)i);
+        WR8(Z(LZW_DICT) + 3 * i + 2, (uint8_t)i);
     s->eax = 0xFFFFFF00u;
     s->ebx = 0x300;
     s->ecx = 0;
@@ -68,19 +68,19 @@ static void init_picture(State *s)
 {
     uint32_t w;
 
-    s->eax = RD32(B(0x536860)) | RD32(B(0x536864));
+    s->eax = RD32(Z(LZW_SIZE_LO)) | RD32(Z(LZW_SIZE_HI));
     if (!s->eax)
         return;
-    WR8(B(0x536874), 0);
-    WR8(B(0x536875), 0);
-    WR32(B(0x53686c), B(0x536c8bu));
+    WR8(Z(LZW_REPEAT), 0);
+    WR8(Z(LZW_BYTE), 0);
+    WR32(Z(LZW_STACK_PTR), Z(LZW_STACK_BASE));
     w = fetch_word(s);
     WR32(lz->in_ptr, s->esi);               /* (the original keeps its pointer in esi here and stores it at the caller's end) */
     if ((w & 0xFF) > 0xb)
         w = (w & ~0xFFu) | 0xb;
-    WR8(B(0x536877), (uint8_t)w);
-    WR32(B(0x536880), w & 0xFFFF);
-    WR8(B(0x536884), 8);
+    WR8(Z(LZW_WIDTH_MAX), (uint8_t)w);
+    WR32(Z(LZW_BITS), w & 0xFFFF);
+    WR8(Z(LZW_BITFILL), 8);
     reset_codes(s);
 }
 
@@ -91,33 +91,33 @@ static uint32_t next_byte(State *s)
     uint32_t ebx, ecx, eax;
     int8_t cl, ch;
 
-    if (s->sp != B(0x536c8bu)) {
+    if (s->sp != Z(LZW_STACK_BASE)) {
         s->eax = RD32(s->sp);
         s->sp += 4;
         return s->eax & 0xFF;
     }
-    ebx = RD32(B(0x536880));
-    ch = (int8_t)RD8(B(0x536884));
+    ebx = RD32(Z(LZW_BITS));
+    ch = (int8_t)RD8(Z(LZW_BITFILL));
     cl = (int8_t)(0x10 - ch);
     ebx >>= (uint8_t)cl & 31;
     cl = ch;
-    while (cl < (int8_t)RD8(B(0x536876))) {                 /* the bit buffer is refilled a word at a time */
+    while (cl < (int8_t)RD8(Z(LZW_WIDTH))) {                 /* the bit buffer is refilled a word at a time */
         input_ready(s);
         eax = RD16(s->esi);
         s->esi += 2;
-        WR32(B(0x536880), eax);
+        WR32(Z(LZW_BITS), eax);
         eax <<= (uint8_t)cl & 31;
         ebx |= eax;
         cl = (int8_t)(cl + 0x10);
     }
-    cl = (int8_t)(cl - (int8_t)RD8(B(0x536876)));
-    WR8(B(0x536884), (uint8_t)cl);
-    eax = ebx & RD32(B(0x536878));
+    cl = (int8_t)(cl - (int8_t)RD8(Z(LZW_WIDTH)));
+    WR8(Z(LZW_BITFILL), (uint8_t)cl);
+    eax = ebx & RD32(Z(LZW_MASK));
     ecx = eax;
     if ((int32_t)eax >= (int32_t)s->edx) {              /* the code is the one being defined: its string is the previous one and that one's first character */
         ecx = s->edx;
-        eax = RD32(B(0x536886));
-        ebx = (ebx & ~0xFFu) | RD8(B(0x53688a));
+        eax = RD32(Z(LZW_PREV));
+        ebx = (ebx & ~0xFFu) | RD8(Z(LZW_FIRST));
         s->sp -= 4;
         WR32(s->sp, ebx);
     }
@@ -125,33 +125,33 @@ static uint32_t next_byte(State *s)
         uint32_t prefix;
 
         ebx = eax * 3;
-        prefix = RD16(B(0x532860u) + ebx);
+        prefix = RD16(Z(LZW_DICT) + ebx);
         eax = (eax & ~0xFFFFu) | prefix;
         if (prefix == 0xFFFF)
             break;
-        ebx = (ebx & ~0xFFu) | RD8(B(0x532860u) + ebx + 2);
+        ebx = (ebx & ~0xFFu) | RD8(Z(LZW_DICT) + ebx + 2);
         s->sp -= 4;
         WR32(s->sp, ebx);
     }
     /* the root: ebx is still its entry's offset */
-    eax = (eax & ~0xFFu) | RD8(B(0x532860u) + ebx + 2);
-    WR8(B(0x53688a), (uint8_t)eax);
+    eax = (eax & ~0xFFu) | RD8(Z(LZW_DICT) + ebx + 2);
+    WR8(Z(LZW_FIRST), (uint8_t)eax);
     s->sp -= 4;
     WR32(s->sp, eax);
     ebx = s->edx * 3;                                    /* define the new code: the previous string plus this first character */
-    WR8(B(0x532860u) + ebx + 2, (uint8_t)eax);
-    eax = RD32(B(0x536886));
-    WR16(B(0x532860u) + ebx, (uint16_t)eax);
+    WR8(Z(LZW_DICT) + ebx + 2, (uint8_t)eax);
+    eax = RD32(Z(LZW_PREV));
+    WR16(Z(LZW_DICT) + ebx, (uint16_t)eax);
     s->edx++;
-    if ((int32_t)s->edx > (int32_t)RD32(B(0x536878))) {     /* the code width grows */
-        WR8(B(0x536876), (uint8_t)(RD8(B(0x536876)) + 1));
-        WR32(B(0x536878), (RD32(B(0x536878)) << 1) | 1);
+    if ((int32_t)s->edx > (int32_t)RD32(Z(LZW_MASK))) {     /* the code width grows */
+        WR8(Z(LZW_WIDTH), (uint8_t)(RD8(Z(LZW_WIDTH)) + 1));
+        WR32(Z(LZW_MASK), (RD32(Z(LZW_MASK)) << 1) | 1);
     }
-    if ((int8_t)RD8(B(0x536876)) > (int8_t)RD8(B(0x536877))) { /* past the maximum width: start the dictionary again (which leaves ecx 0) */
+    if ((int8_t)RD8(Z(LZW_WIDTH)) > (int8_t)RD8(Z(LZW_WIDTH_MAX))) { /* past the maximum width: start the dictionary again (which leaves ecx 0) */
         reset_codes(s);
         ecx = s->ecx;
     }
-    WR32(B(0x536886), ecx);
+    WR32(Z(LZW_PREV), ecx);
     s->ecx = ecx;
     s->eax = RD32(s->sp);
     s->sp += 4;
@@ -163,35 +163,35 @@ static uint32_t decode(State *s, uint32_t count)
 {
     uint32_t eax = 0;
 
-    if (RD8(B(0x536885)))
+    if (RD8(Z(LZW_NIBBLE)))
         count = (count + 1) >> 1;
-    WR32(B(0x536870), count);
-    s->edx = RD32(B(0x53687c));
-    s->sp = RD32(B(0x53686c));
+    WR32(Z(LZW_COUNT), count);
+    s->edx = RD32(Z(LZW_NEXT));
+    s->sp = RD32(Z(LZW_STACK_PTR));
     for (;;) {
         uint32_t al;
         uint32_t left;
 
-        if (RD8(B(0x536874)) == 0) {
+        if (RD8(Z(LZW_REPEAT)) == 0) {
             al = next_byte(s);
             if (al != 0x90) {
-                WR8(B(0x536875), (uint8_t)al);
+                WR8(Z(LZW_BYTE), (uint8_t)al);
             } else {
                 al = next_byte(s);
                 if (al == 0) {
                     al = 0x90;
-                    WR8(B(0x536875), 0x90);
+                    WR8(Z(LZW_BYTE), 0x90);
                 } else {
-                    WR8(B(0x536874), (uint8_t)(al - 1));
-                    al = RD8(B(0x536875));
-                    WR8(B(0x536874), (uint8_t)(RD8(B(0x536874)) - 1));
+                    WR8(Z(LZW_REPEAT), (uint8_t)(al - 1));
+                    al = RD8(Z(LZW_BYTE));
+                    WR8(Z(LZW_REPEAT), (uint8_t)(RD8(Z(LZW_REPEAT)) - 1));
                 }
             }
         } else {
-            al = RD8(B(0x536875));
-            WR8(B(0x536874), (uint8_t)(RD8(B(0x536874)) - 1));
+            al = RD8(Z(LZW_BYTE));
+            WR8(Z(LZW_REPEAT), (uint8_t)(RD8(Z(LZW_REPEAT)) - 1));
         }
-        if (RD8(B(0x536885))) {                              /* nibble mode: the low nibble, then the high one */
+        if (RD8(Z(LZW_NIBBLE))) {                              /* nibble mode: the low nibble, then the high one */
             uint32_t ah = (al >> 4) & 0xF;
 
             al &= 0xF;
@@ -204,13 +204,13 @@ static uint32_t decode(State *s, uint32_t count)
             s->edi++;
             eax = (eax & ~0xFFu) | al;
         }
-        left = RD32(B(0x536870)) - 1;
-        WR32(B(0x536870), left);
+        left = RD32(Z(LZW_COUNT)) - 1;
+        WR32(Z(LZW_COUNT), left);
         if (!left)
             break;
     }
-    WR32(B(0x53687c), s->edx);
-    WR32(B(0x53686c), s->sp);
+    WR32(Z(LZW_NEXT), s->edx);
+    WR32(Z(LZW_STACK_PTR), s->sp);
     return eax;
 }
 
@@ -229,7 +229,7 @@ static uint32_t read_impl(const uint32_t *a)
 }
 
 /* 0x70d000(arg): read the picture file's records from the input stream: 'M0'/'M1' records (a marker word, a length word, then that many bytes) are
- * copied into the table at B(0x532860) (or to arg, or after the first word), until the 'X' record, which gives the picture's parameters and starts the
+ * copied into the table at Z(LZW_DICT) (or to arg, or after the first word), until the 'X' record, which gives the picture's parameters and starts the
  * decoder. */
 static uint32_t header_impl(const uint32_t *a)
 {
@@ -243,21 +243,21 @@ static uint32_t header_impl(const uint32_t *a)
         w = fetch_word(&s);
         WR32(lz->in_ptr, s.esi);
         if ((w & 0xFF) == 0x58) {
-            WR8(B(0x536885), (uint8_t)((w >> 8) & 1));
+            WR8(Z(LZW_NIBBLE), (uint8_t)((w >> 8) & 1));
             s.esi = RD32(lz->in_ptr);
             w = fetch_word(&s);
             WR32(lz->in_ptr, s.esi);
-            WR32(B(0x536868), w);
+            WR32(Z(LZW_PARAM), w);
             w = fetch_word(&s);
             WR32(lz->in_ptr, s.esi);
-            WR32(B(0x536860), w);
+            WR32(Z(LZW_SIZE_LO), w);
             w = fetch_word(&s);
             WR32(lz->in_ptr, s.esi);
-            WR32(B(0x536864), w);
+            WR32(Z(LZW_SIZE_HI), w);
             init_picture(&s);
             return s.eax;
         }
-        edi = B(0x532860u);
+        edi = Z(LZW_DICT);
         if (w == 0x304d || w == 0x314d) {
             if ((int32_t)a[0] < 1)
                 edi += 2;
@@ -280,8 +280,8 @@ static uint32_t header_impl(const uint32_t *a)
             WR16(edi, (uint16_t)w);
             edi += 2;
         }
-        if (start == B(0x532860u)) {
-            uint32_t arg = B(0x532860u);
+        if (start == Z(LZW_DICT)) {
+            uint32_t arg = Z(LZW_DICT);
 
             guest_call(lz->callback, 1, &arg);
         }
@@ -289,38 +289,37 @@ static uint32_t header_impl(const uint32_t *a)
 }
 
 
-/* One set of entry points per copy of the code (an override carries no context, so each copy gets functions that select its own). */
-static const Lz LZ_MAGIC = {0, 0x706500, 0x5327b0, 0x67f43c, 0x50e8b0};
-static const Lz LZ_DUEL = {0xFFFC88F4u, 0x69453c, 0x4f7918, 0x694740, 0x43d858};          /* DUEL.EXE: its MPS_CODE is at 0x6c5000, the state block moved by -0x3770c */
-static const Lz LZ_DECKDLL = {0x31B13FB0, 0x3213eefc, 0x3204baec, 0x3213f170, 0x3200141f};     /* DECKDLL.DLL lifted for the base 0x32000000 */
+/* One set of entry points per copy of the code (an override carries no context, so each copy gets functions that select its own). A process has at most the program's own
+ * copy and one library's (DECKDLL.DLL); the profile of each says where its entries and its state are (profile.c). */
+static const ProfLzw *prog_copy, *lib_copy;
 
-#define ENTRY(name, ctx, impl) static uint32_t name(const uint32_t *a) { const Lz *saved = lz; uint32_t r; lz = &ctx; r = impl(a); lz = saved; return r; }
-ENTRY(magic_header, LZ_MAGIC, header_impl)
-ENTRY(magic_read, LZ_MAGIC, read_impl)
-ENTRY(duel_header, LZ_DUEL, header_impl)
-ENTRY(duel_read, LZ_DUEL, read_impl)
-ENTRY(deckdll_header, LZ_DECKDLL, header_impl)
-ENTRY(deckdll_read, LZ_DECKDLL, read_impl)
+#define ENTRY(name, ctx, impl) static uint32_t name(const uint32_t *a) { const ProfLzw *saved = lz; uint32_t r; lz = ctx; r = impl(a); lz = saved; return r; }
+ENTRY(prog_header, prog_copy, header_impl)
+ENTRY(prog_read, prog_copy, read_impl)
+ENTRY(lib_header, lib_copy, header_impl)
+ENTRY(lib_read, lib_copy, read_impl)
 
-void lzw_install(void)
+static void install_copy(const ProfLzw *c, HostGuestFn header, HostGuestFn read)
 {
-    if (!strcmp(lift_game->program, "DUEL")) {
-        port_override(0x6c5000, duel_header, 3, 0);
-        port_override(0x6c5484, duel_read, 2, 0);
-        port_override(0x6c51fc, duel_read, 2, 0);
-        return;
-    }
-    port_override(0x70d000, magic_header, 3, 0);
-    port_override(0x70d484, magic_read, 2, 0);
-    port_override(0x70d1fc, magic_read, 2, 0);
+    port_override(c->header, header, 3, 0);
+    port_override(c->read, read, 2, 0);
+    port_override(c->read2, read, 2, 0);
 }
 
-/* The copy in a library, when the library is mapped (modules.c): its MPS_CODE section is at base + 0x218000 - 0x10000000 + the lifted base. */
-void lzw_install_deckdll(uint32_t base)
+/* The program's own copy (MAGIC.EXE's MPS_CODE at 0x70d000, DUEL.EXE's at 0x6c5000), if the build's profile has one. */
+void lzw_install(void)
 {
-    uint32_t sec = base + 0x218000u;
+    if (!profile->lzw.header)
+        return;
+    prog_copy = &profile->lzw;
+    install_copy(prog_copy, prog_header, prog_read);
+}
 
-    port_override(sec, deckdll_header, 3, 0);
-    port_override(sec + 0x484, deckdll_read, 2, 0);
-    port_override(sec + 0x1fc, deckdll_read, 2, 0);
+/* The copy in a library, when the library is mapped (modules.c): DECKDLL.DLL's MPS_CODE section, at the base the library was lifted for. */
+void lzw_install_library(const BuildProfile *lib, uint32_t base)
+{
+    if (!lib->lzw.header || lib->base != base)
+        return;
+    lib_copy = &lib->lzw;
+    install_copy(lib_copy, lib_header, lib_read);
 }

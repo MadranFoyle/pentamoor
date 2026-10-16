@@ -6,6 +6,7 @@
 #include <strings.h>
 
 #include "port.h"
+#include "profile.h"
 
 #define P(a) (G + (uint32_t)(a))
 
@@ -95,6 +96,7 @@ static uint32_t module_map(const char *name)
     uint32_t h = module_find(name);
     int i;
     Image img;
+    const BuildProfile *lib_profile;
 
     if (h)
         return h;
@@ -110,15 +112,19 @@ static uint32_t module_map(const char *name)
         snprintf(guest, sizeof(guest), "%s", name);
     else
         snprintf(guest, sizeof(guest), "%s\\%s", "C:\\Magic\\Program", name);
-    if (!paths_host(guest, 0, host, sizeof(host)) || pe_load_module(host, lift_game->modules[i]->base, &img) != 0) {
+    if (!paths_host(guest, 0, host, sizeof(host))) {
+        port_log("LoadLibraryA(%s) -> the file is not there", name);
+        return 0;
+    }
+    lib_profile = profile_check_library(lift_game->modules[i], host);     /* the lifted code is for one build of this file: refuse another before mapping it (profile.h) */
+    if (pe_load_module(host, lift_game->modules[i]->base, &img) != 0) {
         port_log("LoadLibraryA(%s) -> the file is not there", name);
         return 0;
     }
     port_log("LoadLibraryA(%s) -> mapped at 0x%08x", name, img.base);
     loaded_base[nloaded_mods] = img.base;
     loaded_mod[nloaded_mods++] = lift_game->modules[i];
-    if (!strcmp(key, "deckdll.dll"))
-        lzw_install_deckdll(img.base);     /* its picture decompressor is the game's hand-written one too */
+    lzw_install_library(lib_profile, img.base);     /* DECKDLL.DLL's picture decompressor is the game's hand-written one too (if the library's profile has one) */
     return img.base;
 }
 

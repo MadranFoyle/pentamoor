@@ -130,6 +130,20 @@ void port_override(uint32_t addr, HostGuestFn fn, int nargs, uint32_t cleanup)
     overrides[noverrides++] = (Override){addr, fn, nargs, cleanup};
 }
 
+void port_hooks_reset(void) { nprehooks = noverrides = 0; }       /* the tests, between one profile and the next */
+
+/* What the hook installers (pace.c, screens.c, yesno.c, textfocus.c, lzw.c) put in: the tests check that a build's profile gives exactly its addresses, and an unknown build none. */
+int port_hook_count(void) { return nprehooks + noverrides; }
+
+int port_hook_at(int i, uint32_t *addr, int *is_override)
+{
+    if (i < 0 || i >= nprehooks + noverrides)
+        return 0;
+    *is_override = i >= nprehooks;
+    *addr = i < nprehooks ? prehooks[i].addr : overrides[i - nprehooks].addr;
+    return 1;
+}
+
 void lift_bad_jump(uint32_t from)
 {
     port_fatal("a jump table was indexed out of range at 0x%08x", from);

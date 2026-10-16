@@ -627,3 +627,142 @@ def test_a_scan_does_not_take_bytes_that_are_not_code_for_a_function():
     a = 0x8000
     _, found = scan({a: PROLOG + RET, 0x8040: bytes.fromhex("ffffffffffffffffffffffffffffffff")}, [a])
     assert sorted(found) == [a]
+
+
+# ---- the build id (builds.py, gen_handlers.py, gen_dll.py; src/port/profile.c) ----------------------------------------------
+def tiny_pe(path, sections, entry_rva, image_base=0x400000, extra=b""):
+    """Write the smallest PE32 the lifter will read: `sections` is [(name, rva, bytes, flags)]; no imports. `extra` is appended to the file (another file, the same code)."""
+    import struct  # noqa: PLC0415
+    hdr_size, raw = 0x200, 0x200
+    secs = []
+    off = hdr_size
+    for name, rva, data, flags in sections:
+        size = (len(data) + raw - 1) // raw * raw
+        secs.append((name, rva, data, flags, off, size))
+        off += size
+    image_size = max(rva + max(len(d), 0x1000) for _, rva, d, _, _, _ in secs)
+    image_size = (image_size + 0xfff) & ~0xfff
+    pe = bytearray(hdr_size)
+    pe[0:2] = b"MZ"
+    struct.pack_into("<I", pe, 0x3c, 0x40)
+    pe[0x40:0x44] = b"PE\0\0"
+    struct.pack_into("<HHIIIHH", pe, 0x44, 0x14c, len(secs), 0, 0, 0, 0xE0, 0x0102)
+    opt = 0x58
+    struct.pack_into("<HBBIII", pe, opt, 0x10b, 6, 0, 0x200, 0x200, 0)
+    struct.pack_into("<IIII", pe, opt + 16, entry_rva, 0x1000, 0x2000, image_base)
+    struct.pack_into("<II", pe, opt + 32, 0x1000, 0x200)
+    struct.pack_into("<HHHHHH", pe, opt + 40, 4, 0, 0, 0, 4, 0)
+    struct.pack_into("<IIII", pe, opt + 56, image_size, hdr_size, 0, 2)
+    struct.pack_into("<IIII", pe, opt + 72, 0x100000, 0x1000, 0x100000, 0x1000)
+    struct.pack_into("<II", pe, opt + 92, 0, 16)
+    at = opt + 0xE0
+    for name, rva, data, flags, foff, size in secs:
+        pe[at:at + 8] = name.ljust(8, b"\0")
+        struct.pack_into("<IIIIIIHHI", pe, at + 8, max(len(data), 1), rva, size, foff, 0, 0, 0, 0, flags)
+        at += 40
+    for name, rva, data, flags, foff, size in secs:
+        pe += data.ljust(size, b"\0")
+    with open(path, "wb") as f:
+        f.write(bytes(pe) + extra)
+
+
+def run_lifter(tmp_path, script, *args):
+    r = subprocess.run([sys.executable, os.path.join(HERE, script), *args], capture_output=True, text=True, cwd=str(tmp_path))
+    assert r.returncode == 0, r.stdout + r.stderr
+    return r
+
+
+def test_the_build_id_is_the_sha256_of_the_file(tmp_path):
+    import hashlib  # noqa: PLC0415
+    import builds  # noqa: PLC0415
+    p = tmp_path / "x.bin"
+    p.write_bytes(b"abc")
+    assert builds.file_build_id(str(p)) == builds.build_id(b"abc") == hashlib.sha256(b"abc").hexdigest() == \
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    p.write_bytes(b"x" * 3_000_000)            # read in pieces
+    assert builds.file_build_id(str(p)) == hashlib.sha256(b"x" * 3_000_000).hexdigest()
+
+
+def test_the_known_builds_are_the_retail_disc():
+    import builds  # noqa: PLC0415
+    assert builds.fingerprints("v1.0") == {
+        "MAGIC.EXE": "4dc592695b6ee390485f283feb2a248cd3f3f739749c2800ab3b1100ea03845c",
+        "DUEL.EXE": "7c4e618b4a8ab4330c71d2dd30637c522573c133d32c667c97924dc8edc2efed",
+        "DECK.EXE": "193f8abea01d4f2c03b769224b06eece6e263a18f13a5b4e2509ed25a01e3d90",
+        "DECKDLL.DLL": "a21f714bea465077c4fabe4a407ff7503b0ce5f9bb1a277826e74276e35c2c18",
+        "STATWIN.DLL": "95bd14de41e8fff84217cdf627a48392da5e7be9c3d064a68e04ed1455334bd7",
+        "MAGSND.DLL": "6f6d51cd2b8a5800b0b3c994e3ee8217f7b40ba2621f9738783387f3250a9882",
+        "MAGVID.DLL": "d2db1435ae96e9e41d77ded7a7b222969d44d5af642fa9968fe51768c1ce83a3",
+    }
+    assert builds.name_of("magic.exe", builds.fingerprints()["MAGIC.EXE"]) == "v1.0 MAGIC.EXE"        # (the case of the name does not matter)
+    assert builds.name_of("MAGIC.EXE", builds.fingerprints()["DUEL.EXE"]) is None                     # a known id under another file's name is not that file
+    assert builds.name_of("MAGIC.EXE", "0" * 64) is None
+    assert "unknown build" in builds.describe("MAGIC.EXE", "0" * 64) and "v1.0 MAGIC.EXE" in builds.describe("MAGIC.EXE", builds.fingerprints()["MAGIC.EXE"])
+
+
+def test_the_profiles_of_the_runtime_are_the_known_builds():
+    """src/port/profile.c has a row for each file of a build that the port runs lifted code from, with the very ids of builds.py, and nothing else."""
+    import re  # noqa: PLC0415
+    import builds  # noqa: PLC0415
+    text = open(os.path.join(ROOT, "src", "port", "profile.c")).read()
+    ids = dict(re.findall(r'#define (ID_\w+) "([0-9a-f]{64})"', text))
+    rows = re.findall(r'\.id = (ID_\w+), \.build = "([^"]+)", \.file = "([^"]+)"', text)
+    assert len(rows) == len(set(r[0] for r in rows)) == len(ids)
+    from_c = {(build, file, ids[ident]) for ident, build, file in rows}
+    from_py = {(b, f, sha) for b, f, sha, role in builds.KNOWN if role == "lifted"}
+    assert from_c == from_py
+    assert len({sha for _, _, sha in from_c}) == len(from_c)
+
+
+def test_gen_dll_writes_the_build_id_of_a_program_and_of_a_library(tmp_path):
+    import re  # noqa: PLC0415
+    import builds  # noqa: PLC0415
+    pe = tmp_path / "PROG.EXE"
+    tiny_pe(str(pe), [(b".text", 0x1000, b"\xc3", 0x60000020)], 0x1000)
+    want = builds.file_build_id(str(pe))
+    run_lifter(tmp_path, "gen_dll.py", "--main", "--dll", str(pe), "--out", str(tmp_path / "main"))
+    text = (tmp_path / "main" / "handlers_gen.c").read_text()
+    assert f'const char LIFT_BUILD_ID[] = "{want}";' in text and 'const char LIFT_PROGRAM[] = "PROG";' in text
+    lib = tmp_path / "LIB.DLL"
+    tiny_pe(str(lib), [(b".text", 0x1000, b"\xc3", 0x60000020)], 0x1000)
+    run_lifter(tmp_path, "gen_dll.py", "--dll", str(lib), "--base", "0x30000000", "--out", str(tmp_path / "lib"))
+    text = (tmp_path / "lib" / "lib_gen.c").read_text()
+    lib_id = builds.file_build_id(str(lib))
+    assert f'static const char LIFT_BUILD_ID_LIB[] = "{lib_id}";' in text
+    assert re.search(r'const LiftModule LIFT_MODULE_LIB = \{"lib.dll", 0x30000000u, [^;]*, LIFT_BUILD_ID_LIB\};', text)
+    # the same code in another file is another build
+    other = tmp_path / "OTHER.EXE"
+    tiny_pe(str(other), [(b".text", 0x1000, b"\xc3", 0x60000020)], 0x1000, extra=b"\0")
+    assert builds.file_build_id(str(other)) != want
+
+
+def test_gen_handlers_writes_the_build_id_of_the_program(tmp_path):
+    import builds  # noqa: PLC0415
+    pe = tmp_path / "MAGIC.EXE"
+    # a code section, and a data section that holds the (empty) master card table at 0x51aeb8
+    tiny_pe(str(pe), [(b".text", 0x1000, b"\x55\x8b\xec\x5d\xc3", 0x60000020), (b".data", 0x11a000, b"\0" * 0x2000, 0xC0000040)], 0x1000)
+    run_lifter(tmp_path, "gen_handlers.py", "--program", "magic", "--exe", str(pe), "--out", str(tmp_path / "out"), "--all", "--no-handlers")
+    text = (tmp_path / "out" / "handlers_gen.c").read_text()
+    assert f'const char LIFT_BUILD_ID[] = "{builds.file_build_id(str(pe))}";' in text and 'const char LIFT_PROGRAM[] = "MAGIC";' in text
+
+
+def test_no_address_of_the_game_is_written_in_the_runtime_outside_the_profile_table():
+    """Every address of a build of the game that src/port uses is in src/port/profile.c (CONTRIBUTING.md, "Adding a build"). Comments may name them; code may not, but for the few
+    literals that are not the game's: raster operation codes (gdi_blit.c), the image base 0x400000 as the lowest address a guest pointer can have (screens.c) or a trace prints as text (call.c)."""
+    import glob  # noqa: PLC0415
+    import re  # noqa: PLC0415
+    allowed = {"gdi_blit.c": {"0x660046", "0x440328"}, "call.c": {"0x400000"}, "screens.c": {"0x400000"}}
+    bad = []
+    for path in sorted(glob.glob(os.path.join(ROOT, "src", "port", "*.[ch]"))):
+        name = os.path.basename(path)
+        if name.startswith("test_") or name == "profile.c":
+            continue
+        code = open(path, errors="replace").read()
+        code = re.sub(r"/\*.*?\*/", " ", code, flags=re.S)
+        code = re.sub(r"//[^\n]*", " ", code)
+        code = re.sub(r'"(\\.|[^"\\])*"', '""', code)
+        for m in re.finditer(r"\b0x[4-7][0-9a-fA-F]{5}[uUlL]*\b", code):
+            lit = "0x" + m.group(0)[2:8].lower()
+            if lit not in allowed.get(name, ()):
+                bad.append(f"{name}: {m.group(0)}")
+    assert bad == [], "an address of the game outside src/port/profile.c: " + ", ".join(bad)

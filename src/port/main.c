@@ -7,6 +7,7 @@
 #include "front.h"
 #include "plat.h"
 #include "port.h"
+#include "profile.h"
 #include "sched.h"
 
 void port_index_functions(void);
@@ -50,6 +51,7 @@ static int game_main(void *p)
 
     guest_init();
     gamemod_load(module_path);          /* the lifted code's tables; needs the guest's memory (the module is told where it is) */
+    profile_init(argv[1]);              /* which build the program is: the addresses every hook below uses (profile.h); an unsupported build ends here, with status 3 */
     sched_init();
     kernel32_init();
     who_init();
@@ -91,10 +93,8 @@ static int game_main(void *p)
     if (pe_load(argv[1], &img) != 0)
         port_fatal("cannot open %s", argv[1]);
     main_image = img;
-    if (!strcmp(lift_game->program, "MAGIC") && (screen_w != 640 || screen_h != 480)) {
-        WR32(0x522458, (uint32_t)screen_w);      /* g_DisplayScreenWidth and Height: the game's own layouts for 800x600 and 1024x768 follow from them */
-        WR32(0x52245c, (uint32_t)screen_h);
-    }
+    if (screen_w != 640 || screen_h != 480)
+        profile_write_screen_size(screen_w, screen_h);      /* the game's own layouts for 800x600 and 1024x768 follow from its two screen-size globals (0x522458, 0x52245c in MAGIC.EXE 1.0) */
     port_log("loaded %s at 0x%08x, entry 0x%08x", argv[1], img.base, img.entry);
     (void)STACK_SIZE;
     port_run(&img);

@@ -22,9 +22,9 @@ macOS links libm by default and hid it. gcc on Linux also prints a few `-Wformat
 
 The `windows` job runs on `windows-latest` in an MSYS2 MINGW64 shell (`msys2/setup-msys2`, pinned to a release tag; `make`, `mingw-w64-x86_64-gcc`, `mingw-w64-x86_64-SDL2` from pacman).
 It runs `make -C src/port test` (the five unit tests of the others plus `test_module`, which loads the stub game module as a DLL and runs lifted-style functions in it),
-`check-front`, `all` (the runtime as `pentamoor-run.exe` with no generated sources), `check-module`, `check-run`, `check-program` (a PE made on the spot by `stubgame/mkpe.c` runs through the loader, the imports and the file layer, with the stub module's lifted-style entry point), and lists the DLLs the `.exe` and the module import
+`check-front`, `all` (the runtime as `pentamoor-run.exe` with no generated sources), `check-module`, `check-run`, `check-program` (a PE made on the spot by `stubgame/mkpe.c` runs through the loader, the imports and the file layer, with the stub module's lifted-style entry point; it is in no build profile, so it runs with `PORT_UNKNOWN_BUILD=1`), `check-build` (and without the switch the runtime refuses it, exit status 3, and refuses a file that is not the one the module was made from), and lists the DLLs the `.exe` and the module import
 (`objdump -p`; with the winpthreads linked statically it is Windows' own and `SDL2.dll`). The installer's Python tests run there too, with a native Windows Python (`actions/setup-python`, `python -m pytest tools/install`: the compiler choice, the module build commands, Zig's download, the archive layout; the shell launcher's test skips). The lifter's tests are not run there.
-`check-run` and `check-program` also run in the Linux and macOS jobs.
+`check-run`, `check-program` and `check-build` also run in the Linux and macOS jobs.
 
 The logs of a run are shown only to someone signed in to GitHub. The Windows steps go through `.github/ci-run.sh`, which copies the error lines of a failing step (and, with
 `CI_NOTICE=1`, the tail of every step) into annotations, which the API gives to anyone: `gh api repos/OWNER/REPO/check-runs/JOB_ID/annotations`. Handy when iterating from a machine

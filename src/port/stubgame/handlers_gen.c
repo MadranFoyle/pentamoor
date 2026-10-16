@@ -156,6 +156,7 @@ L_00401000:; LIFT_COV(0x401000u);
 const LiftedFn LIFTED[] = {{"stub_main", STUB_MAIN, lifted_stub_main}, {"stub_sum", STUB_SUM, lifted_stub_sum}, {"stub_call", STUB_CALL, lifted_stub_call}, {"stub_x87", STUB_X87, lifted_stub_x87}, {0, 0, 0}};
 const int LIFTED_COUNT = 4;
 const char LIFT_PROGRAM[] = "STUB";
+const char LIFT_BUILD_ID[] = "a619942cb4f2a8284c233ba23f401a2fb0302dcfc84e469462a6be84ba871382";    /* SHA-256 of stub.exe as stubgame/mkpe.c writes it (change mkpe.c: change this) */
 const CalleeRow LIFT_CALLEES[] = {{0, 0, 0}};
 const int LIFT_CALLEE_COUNT = 0;
 const CalleeRow LIFT_FUNCTIONS[] = {{STUB_MAIN, 0, 0}, {STUB_SUM, 2, 0}, {STUB_CALL, 3, 0}, {STUB_X87, 2, 0}, {0, 0, 0}};

@@ -11,10 +11,12 @@
 
 #include "front.h"
 #include "port.h"
+#include "profile.h"
 #include "sched.h"
 
-#define FRAME_RET 0x4e7873u                     /* where the overworld loop's call of 0x5016f9 returns to */
-#define TICKS 0x530da0u                         /* the 33 ms timer's tick counter, which 0x5016f9 returns and clears */
+/* The addresses are those of the build's profile (profile.c; the numbers in the comments are MAGIC.EXE 1.0's): pace.tick_fn 0x5016f9, pace.frame_ret 0x4e7873 (where the overworld
+ * loop's call of it returns to), pace.ticks 0x530da0 (the 33 ms timer's tick counter, which it returns and clears), buttons.pass 0x41f3ea, buttons.mouse_var 0x7039c4,
+ * pace.map_loop 0x4e73a0..0x4e7936. */
 
 static double period = 0.060, last;
 static int log_slow;                            /* PORT_FRAME_LOG=1: report every frame that took more than the period and 15 ms */
@@ -25,7 +27,7 @@ static uint32_t read_and_clear_ticks(const uint32_t *a)
     uint32_t t;
 
     (void)a;
-    if (RD32(port_sp) == FRAME_RET && period > 0) {
+    if (RD32(port_sp) == profile->pace.frame_ret && period > 0) {
         double now = port_now(), wait = last + period - now;
 
         if (log_slow && last > 0 && now - last > period + 0.015)
@@ -34,8 +36,8 @@ static uint32_t read_and_clear_ticks(const uint32_t *a)
             sched_sleep(wait);
         last = port_now();
     }
-    t = RD32(TICKS);
-    WR32(TICKS, 0);
+    t = RD32(profile->pace.ticks);
+    WR32(profile->pace.ticks, 0);
     return t;
 }
 
@@ -50,10 +52,6 @@ static uint32_t read_and_clear_ticks(const uint32_t *a)
  * Now the first pass of a press that sees the button down is the click: it runs as it is, and front.c ends the press at once (front_ui_saw). A later pass of the same press sees the
  * button up (the argument and the game's variable are cleared), until the press has lasted REPEAT_MS: then it repeats, a pass per frame period, as a held button did. The map's loop
  * (Adventure_EnterTownLocation, 0x4e73a0..0x4e7936: it walks the party while the button is held, and reads the button elsewhere than here) is left to the frame pacing alone. */
-#define UI_PASS 0x41f3eau
-#define BUTTON_VAR 0x7039c4u                    /* the game's mouse button state: 1 left, 2 right, 0 up (the window procedure sets it) */
-#define MAP_LOOP_LO 0x4e73a0u
-#define MAP_LOOP_HI 0x4e7936u
 #define REPEAT_MS 400u                          /* a button held this long repeats */
 
 static double ui_last;
@@ -66,7 +64,7 @@ static uint32_t pace_ui_pass(const uint32_t *a)
     int down;
     double now = port_now(), wait = ui_last + period - now;
 
-    if (ret >= MAP_LOOP_LO && ret < MAP_LOOP_HI) {      /* the map: nothing but the frame period between passes with the button down */
+    if (ret >= profile->pace.map_loop.lo && ret < profile->pace.map_loop.hi) {      /* the map: nothing but the frame period between passes with the button down */
         if (a[2] == 0)
             return 0;
         if (period > 0 && ui_last > 0 && wait > 0)
@@ -92,9 +90,9 @@ static uint32_t pace_ui_pass(const uint32_t *a)
         return 0;
     /* the press has been acted on */
     if (!down || held < REPEAT_MS || carried) {                    /* it is over (the release is on its way to the game) or too young to repeat: the game sees the button up */
-        if (a[2] != 0 || RD32(BUTTON_VAR) != 0) {
+        if (a[2] != 0 || RD32(profile->buttons.mouse_var) != 0) {
             WR32(arg, 0);
-            WR32(BUTTON_VAR, 0);
+            WR32(profile->buttons.mouse_var, 0);
             suppressed = down;
             if (ui_log)
                 port_log("ui pass from 0x%x: press %u %s, held %u ms, shown as up", ret, id, down ? "down" : "over", held);
@@ -102,15 +100,15 @@ static uint32_t pace_ui_pass(const uint32_t *a)
         return 0;
     }
     if (suppressed) {                                   /* held long enough: the game sees the button down again */
-        WR32(BUTTON_VAR, press_val);
+        WR32(profile->buttons.mouse_var, press_val);
         suppressed = 0;
     }
     if (period > 0 && wait > 0)
         sched_sleep(wait);
     ui_last = port_now();
-    WR32(arg, RD32(BUTTON_VAR));                        /* the state as it is after the wait */
+    WR32(arg, RD32(profile->buttons.mouse_var));                        /* the state as it is after the wait */
     if (ui_log)
-        port_log("ui pass from 0x%x: press %u held, repeat (state %u)", ret, id, RD32(BUTTON_VAR));
+        port_log("ui pass from 0x%x: press %u held, repeat (state %u)", ret, id, RD32(profile->buttons.mouse_var));
     return 0;
 }
 
@@ -118,12 +116,12 @@ void pace_install(void)
 {
     const char *ms = getenv("PORT_FRAME_MS");
 
-    if (strcmp(lift_game->program, "MAGIC"))
+    if (!profile->pace.tick_fn)             /* a file with no pacing in its profile (another program, or an unknown build): nothing is hooked */
         return;
     if (ms)
         period = atof(ms) / 1000.0;
     log_slow = getenv("PORT_FRAME_LOG") != NULL;
     ui_log = getenv("PORT_UI_LOG") != NULL;
-    port_override(0x5016f9, read_and_clear_ticks, 0, 0);
-    port_prehook(UI_PASS, pace_ui_pass);
+    port_override(profile->pace.tick_fn, read_and_clear_ticks, 0, 0);
+    port_prehook(profile->buttons.pass, pace_ui_pass);
 }
