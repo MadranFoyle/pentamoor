@@ -11,6 +11,7 @@ scaling to any window or display with the aspect ratio kept and the mouse mapped
 
 Functions are replaced one at a time, each checked against its lifted twin ([PHASE_C.md](PHASE_C.md)). Layout and drawing come first. **Design the replacements so that bigger and wider screens are easy later.** Concretely:
 
+- Put the game's addresses in the build profile ([PHASE_C.md](PHASE_C.md), "Build profiles"), not in the code of a hook, so that a replaced function or another build is a row of a table; the runtime refuses a build it has no profile for.
 - Take the screen size as a parameter. Never write 640, 800 or 1024 (or 480, 600, 768) into new code; ask the display layer for the size.
 - Compute positions from the size (anchors, margins, rows that fit the space) instead of looking them up in a table made for three sizes. Keep the original's three layouts as the reference to test against: at those sizes the new code must give the same pixels.
 - Keep what a screen shows (the state: cards, zones, the map's tiles) apart from where it is drawn, so a larger view can show more of it. The overworld's view of the map is the natural first place to show more at a bigger size.

@@ -16,6 +16,7 @@
 #include "navwm.h"
 #include "screens.h"
 #include "plat.h"
+#include "profile.h"
 #include "sched.h"
 #include "test_util.h"
 #include "msgbox.h"
@@ -2014,6 +2015,7 @@ static void test_screens(void)
 
 int main(void)
 {
+    profile = profile_find("4dc592695b6ee390485f283feb2a248cd3f3f739749c2800ab3b1100ea03845c");       /* MAGIC.EXE 1.0: the screens and the (Y/N) sites below are its addresses */
     guest_init();
     sched_init();
     kernel32_init();

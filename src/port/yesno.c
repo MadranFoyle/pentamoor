@@ -9,27 +9,23 @@
  * known to be asking by the same two hooks that textfocus.c uses for the name box: the wait-for-key function is entered from a place (its return address) that is one of the three,
  * and while it is polling, each poll notes the time. A click is turned into the key press in front.c (deliver), and nothing else about the click reaches the game.
  *
- * The addresses are those of the game's code (MAGIC.EXE, version 1.0); each site is the instruction after the call of 0x48ac2f. */
+ * The addresses are those of the build's profile (profile.c; the numbers here are MAGIC.EXE 1.0's: keys.wait 0x48ac2f, keys.pop 0x4080b2, keys.wait_loop_ret 0x48ac3d); each site
+ * is the instruction after the call of keys.wait. */
 #include <string.h>
 
 #include "front.h"
 #include "port.h"
+#include "profile.h"
 #include "sched.h"
 #include "wm.h"
 #include "yesno.h"
 
-#define WAIT_KEY 0x48ac2fu
-#define POLL_KEY 0x4080b2u
-#define WAIT_LOOP_RET 0x48ac3du                  /* where the poll inside the wait loop returns to */
-
-static const uint32_t sites[] = {0x509e4au, 0x4f156eu, 0x45119du};
-
 int yesno_site(uint32_t ret)
 {
-    size_t i;
+    int i;
 
-    for (i = 0; i < sizeof(sites) / sizeof(sites[0]); i++)
-        if (sites[i] == ret)
+    for (i = 0; i < profile->keys.nsites; i++)
+        if (profile->keys.sites[i] == ret)
             return 1;
     return 0;
 }
@@ -67,7 +63,7 @@ void yesno_note_poll(void)
 static uint32_t wait_poll(const uint32_t *a)
 {
     (void)a;
-    if (in_question && RD32(port_sp) == WAIT_LOOP_RET)
+    if (in_question && RD32(port_sp) == profile->keys.wait_loop_ret)
         yesno_note_poll();
     return 0;
 }
@@ -95,8 +91,8 @@ int yesno_mouse(int kind)
 
 void yesno_install(void)
 {
-    if (strcmp(lift_game->program, "MAGIC"))
+    if (!profile->keys.wait || !profile->keys.pop)
         return;
-    port_prehook(WAIT_KEY, wait_enter);
-    port_prehook(POLL_KEY, wait_poll);
+    port_prehook(profile->keys.wait, wait_enter);
+    port_prehook(profile->keys.pop, wait_poll);
 }

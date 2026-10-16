@@ -98,19 +98,37 @@ python3 tools/release/check_archive.py dist/pentamoor-0.0.1-test-linux-x86_64.ta
 Pins to refresh now and then (each is a checksum or a commit): the Zig wheels in `tools/install/zigdl.py` (PyPI file and checksum per system), the embeddable Python and its checksum in
 `tools/release/package.py`, SDL2's version and checksum in `tools/release/build_macos.sh`, and the actions in the workflows (full commit SHAs with the tag in a comment; take releases at least two weeks old).
 
+## Adding a build
+
+The port is made from one build of the game (the retail disc's version 1.0). Another build (a patched program, Spells of the Ancients) is a different set of files with different addresses, and the runtime **refuses to start** a program whose build it has no
+profile for (exit status 3, `pentamoor: ... is build <id>, which this version does not support`; `PORT_UNKNOWN_BUILD=1` starts it with every address-keyed hook off, for research). What a profile is and how the check works: [docs/PHASE_C.md](docs/PHASE_C.md), "Build profiles". To teach the
+port a build:
+
+1. **Get its build id**: `python3 -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" PROGRAM.EXE`, or `sha256sum`; the lifter writes the same into the module it makes (`LIFT_BUILD_ID` in `handlers_gen.c`).
+2. **List the files** in `tools/lift/builds.py` (`KNOWN`: build name, file, id, and `"lifted"` for the files the port runs lifted code from, `"host"` for libraries it provides itself). A test keeps this list equal to the table in the runtime.
+3. **Add one row per lifted file** to `PROFILES` in `src/port/profile.c`: a struct initialiser with the id (`#define ID_...` above it), `.build`, `.file`, `.program` (the program's `LIFT_PROGRAM`, `""` for a library, with `.base`), and the groups that file has, with its own addresses:
+   `.lzw` (where its picture decompressor and the state behind it are; the lifter leaves it out, so without it the game stops at its first picture), `.pace`, `.buttons`, `.textmenu`, `.buycards`, `.clues`, `.keys`, `.display`. A field left out is 0 and its hook is not installed;
+   there is no code to change for an address. Find the addresses in the new build the way the old ones were found (`docs/notes/sota-comparison.md` shows how they were matched from 1.0, `tools/research/sotahooks.py`).
+4. **Lift and build it** as usual (`tools/install/install.py <disc> --build` lifts from the files in `sources/installed`); the module carries the new id.
+5. **Add the test**: in `src/port/test_profile.c`, assert the new row's values against the addresses you found (the 1.0 test compares each field with the literal the sources had, which is what keeps a typo out), and that the row is selected by its id.
+6. Check what the profile does not cover (docs/PHASE_C.md lists it): the layout table `src/native/layout.c` and the record sizes `src/native/engine.h` are the engine's, per program and not per build, the geometry that `screens.c` assumes is the 640x480 layout, and `navwm.c` looks for the window classes by name.
+
+`python3 -m pytest tools/lift/test_lift.py` fails when a game address is written in the code of `src/port` outside `profile.c`: new hooks take their addresses from the profile too.
+
 ## Tests
 
 None of these need the game files.
 
 ```bash
-make -C src/port test                          # window manager, graphics, sound, movies, paths, controller logic, D-pad navigation, Steam Deck decisions and typed text, lifter runtime
-python3 -m pytest tools/lift/test_lift.py      # the lifter, and the scan that finds the game's functions
+make -C src/port test                          # window manager, graphics, sound, movies, paths, controller logic, D-pad navigation, Steam Deck decisions and typed text, build profiles, lifter runtime
+python3 -m pytest tools/lift/test_lift.py      # the lifter, and the scan that finds the game's functions; the build id; no game address in src/port outside profile.c
 python3 -m pytest tools/install                # the installer: disc reader, archive, decompressor; compiler choice, module build commands, Zig download, lifter command lines, release layout, launcher
 python3 -m pytest tools/steamdeck              # the Steam Deck tools (Linux and macOS): the Steam shortcut writer on a hand-built shortcuts.vdf, the window installer's dialogs, the controller layout
 make -C src/port check-front                # the SDL front end builds and its checks pass
 make -C src/port check-module               # the runtime loads a game module (a nearly empty one made here), no game files needed
 make -C src/port check-run                  # the SDL window starts on SDL's dummy drivers, with that module
-make -C src/port check-program              # a tiny PE made by stubgame/mkpe.c runs through the loader and the file layer, with that module
+make -C src/port check-program              # a tiny PE made by stubgame/mkpe.c runs through the loader and the file layer, with that module (PORT_UNKNOWN_BUILD=1: it is in no profile)
+make -C src/port check-build                # ... and without the switch it is refused (exit status 3, the message), and so is a file that is not the one the module was made from
 python3 tools/install/install.py --self-test   # the module build in Python (compiler choice, flags, link) on the same stub module, loaded by the runtime
 python3 tools/release/check_tree.py            # nothing tracked looks like decompiler output
 ```
@@ -136,6 +154,7 @@ All are environment variables; the full list with explanations is in [docs/PHASE
 | `PORT_TEXTINPUT=auto` | SDL's text input (what brings up an on-screen keyboard) only while a text field has the focus; the default on a Deck, off elsewhere. `PORT_TEXT_LOG=1` prints each change |
 | `PORT_PAD_LOG=1` | a time-stamped log of what the input does (controllers SDL found, each button, what the pad asked the game to do, the D-pad's mode, the window each click reached) on stderr and in the file `pentamoor-input.log` in the folder the program was started in; `=PATH` names the file, `=stderr` keeps it off disk. For bug reports from a machine with no terminal (a Steam Deck: `docs/notes/steamdeck.md`, "When the pad does nothing in a duel") |
 | `PORT_PAD_BACKGROUND=1` | the pad keeps working while another window has the focus (the default on a Deck) |
+| `PORT_UNKNOWN_BUILD=1` | start a program whose build has no profile (`src/port/profile.c`) instead of refusing it (exit status 3), with every address-keyed hook, override and write off: for research, the game will probably stop at its first picture |
 | `PORT_FRAME_MS` | the overworld's frame time in ms (default 60) |
 | `PORT_OVERLAY` | where saves and other writes go |
 | `PORT_MSGBOX=ask` / `auto` | the game's `MessageBoxA`: `ask` shows the box and waits for an answer, `auto` answers at once with the default button (`IDOK`, `IDYES`, ...) and logs it. Unset: `auto` when `PORT_CONTROL`, `PORT_SCRIPT`, `PORT_HEADLESS` or `SDL_VIDEODRIVER=dummy` is in use (nobody can answer), else `ask` |
@@ -152,6 +171,7 @@ overlay, and stop them by process id, not by name.
 | `src/port/` | the native program: PE loader, thread scheduler, the Win32 layer (`user32.c`, `gdi*.c`, `kernel32*.c`, `crt.c`...), the dialog and control renderer (`ui.c`), SDL front end (`front_sdl.c`; its pure decisions: `pad.c`, `steamdeck.c`, `textin.c`), sound mixer, movies, tests |
 | `tools/lift/` | the lifter: x86 machine code to C (`x86lift.py`, `gen_handlers.py`, `gen_dll.py`), `fnscan.py` (finds the functions of a program in its own code), the import signatures, tests |
 | `src/native/` | the runtime header the lifted code uses (`lift_rt.h`, `lift_tables.h`), and hand-written C versions of verified engine functions with the addresses they stand in for (`layout.c`) |
+| `src/port/profile.c` | the build profiles: the build id (SHA-256 of a file), the table of known builds with every address of the game the port hard-codes, and the refusal of an unknown build ([docs/PHASE_C.md](docs/PHASE_C.md), "Build profiles") |
 | `tools/install/` | the installer: reads the disc image, unpacks the game's InstallShield archive (`blast.py`, `datax.py`, `iso9660.py`), copies the music and movies, then `--build` lifts and compiles (`liftrun.py`: the lifter run from Python; `modbuild.py`, `zigdl.py`: the compiler choice and the module build without make; `manifest.py`: what a release carries) |
 | `tools/steamdeck/` | the Steam Deck: `install-gui.sh` (the installer with a file picker and a progress bar), `add-to-steam.py` (writes the Steam shortcut, a menu entry, the layout), `progress.py`, the Steam Input layout, the `.desktop` icons, tests |
 | `tools/release/` | the release archives: `package.py` lays one out from a built runtime, `check_archive.py` unpacks and checks it, `build_macos.sh` makes the macOS runtime with SDL2 linked in, `win_libs.sh` lists the DLLs for Windows |

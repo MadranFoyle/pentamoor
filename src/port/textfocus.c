@@ -9,24 +9,23 @@
 
 #include "front.h"
 #include "port.h"
+#include "profile.h"
 
-#define GET_KEY 0x4080b2u
-#define NAME_LOOP_LO 0x47be64u
-#define NAME_LOOP_HI 0x47c080u
+/* Where: the build's profile (profile.c; MAGIC.EXE 1.0's values): keys.pop 0x4080b2, keys.name_loop 0x47be64..0x47c080. */
 
 static uint32_t name_poll(const uint32_t *a)
 {
     uint32_t ret = RD32(port_sp);                 /* where the call returns to: the hook runs with the return address on top of the stack, as in pace.c */
 
     (void)a;
-    if (ret >= NAME_LOOP_LO && ret < NAME_LOOP_HI)
+    if (ret >= profile->keys.name_loop.lo && ret < profile->keys.name_loop.hi)
         front_note_name_entry();
     return 0;
 }
 
 void textfocus_install(void)
 {
-    if (strcmp(lift_game->program, "MAGIC"))
+    if (!profile->keys.pop || !profile->keys.name_loop.hi)
         return;
-    port_prehook(GET_KEY, name_poll);
+    port_prehook(profile->keys.pop, name_poll);
 }

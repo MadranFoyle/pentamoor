@@ -13,7 +13,8 @@ reimplementation of the Windows calls it makes, over SDL2. How that works is in
 ## Install and run
 
 You supply the game: a disc image of the retail *Magic: The Gathering* CD (version 1.0), as an `.iso`
-(a raw `.mdf/.mds` pair needs `mdf2iso "MTG v1.0.mdf" "MTG v1.0.iso"` first).
+(a raw `.mdf/.mds` pair needs `mdf2iso "MTG v1.0.mdf" "MTG v1.0.iso"` first). Only version 1.0 is supported: a program of another build (a patched one, the *Spells of the Ancients* expansion) is recognised
+by its checksum and refused at start with a message (exit status 3), because the port's hooks are made for 1.0's addresses.
 
 ### From a release
 

@@ -255,3 +255,88 @@ def test_launcher_starts_the_runtime_with_the_module_of_the_program(tmp_path):
     run.unlink()
     r = launch()
     assert r.returncode == 1 and "runtime is not built" in r.stderr
+
+
+# ---- which build the installed files are (builds.py, the same ids as the runtime's profiles) --------------------------------------------------------------
+def test_the_installers_fingerprints_are_the_retail_discs():
+    import install
+    assert install.FINGERPRINTS == {
+        "MAGIC.EXE": "4dc592695b6ee390485f283feb2a248cd3f3f739749c2800ab3b1100ea03845c",
+        "DUEL.EXE": "7c4e618b4a8ab4330c71d2dd30637c522573c133d32c667c97924dc8edc2efed",
+        "DECK.EXE": "193f8abea01d4f2c03b769224b06eece6e263a18f13a5b4e2509ed25a01e3d90",
+        "DECKDLL.DLL": "a21f714bea465077c4fabe4a407ff7503b0ce5f9bb1a277826e74276e35c2c18",
+        "STATWIN.DLL": "95bd14de41e8fff84217cdf627a48392da5e7be9c3d064a68e04ed1455334bd7",
+        "MAGSND.DLL": "6f6d51cd2b8a5800b0b3c994e3ee8217f7b40ba2621f9738783387f3250a9882",
+        "MAGVID.DLL": "d2db1435ae96e9e41d77ded7a7b222969d44d5af642fa9968fe51768c1ce83a3",
+    }
+
+
+@pytest.fixture
+def fake_build(monkeypatch):
+    """Two files that stand for a build: their ids replace the retail disc's in the installer's list."""
+    import builds
+    import install
+    files = {"MAGIC.EXE": b"the shell", "DUEL.EXE": b"the duel"}
+    known = [("v9.9", n, builds.build_id(b), "lifted") for n, b in files.items()]
+    monkeypatch.setattr(builds, "KNOWN", known)
+    monkeypatch.setattr(install, "FINGERPRINTS", builds.fingerprints("v9.9"))
+    return files
+
+
+def program_dir(tmp_path, files):
+    d = tmp_path / "installed" / "Magic" / "Program"
+    d.mkdir(parents=True)
+    for n, b in files.items():
+        (d / n).write_bytes(b)
+    return d
+
+
+def test_detect_builds_names_the_build_of_each_file(tmp_path, fake_build):
+    import install
+    d = program_dir(tmp_path, fake_build)
+    got = install.detect_builds(str(d))
+    assert [(n, k) for n, _, k in got] == [("MAGIC.EXE", "v9.9 MAGIC.EXE"), ("DUEL.EXE", "v9.9 DUEL.EXE")]
+    assert install.build_summary(got) == "v9.9 (MAGIC.EXE, DUEL.EXE: the retail disc)"
+    # another file under a known name is an unknown build; a file that is not there is missing; the case of the name is the disc's business
+    (d / "MAGIC.EXE").write_bytes(b"a patched shell")
+    (d / "DUEL.EXE").rename(d / "Duel.exe")
+    got = install.detect_builds(str(d))
+    assert got[0][2] is None and got[0][1] and got[1][2] == "v9.9 DUEL.EXE"
+    assert "MAGIC.EXE is an unknown build (sha256 " in install.build_summary(got) and "DUEL.EXE is v9.9 DUEL.EXE" in install.build_summary(got)
+    (d / "Duel.exe").unlink()
+    got = install.detect_builds(str(d))
+    assert got[1][1] is None and "DUEL.EXE is missing" in install.build_summary(got)
+
+
+def test_the_extracted_game_is_checked_against_the_known_build(tmp_path, fake_build, capsys):
+    import install
+    program_dir(tmp_path / "x", fake_build)
+    assert install.check_programs(str(tmp_path / "x" / "installed")) is True
+    assert "are build v9.9" in capsys.readouterr().out
+    (tmp_path / "x" / "installed" / "Magic" / "Program" / "MAGIC.EXE").write_bytes(b"other")
+    assert install.check_programs(str(tmp_path / "x" / "installed")) is False
+    out = capsys.readouterr().out
+    assert "MAGIC.EXE is an unknown build" in out and "refuses to start a program of another build" in out
+
+
+def test_check_reports_the_build_of_the_installed_game(tmp_path, fake_build, capsys):
+    import install
+
+    class Args:
+        compiler = None
+
+    root = tmp_path / "root"
+    program_dir(root / "sources", fake_build)
+    install.check(install.Layout(str(root)), Args())
+    out = capsys.readouterr().out
+    assert "build:  v9.9 (MAGIC.EXE, DUEL.EXE: the retail disc)" in out
+    (root / "sources" / "installed" / "Magic" / "Program" / "MAGIC.EXE").write_bytes(b"x")
+    install.check(install.Layout(str(root)), Args())
+    assert "build:  MAGIC.EXE is an unknown build" in capsys.readouterr().out
+
+
+def test_the_release_carries_the_build_list():
+    import manifest
+    assert "tools/lift/builds.py" in manifest.REQUIRED
+    root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+    assert "tools/lift/builds.py" in manifest.release_files(root)

@@ -41,5 +41,6 @@ PENTAMOOR_EXPORT const LiftGame *pentamoor_game_init(const LiftHost *host)
     g.sigs = LIFT_IMPORT_SIGS;
     g.nsigs = LIFT_IMPORT_SIG_COUNT;
     g.modules = LIFT_MODULES;
+    g.build_id = LIFT_BUILD_ID;
     return &g;
 }

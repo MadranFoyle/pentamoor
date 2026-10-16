@@ -19,6 +19,7 @@ typedef struct CalleeRow {
 extern const LiftedFn LIFTED[];
 extern const int LIFTED_COUNT;
 extern const char LIFT_PROGRAM[];  /* "DUEL" or "MAGIC": the program whose machine code the tables hold */
+extern const char LIFT_BUILD_ID[]; /* the build id of that program's file: the SHA-256 of the bytes it was lifted from, 64 lower-case hex characters (tools/lift/builds.py) */
 extern const CalleeRow LIFT_CALLEES[];
 extern const int LIFT_CALLEE_COUNT;
 
@@ -40,6 +41,7 @@ typedef struct LiftModule {
     const LiftedFn *lifted; int nlifted;
     const CalleeRow *functions; int nfunctions;
     const LiftImportSig *sigs; int nsigs;
+    const char *build_id;            /* the build id of the DLL's file (as LIFT_BUILD_ID is the program's) */
 } LiftModule;
 extern const LiftModule *const LIFT_MODULES[];   /* ends with 0 */
 
@@ -54,6 +56,7 @@ typedef struct LiftGame {
     const CalleeRow *functions; int nfunctions;     /* LIFT_FUNCTIONS */
     const LiftImportSig *sigs; int nsigs;           /* LIFT_IMPORT_SIGS */
     const LiftModule *const *modules;               /* LIFT_MODULES */
+    const char *build_id;                           /* LIFT_BUILD_ID */
 } LiftGame;
 
 #endif

@@ -40,7 +40,7 @@ RESUME = {640: (330, 390), 800: (412, 487), 1024: (528, 624)}
 DUEL = {640: (290, 325), 800: (360, 388), 1024: (470, 486)}
 
 DUMP_PREFIXES = ("  win ", "  queue", "  popup", "  item ", "  peek", "  poke", "  hit ", "  pad:", "  nav:", "  target ")
-KNOWN_STDERR = (re.compile(r"^loaded .* at 0x"), re.compile(r"^\d\d:\d\d:\d\d\.\d+ padlog: "), re.compile(r"^LoadLibraryA\((deckdll|statwin)\.dll\) -> mapped"))
+KNOWN_STDERR = (re.compile(r"^loaded .* at 0x"), re.compile(r"^build: v\d"), re.compile(r"^\d\d:\d\d:\d\d\.\d+ padlog: "), re.compile(r"^LoadLibraryA\((deckdll|statwin)\.dll\) -> mapped"))
 
 
 class Soak:

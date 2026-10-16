@@ -27,23 +27,18 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(ROOT, "tools", "lift"))      # builds.py: the builds the port knows (the same list as the runtime's profiles, src/port/profile.c)
 
+import builds  # noqa: E402
 import datax  # noqa: E402
 import iso9660  # noqa: E402
 import liftrun  # noqa: E402
 import manifest  # noqa: E402
 import modbuild  # noqa: E402
 
-# The build the port is made from (the retail disc, version 1.0): docs/ORACLE_VM.md.
-FINGERPRINTS = {
-    "MAGIC.EXE": "4dc592695b6ee390485f283feb2a248cd3f3f739749c2800ab3b1100ea03845c",
-    "DUEL.EXE": "7c4e618b4a8ab4330c71d2dd30637c522573c133d32c667c97924dc8edc2efed",
-    "DECK.EXE": "193f8abea01d4f2c03b769224b06eece6e263a18f13a5b4e2509ed25a01e3d90",
-    "DECKDLL.DLL": "a21f714bea465077c4fabe4a407ff7503b0ce5f9bb1a277826e74276e35c2c18",
-    "STATWIN.DLL": "95bd14de41e8fff84217cdf627a48392da5e7be9c3d064a68e04ed1455334bd7",
-    "MAGSND.DLL": "6f6d51cd2b8a5800b0b3c994e3ee8217f7b40ba2621f9738783387f3250a9882",
-    "MAGVID.DLL": "d2db1435ae96e9e41d77ded7a7b222969d44d5af642fa9968fe51768c1ce83a3",
-}
+# The build the port is made from (the retail disc, version 1.0): docs/ORACLE_VM.md. The ids are the build ids of tools/lift/builds.py (the SHA-256 of each file), the same
+# the lifter writes into the game modules and the runtime checks (src/port/profile.c).
+FINGERPRINTS = builds.fingerprints("v1.0")
 EXE = ".exe" if os.name == "nt" else ""
 
 
@@ -206,22 +201,42 @@ def copy_media(disc, dest, force):
         say(f"{src.lower()} from the disc: {len(entries)} files ({made} copied)")
 
 
+def detect_builds(program_dir):
+    """The build of each file the port knows, found in a Program folder: [(file name, build id or None if the file is not there, 'v1.0 MAGIC.EXE' or None if it is not a known build)]."""
+    out = []
+    for name in FINGERPRINTS:
+        path = os.path.join(program_dir, name)
+        if not os.path.exists(path):
+            # the folder may spell the name in another case (the disc's installer does not keep it)
+            found = [n for n in os.listdir(program_dir) if n.lower() == name.lower()] if os.path.isdir(program_dir) else []
+            path = os.path.join(program_dir, found[0]) if found else None
+        if path is None:
+            out.append((name, None, None))
+            continue
+        bid = builds.file_build_id(path)
+        out.append((name, bid, builds.name_of(name, bid)))
+    return out
+
+
+def build_summary(detected):
+    """One line for --check: which build the files are."""
+    if all(known for _, _, known in detected):
+        return f"{detected[0][2].split()[0]} ({', '.join(n for n, _, _ in detected)}: the retail disc)"
+    bits = []
+    for name, bid, known in detected:
+        bits.append(f"{name} is missing" if bid is None else f"{name} is {known}" if known else f"{name} is an unknown build (sha256 {bid[:12]})")
+    return "; ".join(bits)
+
+
 def check_programs(dest):
     program = os.path.join(dest, "Magic", "Program")
-    bad = []
-    for name, want in FINGERPRINTS.items():
-        path = os.path.join(program, name)
-        if not os.path.exists(path):
-            bad.append(f"{name} is missing")
-            continue
-        with open(path, "rb") as f:
-            have = datax.sha256(f.read())
-        if have != want:
-            bad.append(f"{name} is not the build this port is made from")
+    detected = detect_builds(program)
+    bad = [f"{name} is missing" if bid is None else f"{name} is an unknown build (sha256 {bid[:12]})" for name, bid, known in detected if not known]
     if bad:
-        say("WARNING: " + "; ".join(bad) + ".\n         The port is made from the retail disc, version 1.0; another release may not run.")
+        say("WARNING: " + "; ".join(bad) + ".\n         The port is made from the retail disc, version 1.0, and the runtime refuses to start a program of another build "
+            "(`pentamoor: ... is build ..., which this version does not support`).")
     else:
-        say("programs: all seven match the retail disc (version 1.0)")
+        say(f"programs: all {len(detected)} are build {detected[0][2].split()[0]}, the retail disc the port is made from")
     return not bad
 
 
@@ -325,7 +340,10 @@ def check(layout, args):
     except modbuild.BuildError as e:
         local = os.path.isdir(os.path.join(layout.tools, "ziglang"))
         say(f"compiler: none usable now ({e}); " + ("Zig is in tools/local" if local else "the installer would offer to download Zig"))
-    say(f"game:   {'installed' if game_installed(os.path.join(layout.root, 'sources', 'installed')) else 'not installed yet'}")
+    installed = os.path.join(layout.root, "sources", "installed")
+    say(f"game:   {'installed' if game_installed(installed) else 'not installed yet'}")
+    if game_installed(installed):
+        say(f"build:  {build_summary(detect_builds(os.path.join(installed, 'Magic', 'Program')))}")
     return 1 if problems else 0
 
 

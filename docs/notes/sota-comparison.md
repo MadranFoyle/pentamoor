@@ -205,7 +205,7 @@ Checked by hand in 2.15: the return site of the overworld's tick call (`0x438f85
 
 **What a plain run does with 1.0's addresses** (`LIFT_PROGRAM` = `MAGIC`, tried by making the module report that name): none of the five hooked or overridden function addresses is the start of a function in 2.0 or 2.15 (each lies inside another function), so those hooks and overrides would never fire (silently: no click handling,
 no frame pacing, no yes/no on a pad, no name-box detection); `main.c` would write the screen size into `0x522458` and `0x52245c`, which are inside code in both versions (not in the data), and the program would leave the layouts at 640x480; and the run **stops at the first picture**: "a call to 0x0091e000, which is neither a lifted function nor an import" (exit status 2), because the decompressor
-is only overridden at 1.0's address. So **a fingerprint check is needed before any of it is installed**: today the hooks look at `lift_game->program` and nothing else.
+is only overridden at 1.0's address. So **a fingerprint check is needed before any of it is installed**: today the hooks look at `lift_game->program` and nothing else. (Done since: the addresses are in a per-build profile found by the file's SHA-256, and a build with no profile is refused with exit status 3: [PHASE_C.md](../PHASE_C.md), "Build profiles". The 54 addresses above are what a SotA profile would hold. `tools/research/sota-runtime-experiment.patch` was made against the tree before the profiles and no longer applies to `lzw.c`, `modules.c` and `port.h`; its decompressor part is now a row of the table, its other hunks apply as they were.)
 
 ### The duel engine's table (`src/native/layout.c`)
 
