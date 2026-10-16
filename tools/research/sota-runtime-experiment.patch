@@ -1,0 +1,287 @@
+diff -u a/src/port/crt.c b/src/port/crt.c
+--- a/src/port/crt.c	2026-10-16 16:18:08
++++ b/src/port/crt.c	2026-10-16 17:11:20
+@@ -237,7 +237,7 @@
+     {"msvcrtd.dll", "memmove", crt_memcpy}, {"msvcrtd.dll", "memset", crt_memset}, {"msvcrtd.dll", "memcmp", crt_memcmp},
+     {"msvcrtd.dll", "memchr", crt_memchr}, {"msvcrtd.dll", "strlen", crt_strlen}, {"msvcrtd.dll", "strcpy", crt_strcpy},
+     {"msvcrtd.dll", "strcat", crt_strcat}, {"msvcrtd.dll", "strncpy", crt_strncpy}, {"msvcrtd.dll", "strncat", crt_strncat},
+-    {"msvcrtd.dll", "strcmp", crt_strcmp}, {"msvcrtd.dll", "strncmp", crt_strncmp}, {"msvcrtd.dll", "_stricmp", crt_stricmp},
++    {"msvcrtd.dll", "strcmp", crt_strcmp}, {"msvcrtd.dll", "strcoll", crt_strcmp}, {"msvcrtd.dll", "strncmp", crt_strncmp}, {"msvcrtd.dll", "_stricmp", crt_stricmp},
+     {"msvcrtd.dll", "_strcmpi", crt_stricmp}, {"msvcrtd.dll", "_strnicmp", crt_strnicmp}, {"msvcrtd.dll", "strchr", crt_strchr},
+     {"msvcrtd.dll", "strrchr", crt_strrchr}, {"msvcrtd.dll", "strspn", crt_strspn}, {"msvcrtd.dll", "strcspn", crt_strcspn},
+     {"msvcrtd.dll", "_strlwr", crt_strlwr}, {"msvcrtd.dll", "tolower", crt_tolower}, {"msvcrtd.dll", "abs", crt_abs},
+diff -u a/src/port/gdi_text.c b/src/port/gdi_text.c
+--- a/src/port/gdi_text.c	2026-10-16 16:18:08
++++ b/src/port/gdi_text.c	2026-10-16 17:11:20
+@@ -705,7 +705,16 @@
+     return (uint32_t)total_h;
+ }
+ 
++/* EXPERIMENT: ExtTextOutA(hdc, x, y, options, rect, string, count, dx) as TextOutA(hdc, x, y, string, count) */
++static uint32_t ExtTextOutA(const uint32_t *a)
++{
++    uint32_t b[5] = {a[0], a[1], a[2], a[5], a[6]};
++
++    return TextOutA(b);
++}
++
+ const WinApi GDI32_TEXT_APIS[] = {
++    {"gdi32.dll", "ExtTextOutA", ExtTextOutA},
+     {"gdi32.dll", "TextOutA", TextOutA}, {"gdi32.dll", "GetTextExtentPointA", GetTextExtentPointA},
+     {"gdi32.dll", "GetTextExtentPoint32A", GetTextExtentPointA}, {"gdi32.dll", "GetTextMetricsA", GetTextMetricsA},
+     {"gdi32.dll", "GetCharWidthA", GetCharWidthA}, {"gdi32.dll", "GetCharABCWidthsA", GetCharABCWidthsA},
+diff -u a/src/port/kernel32.c b/src/port/kernel32.c
+--- a/src/port/kernel32.c	2026-10-16 16:18:08
++++ b/src/port/kernel32.c	2026-10-16 17:17:53
+@@ -661,7 +661,51 @@
+     return 0;
+ }
+ static uint32_t two(const uint32_t *a) { (void)a; return 2; }
++/* EXPERIMENT: 2.15's start-up reads two values of Windows' own CurrentVersion key (install date and product id) and quits if it cannot */
++static uint32_t RegOpenKeyA(const uint32_t *a)
++{
++    if (strcmp(P(a[1]), "SOFTWARE\\Microsoft\\Windows\\CurrentVersion"))
++        return 2;
++    WR32(a[2], new_handle((Handle){H_REGKEY, -1, NULL, 0, 0, NULL}));
++    return 0;
++}
++static uint32_t RegQueryValueExA(const uint32_t *a)
++{
++    const char *v = !strcmp(P(a[1]), "FirstInstallDateTime") ? "\x78\x56\x34\x12" : !strcmp(P(a[1]), "ProductId") ? "12345-OEM-0012345-12345" : NULL;
++    size_t n;
+ 
++    if (!v)
++        return 2;
++    n = !strcmp(P(a[1]), "ProductId") ? strlen(v) + 1 : 4;
++    if (a[4] && a[5] && RD32(a[5]) >= n)
++        memcpy(P(a[4]), v, n);
++    if (a[5])
++        WR32(a[5], (uint32_t)n);
++    if (a[3])
++        WR32(a[3], !strcmp(P(a[1]), "ProductId") ? 1 : 3);
++    return 0;
++}
++
++
++/* ---- EXPERIMENT: calls only the 2.0 programs make (docs/notes/sota-comparison.md) ---- */
++static uint32_t sota_tls[64], sota_tls_next;
++static uint32_t TlsAlloc(const uint32_t *a) { (void)a; return sota_tls_next++; }
++static uint32_t TlsSetValue(const uint32_t *a) { sota_tls[a[0] & 63] = a[1]; return 1; }
++static uint32_t TlsGetValue(const uint32_t *a) { return sota_tls[a[0] & 63]; }
++static uint32_t GetVersionExA(const uint32_t *a)
++{
++    WR32(a[0] + 4, 4); WR32(a[0] + 8, 10); WR32(a[0] + 12, 0x040A08AEu); WR32(a[0] + 16, 1); WR8(a[0] + 20, 0);
++    return 1;
++}
++static uint32_t GetWindowsDirectoryA(const uint32_t *a) { strcpy(P(a[0]), "C:\\WINDOWS"); return 10; }
++static uint32_t GetDiskFreeSpaceA(const uint32_t *a)
++{
++    WR32(a[1], 32); WR32(a[2], 512); WR32(a[3], 0x20000); WR32(a[4], 0x40000);
++    return 1;
++}
++static uint32_t FindFirstFileA(const uint32_t *a) { (void)a; return 0xFFFFFFFFu; }
++static uint32_t WinExec(const uint32_t *a) { port_log("WinExec(%s) not done", P(a[0])); return 33; }
++
+ const WinApi KERNEL32_APIS[] = {
+     {"kernel32.dll", "GetVersion", GetVersion}, {"kernel32.dll", "GetCurrentProcess", GetCurrentProcess},
+     {"kernel32.dll", "GetCurrentThread", GetCurrentThread}, {"kernel32.dll", "GetLastError", GetLastError},
+@@ -688,7 +732,12 @@
+     {"winmm.dll", "timeBeginPeriod", timeBeginPeriod}, {"winmm.dll", "timeEndPeriod", zero}, {"winmm.dll", "timeSetEvent", timeSetEvent},
+     {"winmm.dll", "timeKillEvent", timeKillEvent},
+     {"advapi32.dll", "RegOpenKeyExA", RegOpenKeyExA}, {"advapi32.dll", "RegCreateKeyExA", RegCreateKeyExA},
+-    {"advapi32.dll", "RegQueryValueExA", two}, {"advapi32.dll", "RegSetValueExA", zero}, {"advapi32.dll", "RegFlushKey", zero},
++    {"advapi32.dll", "RegQueryValueExA", RegQueryValueExA}, {"advapi32.dll", "RegOpenKeyA", RegOpenKeyA}, {"advapi32.dll", "RegSetValueExA", zero}, {"advapi32.dll", "RegFlushKey", zero},
+     {"advapi32.dll", "RegCloseKey", zero}, {"shell32.dll", "SHAppBarMessage", zero}, {"comctl32.dll", "#17", zero},
++    {"kernel32.dll", "TlsAlloc", TlsAlloc}, {"kernel32.dll", "TlsSetValue", TlsSetValue}, {"kernel32.dll", "TlsGetValue", TlsGetValue}, {"kernel32.dll", "TlsFree", one},
++    {"kernel32.dll", "GetVersionExA", GetVersionExA}, {"kernel32.dll", "GetWindowsDirectoryA", GetWindowsDirectoryA}, {"kernel32.dll", "GetDiskFreeSpaceA", GetDiskFreeSpaceA},
++    {"kernel32.dll", "FindFirstFileA", FindFirstFileA}, {"kernel32.dll", "FindClose", one}, {"kernel32.dll", "WinExec", WinExec},
++    {"kernel32.dll", "GetThreadTimes", zero}, {"kernel32.dll", "ResumeThread", zero}, {"kernel32.dll", "SuspendThread", zero},
++    {"msvcrtd.dll", "_beginthreadex", CreateThread},
+     {0, 0, 0},
+ };
+diff -u a/src/port/lzw.c b/src/port/lzw.c
+--- a/src/port/lzw.c	2026-10-16 16:18:08
++++ b/src/port/lzw.c	2026-10-16 17:13:58
+@@ -294,6 +294,14 @@
+ static const Lz LZ_DUEL = {0xFFFC88F4u, 0x69453c, 0x4f7918, 0x694740, 0x43d858};          /* DUEL.EXE: its MPS_CODE is at 0x6c5000, the state block moved by -0x3770c */
+ static const Lz LZ_DECKDLL = {0x31B13FB0, 0x3213eefc, 0x3204baec, 0x3213f170, 0x3200141f};     /* DECKDLL.DLL lifted for the base 0x32000000 */
+ 
++/* EXPERIMENT (Spells of the Ancients 2.0): the same decompressor at other addresses (docs/notes/sota-comparison.md) */
++static const Lz LZ_SOTA_SH = {0x4f838, 0x915ce0, 0x581fe8, 0x72153c, 0x55c6e0};
++static const Lz LZ_SOTA_MG = {0xde0c, 0x6f870c, 0x547328, 0x6f8910, 0x4cf34c};
++static const Lz LZ_215_SH = {0x4f810, 0x915cd0, 0x581fc0, 0x726b1c, 0x55d9e0};
++static const Lz LZ_215_MG = {0x11348, 0x8c744c, 0x53ffa8, 0x8c7650, 0x459e4c};
++static const Lz LZ_SOTA_DC = {0x35aef8a4, 0x3612548c, 0x360220e8, 0x36125690, 0x36005915};
++static const Lz LZ_SOTA_DD = {0x31AFF4E4, 0x3211121c, 0x320382c8, 0x32111420, 0x3201cc58};
++
+ #define ENTRY(name, ctx, impl) static uint32_t name(const uint32_t *a) { const Lz *saved = lz; uint32_t r; lz = &ctx; r = impl(a); lz = saved; return r; }
+ ENTRY(magic_header, LZ_MAGIC, header_impl)
+ ENTRY(magic_read, LZ_MAGIC, read_impl)
+@@ -301,9 +309,50 @@
+ ENTRY(duel_read, LZ_DUEL, read_impl)
+ ENTRY(deckdll_header, LZ_DECKDLL, header_impl)
+ ENTRY(deckdll_read, LZ_DECKDLL, read_impl)
++ENTRY(sh_header, LZ_SOTA_SH, header_impl)
++ENTRY(sh_read, LZ_SOTA_SH, read_impl)
++ENTRY(mg_header, LZ_SOTA_MG, header_impl)
++ENTRY(mg_read, LZ_SOTA_MG, read_impl)
++ENTRY(sh5_header, LZ_215_SH, header_impl)
++ENTRY(sh5_read, LZ_215_SH, read_impl)
++ENTRY(mg5_header, LZ_215_MG, header_impl)
++ENTRY(mg5_read, LZ_215_MG, read_impl)
++ENTRY(dc_header, LZ_SOTA_DC, header_impl)
++ENTRY(dc_read, LZ_SOTA_DC, read_impl)
++ENTRY(dd_header, LZ_SOTA_DD, header_impl)
++ENTRY(dd_read, LZ_SOTA_DD, read_impl)
++static int sota;
+ 
+ void lzw_install(void)
+ {
++    if (!strcmp(lift_game->program, "SOTA215_SHANDALAR")) {
++        sota = 1;
++        port_override(0x91e000, sh5_header, 3, 0);
++        port_override(0x91e484, sh5_read, 2, 0);
++        port_override(0x91e1fc, sh5_read, 2, 0);
++        return;
++    }
++    if (!strcmp(lift_game->program, "SOTA215_MAGIC")) {
++        sota = 1;
++        port_override(0x8f5000, mg5_header, 3, 0);
++        port_override(0x8f5484, mg5_read, 2, 0);
++        port_override(0x8f51fc, mg5_read, 2, 0);
++        return;
++    }
++    if (!strcmp(lift_game->program, "SOTA_SHANDALAR")) {
++        sota = 1;
++        port_override(0x91e000, sh_header, 3, 0);
++        port_override(0x91e484, sh_read, 2, 0);
++        port_override(0x91e1fc, sh_read, 2, 0);
++        return;
++    }
++    if (!strcmp(lift_game->program, "SOTA_MAGIC")) {
++        sota = 1;
++        port_override(0x8f5000, mg_header, 3, 0);
++        port_override(0x8f5484, mg_read, 2, 0);
++        port_override(0x8f51fc, mg_read, 2, 0);
++        return;
++    }
+     if (!strcmp(lift_game->program, "DUEL")) {
+         port_override(0x6c5000, duel_header, 3, 0);
+         port_override(0x6c5484, duel_read, 2, 0);
+@@ -318,9 +367,26 @@
+ /* The copy in a library, when the library is mapped (modules.c): its MPS_CODE section is at base + 0x218000 - 0x10000000 + the lifted base. */
+ void lzw_install_deckdll(uint32_t base)
+ {
+-    uint32_t sec = base + 0x218000u;
++    uint32_t sec = base + (sota ? 0x1e9000u : 0x218000u);
+ 
++    if (sota) {
++        port_override(sec, dd_header, 3, 0);
++        port_override(sec + 0x484, dd_read, 2, 0);
++        port_override(sec + 0x1fc, dd_read, 2, 0);
++        return;
++    }
++
+     port_override(sec, deckdll_header, 3, 0);
+     port_override(sec + 0x484, deckdll_read, 2, 0);
+     port_override(sec + 0x1fc, deckdll_read, 2, 0);
++}
++
++/* EXPERIMENT: drawcardlib.dll (2.0) has the same decompressor, lifted at 0x36000000 */
++void lzw_install_drawcardlib(uint32_t base)
++{
++    uint32_t sec = base + 0x155000u;
++
++    port_override(sec, dc_header, 3, 0);
++    port_override(sec + 0x484, dc_read, 2, 0);
++    port_override(sec + 0x1fc, dc_read, 2, 0);
+ }
+diff -u a/src/port/modglue.c b/src/port/modglue.c
+--- a/src/port/modglue.c	2026-10-16 16:18:08
++++ b/src/port/modglue.c	2026-10-16 17:19:59
+@@ -1,3 +1,4 @@
++#include <stdlib.h>
+ /* modglue.c - the game module's one entry point. Built into the game module only (a library made from the .c files of sources/generated/lift_<program>,
+  * see the Makefile), never into the runtime. The module reaches the runtime through the LiftHost it is given here, and nothing else.
+  * Plain C99 (the module may be built with another compiler than the runtime, for example `zig cc`). */
+@@ -33,7 +34,7 @@
+     lift_preempt_fn = host->preempt;
+     g.abi = LIFT_ABI;
+     g.size = sizeof(g);
+-    g.program = LIFT_PROGRAM;
++    g.program = getenv("PORT_FAKE_PROGRAM") ? getenv("PORT_FAKE_PROGRAM") : LIFT_PROGRAM;   /* EXPERIMENT */
+     g.lifted = LIFTED;
+     g.nlifted = LIFTED_COUNT;
+     g.functions = LIFT_FUNCTIONS;
+diff -u a/src/port/modules.c b/src/port/modules.c
+--- a/src/port/modules.c	2026-10-16 16:18:08
++++ b/src/port/modules.c	2026-10-16 17:13:58
+@@ -119,6 +119,8 @@
+     loaded_mod[nloaded_mods++] = lift_game->modules[i];
+     if (!strcmp(key, "deckdll.dll"))
+         lzw_install_deckdll(img.base);     /* its picture decompressor is the game's hand-written one too */
++    if (!strcmp(key, "drawcardlib.dll"))
++        lzw_install_drawcardlib(img.base);
+     return img.base;
+ }
+ 
+diff -u a/src/port/pe.c b/src/port/pe.c
+--- a/src/port/pe.c	2026-10-16 16:18:08
++++ b/src/port/pe.c	2026-10-16 17:02:30
+@@ -38,6 +38,8 @@
+     const WinApi *tables[] = {KERNEL32_APIS, KERNEL32_RT_APIS, CRT_APIS, STDIO_APIS, USER32_APIS, CONTROLS_APIS, FILEDLG_APIS, WINHELP_APIS, MSGBOX_APIS, MENUS_APIS, GDI32_STATE_APIS, GDI32_BLIT_APIS, GDI32_TEXT_APIS, VIDEO_APIS};
+     size_t t;
+ 
++    if (!strcmp(dll, "msvcrt.dll"))        /* EXPERIMENT: 2.0 imports the release C runtime */
++        dll = "msvcrtd.dll";
+     for (t = 0; t < sizeof(tables) / sizeof(tables[0]); t++) {
+         const WinApi *a;
+ 
+diff -u a/src/port/port.h b/src/port/port.h
+--- a/src/port/port.h	2026-10-16 16:18:08
++++ b/src/port/port.h	2026-10-16 17:13:58
+@@ -105,6 +105,7 @@
+ void screens_install(void);      /* which screen of the game is on, for the D-pad (screens.c) */
+ void yesno_install(void);        /* when the game asks a (Y/N) question (yesno.c) */
+ void lzw_install_deckdll(uint32_t base);
++void lzw_install_drawcardlib(uint32_t base);
+ 
+ /* DLLs (modules.c): the game's libraries, lifted or provided by the host */
+ typedef struct HostExport { const char *name; int ordinal; HostGuestFn fn; } HostExport;     /* ends with {0} */
+diff -u a/src/port/user32.c b/src/port/user32.c
+--- a/src/port/user32.c	2026-10-16 16:18:08
++++ b/src/port/user32.c	2026-10-16 17:11:42
+@@ -1412,10 +1412,33 @@
+     return h;
+ }
+ 
++
++/* ---- EXPERIMENT: calls only the 2.0 programs make ---- */
++static uint32_t GetUpdateRect(const uint32_t *a)
++{
++    Window *w = wm_window(a[0]);
++    int cw = 0, ch = 0;
++
++    if (w && w->invalid) {
++        wm_client_size(w, &cw, &ch);
++        if (a[1])
++            put_rect(a[1], 0, 0, cw, ch);
++        return 1;
++    }
++    if (a[1])
++        put_rect(a[1], 0, 0, 0, 0);
++    return 0;
++}
++static uint32_t GetUpdateRgn(const uint32_t *a) { Window *w = wm_window(a[0]); return w && w->invalid ? 2 : 1; }
++static uint32_t RegisterWindowMessageA(const uint32_t *a) { (void)a; return 0xC001; }
++
+ static uint32_t GetDesktopWindow(const uint32_t *a) { (void)a; return wm_desktop_hwnd(); }
+ 
+ const WinApi USER32_APIS[] = {
+     {"user32.dll", "GetDesktopWindow", GetDesktopWindow},
++    {"user32.dll", "GetUpdateRect", GetUpdateRect}, {"user32.dll", "GetUpdateRgn", GetUpdateRgn},
++    {"user32.dll", "RegisterWindowMessageA", RegisterWindowMessageA}, {"user32.dll", "ChangeDisplaySettingsA", zero}, {"user32.dll", "IsDialogMessageA", zero},
++    {"user32.dll", "GetWindowTextLengthA", zero}, {"user32.dll", "ShowScrollBar", one}, {"user32.dll", "GetCursor", zero}, {"user32.dll", "CreateDialogParamA", zero},
+     {"user32.dll", "RegisterClassA", RegisterClassA}, {"user32.dll", "SetClassLongA", zero}, {"user32.dll", "DefWindowProcA", DefWindowProcA},
+     {"user32.dll", "CallWindowProcA", CallWindowProcA}, {"user32.dll", "CreateWindowExA", CreateWindowExA},
+     {"user32.dll", "DestroyWindow", DestroyWindow}, {"user32.dll", "ShowWindow", ShowWindow}, {"user32.dll", "UpdateWindow", UpdateWindow},
