@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "padlog.h"
 #include "steamdeck.h"
 #include "textin.h"
 
@@ -244,9 +245,22 @@ static void test_type(void)
     CHECK(o.n == 4 && o.act[2].vk == 'B');
 }
 
+/* PORT_PAD_LOG (padlog.h): off by default and for 0/no/off; on for anything else; the file it also goes to */
+static void test_padlog(void)
+{
+    CHECK(!padlog_enabled(NULL) && !padlog_enabled("") && !padlog_enabled("0") && !padlog_enabled("no") && !padlog_enabled("OFF") && !padlog_enabled("false"));
+    CHECK(padlog_enabled("1") && padlog_enabled("stderr") && padlog_enabled("/tmp/x.log") && padlog_enabled("yes"));
+    CHECK(padlog_path_for(NULL) == NULL && padlog_path_for("0") == NULL);
+    CHECK(padlog_path_for("stderr") == NULL && padlog_path_for("2") == NULL);           /* stderr only (the soak scripts read it there) */
+    CHECK(!strcmp(padlog_path_for("1"), "pentamoor-input.log") && !strcmp(padlog_path_for("yes"), "pentamoor-input.log"));   /* a Deck in Game mode has no terminal: a file in the game's folder */
+    CHECK(!strcmp(padlog_path_for("/home/deck/pad.txt"), "/home/deck/pad.txt") && !strcmp(padlog_path_for("C:\\x\\pad.txt"), "C:\\x\\pad.txt"));
+    CHECK(!strcmp(padlog_path_for("pad.log"), "pad.log") && !strcmp(padlog_path_for("PAD.LOG"), "PAD.LOG"));
+}
+
 int main(void)
 {
     test_detect();
+    test_padlog();
     test_fullscreen();
     test_scale();
     test_text_wanted();

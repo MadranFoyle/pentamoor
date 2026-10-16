@@ -15,6 +15,8 @@
 #include "plat.h"
 #include "port.h"
 #include "gdi_int.h"
+#include "navwm.h"
+#include "padlog.h"
 #include "steamdeck.h"
 #include "textin.h"
 #include "wm.h"
@@ -186,6 +188,35 @@ static Uint32 pad_t;                                /* the last tick of pad_step
 static int shown_active = -1, shown_x = -1, shown_y = -1;      /* what was last drawn: whether the pad's cursor was there, and its position */
 static uint8_t *view_buf;                           /* the frame with the pad's cursor drawn into it (only used while the pad is active) */
 
+/* PORT_PAD_LOG: what the pad asked the game to do. The cursor's moves are thinned out (one line a quarter second) so a stick does not fill the log. */
+static void log_pad_act(const PadAct *a)
+{
+    static Uint32 last_move;
+    static int moves;
+
+    if (a->type == PA_MOVE) {
+        Uint32 now = SDL_GetTicks();
+
+        moves++;
+        if (now - last_move < 250)
+            return;
+        last_move = now;
+        padlog("pad: pointer moves to (%d,%d) (%d moves since the last line)", a->x, a->y, moves);
+        moves = 0;
+        return;
+    }
+    switch (a->type) {
+    case PA_LDOWN:   padlog("pad: left button down at (%d,%d)", a->x, a->y); break;
+    case PA_LUP:     padlog("pad: left button up at (%d,%d)", a->x, a->y); break;
+    case PA_RDOWN:   padlog("pad: right button down at (%d,%d)", a->x, a->y); break;
+    case PA_RUP:     padlog("pad: right button up at (%d,%d)", a->x, a->y); break;
+    case PA_KEYDOWN: if (!a->repeat) padlog("pad: key down vk 0x%x", a->vk); break;
+    case PA_KEYUP:   padlog("pad: key up vk 0x%x", a->vk); break;
+    case PA_NAV:     padlog("pad: D-pad %s from (%d,%d)%s: asks the game for the next target", a->dir == 0 ? "up" : a->dir == 1 ? "down" : a->dir == 2 ? "left" : "right", a->x, a->y, a->repeat ? " (repeat)" : ""); break;
+    default: break;
+    }
+}
+
 static void pad_deliver(const PadOut *o)
 {
     int i;
@@ -193,6 +224,8 @@ static void pad_deliver(const PadOut *o)
     for (i = 0; i < o->n; i++) {
         const PadAct *a = &o->act[i];
 
+        if (padlog_on())
+            log_pad_act(a);
         switch (a->type) {
         case PA_MOVE:    front_push_mouse(IN_MOVE, a->x, a->y); break;
         case PA_LDOWN:   front_push_mouse(IN_DOWN, a->x, a->y); break;
@@ -245,13 +278,23 @@ static void pad_open(int index)
 {
     int i;
 
-    if (!SDL_IsGameController(index))
+    if (!SDL_IsGameController(index)) {
+        padlog("joystick %d '%s' is not a game controller (SDL has no mapping for it): the pad code ignores it", index, SDL_JoystickNameForIndex(index) ? SDL_JoystickNameForIndex(index) : "?");
         return;
+    }
     for (i = 0; i < MAX_PADS; i++)
         if (!pads[i]) {
             pads[i] = SDL_GameControllerOpen(index);
             if (pads[i])
                 fprintf(stderr, "controller: %s\n", SDL_GameControllerName(pads[i]));
+            if (padlog_on()) {
+                char guid[40] = "";
+                char *map = pads[i] ? SDL_GameControllerMapping(pads[i]) : NULL;
+
+                SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(index), guid, sizeof(guid));
+                padlog("controller %d opened: '%s' guid %s%s mapping %s", index, pads[i] ? SDL_GameControllerName(pads[i]) : "?", guid, pads[i] ? "" : " (SDL_GameControllerOpen failed)", map ? map : "(none)");
+                SDL_free(map);
+            }
             return;
         }
 }
@@ -282,6 +325,15 @@ static void pad_event(const SDL_Event *ev)
     case SDL_CONTROLLERAXISMOTION: {
         int axis = pad_axis_of(ev->caxis.axis);
 
+        if (padlog_on()) {                           /* an axis is logged when it has moved a good way from where it was last logged (a stick is noisy) */
+            static int logged[8];
+            int a = ev->caxis.axis & 7, v = ev->caxis.value;
+
+            if (abs(v - logged[a]) >= 6000 || (v == 0 && logged[a] != 0)) {
+                padlog("controller axis %s = %d", SDL_GameControllerGetStringForAxis((SDL_GameControllerAxis)ev->caxis.axis), v);
+                logged[a] = v;
+            }
+        }
         if (axis >= 0)
             pad_axis(&pad, axis, ev->caxis.value, &out);
         break;
@@ -290,6 +342,9 @@ static void pad_event(const SDL_Event *ev)
     case SDL_CONTROLLERBUTTONUP: {
         int b = pad_btn_of(ev->cbutton.button);
 
+        if (padlog_on())
+            padlog("controller button %s %s (pad cursor %s, D-pad %s)", SDL_GameControllerGetStringForButton((SDL_GameControllerButton)ev->cbutton.button),
+                   ev->type == SDL_CONTROLLERBUTTONDOWN ? "down" : "up", pad.active ? "active" : "not active", front_nav_ready() ? "moves between targets" : "is the arrow keys");
         if (b >= 0)
             pad_button(&pad, b, ev->type == SDL_CONTROLLERBUTTONDOWN, &out);
         break;
@@ -307,6 +362,8 @@ static void pad_mouse(int x, int y)
 
     if (!pad_on)
         return;
+    if (pad.active)
+        padlog("the real mouse or a touch took the cursor from the pad at (%d,%d); what the pad held is let go", x, y);
     out.n = 0;
     pad_mouse_used(&pad, x, y, &out);
     pad_deliver(&out);
@@ -332,6 +389,10 @@ static void pad_nav_answers(void)
     PadOut out;
 
     while (front_nav_result(&nav_seen, &kind, &x, &y, &dir)) {
+        if (kind == NAVR_MOVE)
+            padlog("D-pad: the game chose a target, the pointer goes to (%d,%d)", x, y);
+        else
+            padlog("D-pad: a list there scrolls, the arrow key is tapped");
         out.n = 0;
         if (kind == NAVR_MOVE)
             pad_put(&pad, x, y, &out);
@@ -382,6 +443,89 @@ static int pad_view_changed(void)
     shown_x = pad.ix;
     shown_y = pad.iy;
     return 1;
+}
+
+/* PORT_PAD_LOG: what SDL delivers that is not the pad's own (the pad's events are logged in pad_event). What a Steam Input layout that makes the Deck a keyboard and a mouse sends shows up
+ * here; mouse motion is thinned out. */
+static void log_sdl_event(const SDL_Event *ev)
+{
+    static Uint32 last_motion;
+    static int motions;
+
+    switch (ev->type) {
+    case SDL_MOUSEMOTION: {
+        Uint32 now = SDL_GetTicks();
+
+        motions++;
+        if (now - last_motion >= 250) {
+            padlog("mouse moved to (%d,%d)%s (%d motion events since the last line)", ev->motion.x, ev->motion.y, ev->motion.which == SDL_TOUCH_MOUSEID ? " by touch" : "", motions);
+            last_motion = now;
+            motions = 0;
+        }
+        break;
+    }
+    case SDL_MOUSEBUTTONDOWN:
+    case SDL_MOUSEBUTTONUP:
+        padlog("mouse button %d %s at (%d,%d)%s", ev->button.button, ev->type == SDL_MOUSEBUTTONDOWN ? "down" : "up", ev->button.x, ev->button.y, ev->button.which == SDL_TOUCH_MOUSEID ? " by touch" : "");
+        break;
+    case SDL_KEYDOWN:
+    case SDL_KEYUP:
+        if (!ev->key.repeat)
+            padlog("key %s %s", SDL_GetScancodeName(ev->key.keysym.scancode), ev->type == SDL_KEYDOWN ? "down" : "up");
+        break;
+    case SDL_TEXTINPUT:
+        padlog("text input \"%s\"", ev->text.text);
+        break;
+    case SDL_CONTROLLERDEVICEADDED:
+        padlog("SDL: controller added (device %d)", ev->cdevice.which);
+        break;
+    case SDL_CONTROLLERDEVICEREMOVED:
+        padlog("SDL: controller removed (instance %d)", (int)ev->cdevice.which);
+        break;
+    case SDL_JOYDEVICEADDED:
+        padlog("SDL: joystick added (device %d) '%s'", ev->jdevice.which, SDL_JoystickNameForIndex(ev->jdevice.which) ? SDL_JoystickNameForIndex(ev->jdevice.which) : "?");
+        break;
+    case SDL_WINDOWEVENT: {
+        static const char *const names[] = {"none", "shown", "hidden", "exposed", "moved", "resized", "size changed", "minimized", "maximized", "restored", "mouse entered", "mouse left",
+                                            "focus gained", "focus lost", "close", "take focus", "hit test"};
+        int e = ev->window.event;
+
+        if (e != SDL_WINDOWEVENT_EXPOSED && e != SDL_WINDOWEVENT_MOVED)
+            padlog("window: %s", e >= 0 && e < (int)(sizeof(names) / sizeof(names[0])) ? names[e] : "?");
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+/* PORT_PAD_LOG at start: where the program runs and which controllers SDL has found. */
+static void log_start(SDL_Window *win, int deck, int fullscreen)
+{
+    SDL_version linked;
+    int i, n, w = 0, h = 0;
+    const char *e;
+
+    padlog_reset();
+    SDL_GetVersion(&linked);
+    SDL_GetWindowSize(win, &w, &h);
+    padlog("input log%s%s (PORT_PAD_LOG)", padlog_file() ? " also in the file " : " on stderr only", padlog_file() ? padlog_file() : "");
+    padlog("start: SDL %d.%d.%d, video driver %s, window %dx%d, Steam Deck %s, full screen %s, pad code %s, text input %s", linked.major, linked.minor, linked.patch,
+           SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "?", w, h, deck ? "yes" : "no", fullscreen ? "yes" : "no", pad_on ? "on" : "off (PORT_NOPAD)", text_managed ? "managed" : "always on");
+    padlog("env: SteamDeck=%s SteamGameId=%s SteamAppId=%s XDG_CURRENT_DESKTOP=%s GAMESCOPE_WAYLAND_DISPLAY=%s SDL_VIDEODRIVER=%s SDL_GAMECONTROLLERCONFIG=%s", getenv("SteamDeck") ? getenv("SteamDeck") : "-",
+           getenv("SteamGameId") ? getenv("SteamGameId") : "-", getenv("SteamAppId") ? getenv("SteamAppId") : "-", getenv("XDG_CURRENT_DESKTOP") ? getenv("XDG_CURRENT_DESKTOP") : "-",
+           getenv("GAMESCOPE_WAYLAND_DISPLAY") ? getenv("GAMESCOPE_WAYLAND_DISPLAY") : "-", getenv("SDL_VIDEODRIVER") ? getenv("SDL_VIDEODRIVER") : "-",
+           (e = getenv("SDL_GAMECONTROLLERCONFIG")) != NULL ? (*e ? "set" : "empty") : "-");
+    padlog("env: SDL_GAMECONTROLLER_IGNORE_DEVICES=%s SDL_JOYSTICK_HIDAPI=%s LD_PRELOAD=%s", getenv("SDL_GAMECONTROLLER_IGNORE_DEVICES") ? getenv("SDL_GAMECONTROLLER_IGNORE_DEVICES") : "-",
+           getenv("SDL_JOYSTICK_HIDAPI") ? getenv("SDL_JOYSTICK_HIDAPI") : "-", getenv("LD_PRELOAD") ? getenv("LD_PRELOAD") : "-");
+    n = SDL_NumJoysticks();
+    padlog("%d joystick(s) at start%s", n, n ? "" : ": SDL sees no controller (on a Deck with Steam Input's Desktop layout the Deck is a keyboard and a mouse; choose a Gamepad layout)");
+    for (i = 0; i < n; i++) {
+        char guid[40] = "";
+
+        SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(i), guid, sizeof(guid));
+        padlog("joystick %d: '%s' guid %s, %s", i, SDL_JoystickNameForIndex(i) ? SDL_JoystickNameForIndex(i) : "?", guid, SDL_IsGameController(i) ? "a game controller" : "NOT a game controller (no mapping)");
+    }
 }
 
 /* PORT_SCRIPT="2.5:move 320 240;3:down;3.2:up;4:key return;5:text abc;6:shot /tmp/a.ppm;9:quit": a test driver. The input is pushed as SDL events (so it takes
@@ -855,6 +999,8 @@ int front_run(int (*game)(void *), void *arg)
         SDL_StartTextInput();
         text_on = 1;
     }
+    if (padlog_on())
+        log_start(win, deck, fullscreen);
     rgb = malloc((size_t)SCREEN_W * SCREEN_H * 3);
     shot_frame = rgb;
     memset(rgb, 0, (size_t)SCREEN_W * SCREEN_H * 3);
@@ -898,6 +1044,8 @@ int front_run(int (*game)(void *), void *arg)
         update_text_input();
         if (SDL_WaitEventTimeout(&ev, 8)) {
             do {
+                if (padlog_on())
+                    log_sdl_event(&ev);
                 switch (ev.type) {
                 case SDL_QUIT:
                     front_push_quit();
