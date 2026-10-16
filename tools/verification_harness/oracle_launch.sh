@@ -4,7 +4,7 @@
 # modified. See docs/ORACLE_VM.md.
 #
 #   usage: [ORACLE_BASE=base_duel.raw] oracle_launch.sh [overlay-name]     (default: run1)
-#   ORACLE_BASE picks the base disk in sources/oracle (default base.raw).
+#   ORACLE_BASE picks the base disk in sources/oracle (default base.raw); ORACLE_DISPLAY the QEMU display (default cocoa; "none" for a run nobody watches: the Cocoa window can deadlock QEMU while the guest draws a lot).
 #
 # Hardware mirrors the UTM VM (pc-i440fx-10.0, Cirrus, SB16, ne2k_isa, IDE hd on ide.0 and
 # an empty CD on ide.1) so Windows 98 sees no new devices and shows no hardware dialogs.
@@ -28,4 +28,4 @@ exec qemu-system-i386 \
   -boot c \
   -qmp unix:qmp.sock,server=on,wait=off \
   -gdb tcp:127.0.0.1:1234 \
-  -display cocoa
+  -display "${ORACLE_DISPLAY:-cocoa}"

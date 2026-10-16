@@ -21,8 +21,8 @@ duel ("Duel a Druid" at the first encounter): the win, the held wait, the clue s
 
 - `wm_held_clip()` (user32.c) names the held clip's window; `wm_inject_mouse` (input.c) sends the left button, press and release, to it wherever the pointer is (the release goes where its press
   went). `test_movie` 54 -> 57 checks.
-- While a clip is held and the whole screen is black, `compose.c` writes "Click or press a key to continue" at the bottom (the original had the statistics window under the clips; ours is not drawn,
-  so the wait looked like a freeze).
+- While a clip is held and the whole screen is black, `compose.c` writes "Click or press a key to continue" at the bottom (the original draws no text; it has the statistics picture there, which
+  the third report below gives ours too, so the line now only shows if that picture is missing).
 - `ffmpeg` is started with `-nostdin` (a terminal's stdin is otherwise read by it), `PORT_FFMPEG=path|none` chooses it (testing the no-ffmpeg path).
 
 ## Checked
@@ -39,7 +39,7 @@ duel ("Duel a Druid" at the first encounter): the win, the held wait, the clue s
 
 - A real display (SDL window, renderer): everything here is the dummy video driver. A frame is composed from the window tree at every present, so a missing repaint is not what this was.
 - The release layout (modules built by `tools/install/modbuild.py` with the user's compiler), `Esc` out of a duel, a draw, `DUEL.EXE`'s endings (`duel-won.md` has its win), the Gauntlet.
-- What the original shows during the wait (the statistics window, probably); only that it waits for a click or key.
+- (Done in the third report below: what the original shows during the clips and the wait.)
 
 # Second report: Urza's Glasses shows black pictures, and the list would not close
 
@@ -61,3 +61,49 @@ By the game's code the list closes on a click on a card, on its empty client are
 standard one and does not show that text), and on Esc; Enter and the right button do nothing. All of these but the unshown text were tried at 1024x768 with a mouse press of 150 ms and with plain
 clicks, in a dialog opened by `call 0x40a16e` (a dialog of its own thread, not the duel engine's): the list closed every time. The real Glasses path (the artifact on the table, the effect's prompt) was
 not run. If it still happens, `PORT_UI_LOG=1 ./pentamoor 2> pentamoor.log` and the windows list (`PORT_CONTROL`, `windows`) while it is open would say where the click went.
+
+# Third report: "the win screen was black while the animations played before you click"
+
+Not a freeze this time; the question was whether black is what the original shows. It is not: **the original shows the wizards' statistics picture behind the two clips and while it waits for the click.**
+
+## What the original shows (the Windows 98 VM of `docs/ORACLE_VM.md`, 640x480, the retail disc inserted at boot, a duel against a red wizard's Troll Shaman won by writing 0 to 0x6a4a04)
+
+Screenshots through QMP, in time (the guest is slower than real time and uneven, so only the order and the places count, not the timing; the pictures are game content and stay out of the repository):
+
+1. "You won!" (the duel board with a dark blue patterned panel, "You won!", the next draws): **a click closes it; Return does not** (70 s unchanged, tried twice; ours closes on Return too: left as it is).
+2. One black screen (the palette fade and the game's two black `FillRect`s, `0x50d5e7`), for about a second.
+3. **The statistics picture, full screen at 0,0**: five wizards in a row (blue, green, white, red, black) in front of a dark hall, a large crystal ball on its stand at the bottom middle. It is there from the first picture after the black, before any clip.
+4. The crystal-ball clip plays in the ball at (224,280) (a figure grows in it; it ends on a skull), then the wizard's hit clip at (340,48) over the red wizard (a white slash), each see-through over that picture.
+5. When the clips are over the picture stays, with the ball empty, with **no text and no window of any other kind**, until a click or a key ends the wait; then the reward screen.
+
+Without the disc in the drive at boot (inserted afterwards through the monitor Windows did not notice it) there are no clips and no picture: the fade, then the reward screen at once (STATWIN looks for `statwin\water.avi` on the CD drives).
+
+## How it was found, and why ours was black
+
+Breakpoints in the original (`probe_hits.py`): `status_show(0x641030, 2)` (STATWIN 0x10002209) calls the ball-and-hit function (0x1000268a) at once, **no STATWIN window is created** (the two `CreateWindowExA` functions never ran), and
+`DrawDibDraw` is called, from MAGVID's `DrawVidBackground` (return address MAGVID 0x100034ff), twice at the start (before each clip), at destination (0,0) on one device context (the same one for both calls and for the clips' own frames, which MAGVID draws at the clip's place), with the whole picture.
+STATWIN keeps the picture as a DIB object of its own (+0 a vtable, +4 a BITMAPINFOHEADER of 640x480x24, +8 the pixels, read from a BMP when the statistics object is made) and hands it to MAGVID with
+`SetVidBackgroundToDIB(object, slot)` right after each `LoadAVI`. **video.c took both calls and did nothing** (`accept`), so nothing ever painted the picture: the main window kept the black the game filled it with, the clips
+(see-through, keyed on black) lay on black, and after the last clip the black waited for the click. The earlier note's guess ("the original had the statistics window under the clips") was right about the picture and wrong about
+how it got there (no window).
+
+## Fix (src/port/video.c)
+
+`SetVidBackgroundToDIB` remembers the object for the slot (a slot that is not loaded: 2, as for a bad handle) and `DrawVidBackground` paints it on the main window's surface, unstretched, centred when the
+screen is larger than 640x480 (the clips already sit at the picture's origin + (224,280) and (340,48) there). The clips composite over it as before; the held clip after the last one still takes the click or key.
+`test_movie` 57 -> 63 checks (`test_vid_background`: a 4x2 picture, top row blue, bottom row red, on a main window: centred, whole, nothing around it, the slot check, the held clip still waits).
+
+## Compared with the original
+
+640x480, the same moment (the picture after both clips, waiting): the two screens agree, 8x8 block means differing by 1.2 on a mean level of 30, best alignment at a shift of (0,0), only 3 of 4,800 blocks over 40 and those are the original's mouse
+pointer. The original's pixels cannot be matched one for one: it draws the 24 bit picture on a 256 colour display (dithered), ours draws the colours as they are. The first picture after the black, the hit clip's slash and the empty ball are in
+both. Not comparable: the timing (the guest is far slower than real time; ours follows the clips' own 15 pictures a second).
+800x600 and 1024x768 have no reference (the VM is 640x480): the picture is centred and the clips keep their offsets from it (1024x768: picture at (192,144), clips at (416,424) and (532,192)); this is how MAGVID's
+offsets are computed (the DC's size minus the picture's, halved), read from its code, not seen running.
+
+## Checked
+
+Win by the opponent's life poked to 0 and a click on Done at 640x480, 800x600 (no ffmpeg) and 1024x768; Return and a click end the wait (reward screen, then the clue screen as before); `PORT_FFMPEG=none` goes to the reward screen at
+once as before (no clip, no picture, nothing waits); headless, SDL dummy drivers.
+Not checked: a real window, the other four wizards' pictures (the same DIB for all, one clip each), the Gauntlet's win, `PaintVid`, `LinkVids`, `SetVidForeground`, `SetVidBackgroundToBMP`, `PasteToVidBackground` (still accepted and ignored; STATWIN
+did not call them in this flow), a black wizard's win with the disc present (the VM runs without the disc did not play any clip).

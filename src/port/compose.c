@@ -243,7 +243,8 @@ static void draw_popup(Scene *s)
 }
 
 /* STATWIN's wait after its two clips (crystal ball, then the wizard's hit): the clips are erased and the game waits for a click or a key with nothing else on the screen,
- * which looks like a freeze. If the whole screen is black, say what it waits for. (The original had the statistics window under the clips; ours is not drawn.) */
+ * which looks like a freeze. If the whole screen is black, say what it waits for. (The original has the statistics picture there and no text; video.c paints it, so this only
+ * shows when STATWIN did not give one.) */
 static void draw_held_hint(Scene *s)
 {
     static const uint8_t grey[3] = {170, 170, 170};

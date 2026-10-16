@@ -1463,6 +1463,7 @@ int wm_next_message_for(uint32_t *out)
 }
 
 uint32_t wm_get_capture(void) { return capture_hwnd; }
+uint32_t wm_next_hwnd(void) { return next_hwnd; }           /* the handle the next window gets: a window with a handle at or above it was created after now */
 uint32_t wm_desktop_hwnd(void) { return desktop_hwnd; }
 
 void wm_dump(FILE *f)

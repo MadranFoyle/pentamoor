@@ -31,7 +31,7 @@ mirrors (player, opponent). The engine reads the real values at the next state c
 4. `poke 0x6a4a04 0`, then click Done (any action that makes the engine look again works). The "You won!" dialog opens (class #32770, two static
    texts "You won!" and "Your next draw:", **no buttons**).
 5. `key return` (Space and Esc work too; the dialog reads them as characters). What follows:
-   - black screen, a crystal ball clip (STATWIN R_MWZ.avi, 6.7 s, with STATSCRN.WAV) at (304,340) and then the wizard's hit clip (RED-HIT.AVI) at
+   - a moment of black, then the wizards' statistics picture (the original has it too; it was black here until the third report of duel-won-black-screen.md), a crystal ball clip (STATWIN R_MWZ.avi, 6.7 s, with STATSCRN.WAV) at (304,340) and then the wizard's hit clip (RED-HIT.AVI) at
      (420,108) at 800x600: the same spell-hit animation STATWIN plays for a spell cast at a wizard. About 12 s in all.
    - then the game waits for a click or a key (the clips' windows are the only windows of that thread). `key return` once more (or a click on the hit clip's place).
    - the reward screen on the dungeon backdrop: four cards (Winds of Change, Mountain, Swamp, Stone Giant in this run, with rarity banners), the text

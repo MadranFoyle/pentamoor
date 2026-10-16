@@ -8,6 +8,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+#include "gdi.h"
 #include "gdi_int.h"
 #include "port.h"
 #include "movie.h"
@@ -135,6 +136,46 @@ static Window *find_video_window(void)
     return NULL;
 }
 
+/* SetVidBackgroundToDIB / DrawVidBackground: STATWIN gives each clip the picture of the statistics window (a 640x480 24 bit DIB object of its own: +4 the BITMAPINFOHEADER, +8 the
+ * pixels, bottom row first) and the real library paints it on the main window with DrawDibDraw when the game asks for the background; the clips lie over it. Without it the won
+ * duel's screen was black behind the clips and while the game waited for a click. A 4x2 picture here: the top row blue, the bottom row red, centred on the screen. */
+static void test_vid_background(uint32_t slot, Window *clip)
+{
+    HostGuestFn set_bg = video_host_fn("SetVidBackgroundToDIB"), draw_bg = video_host_fn("DrawVidBackground");
+    uint32_t args[4], obj = 0x501000, bmi = 0x501100, bits = 0x501200;
+    Window *mw = wm_new_window("MainTest", 0, WS_POPUP | WS_VISIBLE, 0, 0, 0, screen_w, screen_h, "main", 0, 0);
+    uint8_t rgb[3 * 4 * 2];
+    int x0 = (screen_w - 4) / 2, y0 = (screen_h - 2) / 2, i, ok = 1;
+
+    CHECK(set_bg && draw_bg && mw != NULL);
+    if (!set_bg || !draw_bg || !mw)
+        return;
+    mw->proc = 1;                                                                  /* a window of "the game" (wm_main_hwnd looks for a procedure) */
+    mw->visible = 1;
+    gdi_resize_surface(mw);
+    memset(G + bmi, 0, 40);
+    WR32(bmi, 40); WR32(bmi + 4, 4); WR32(bmi + 8, 2); WR16(bmi + 12, 1); WR16(bmi + 14, 24);
+    for (i = 0; i < 4; i++) {
+        G[bits + 3 * (uint32_t)i + 2] = 255;                                       /* file order: the bottom row first, B G R: red */
+        G[bits + 12 + 3 * (uint32_t)i] = 255;                                      /* then the top row: blue */
+    }
+    WR32(obj, 0x1234); WR32(obj + 4, bmi); WR32(obj + 8, bits);
+    args[0] = obj; args[1] = 7;
+    CHECK(set_bg(args) == 2);                                                      /* a slot that is not loaded */
+    args[1] = slot;
+    CHECK(set_bg(args) == 0);
+    args[0] = slot;
+    draw_bg(args);
+    surface_rgb(mw->surface, x0, y0, x0 + 4, y0 + 2, rgb);
+    for (i = 0; i < 4; i++)
+        ok = ok && rgb[3 * i] == 0 && rgb[3 * i + 1] == 0 && rgb[3 * i + 2] == 255 && rgb[12 + 3 * i] == 255 && rgb[12 + 3 * i + 1] == 0 && rgb[12 + 3 * i + 2] == 0;
+    CHECK(ok);                                                                     /* the picture is on the main window, whole and centred */
+    surface_rgb(mw->surface, x0 - 1, y0, x0, y0 + 1, rgb);
+    CHECK(rgb[0] == 0 && rgb[1] == 0 && rgb[2] == 0);                              /* and nothing around it */
+    CHECK(clip->visible && movie_window_held(clip));                               /* the clip over it still waits as before */
+    wm_destroy(mw->hwnd);
+}
+
 /* MAGVID.DLL's exports the statistics window drives the clips with: load (a missing file is 5), position, transparency, play, status, the background, unload. */
 static void test_magvid(void)
 {
@@ -214,6 +255,7 @@ static void test_magvid(void)
         usleep(300000);
         draw_bg(args);
         CHECK(movie_window_held(w));
+        test_vid_background(slot, w);
         args[0] = 5;
         CHECK(status(args) == 2);                                                  /* a bad handle */
         args[0] = slot;

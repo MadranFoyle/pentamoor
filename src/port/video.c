@@ -12,6 +12,7 @@
 #define VID_SLOTS 3                                                          /* the DLL's own limit: handles are 0..2 */
 
 static uint32_t slots[VID_SLOTS];                                            /* the window of each loaded movie, 0 if free */
+static uint32_t slot_bg[VID_SLOTS];                                          /* SetVidBackgroundToDIB: the picture behind each movie (STATWIN's DIB object), 0 if none */
 
 static uint32_t accept(const uint32_t *a) { (void)a; return 0; }
 static uint32_t one(const uint32_t *a) { (void)a; return 1; }
@@ -94,6 +95,53 @@ static uint32_t load_avi(const uint32_t *a)
 
 static Window *slot_window(uint32_t handle) { return handle < VID_SLOTS && slots[handle] ? wm_window(slots[handle]) : NULL; }
 
+/* SetVidBackgroundToDIB(dib, handle): the picture the movie plays over. `dib` is STATWIN's own DIB object (a C++ class): +4 points to its BITMAPINFOHEADER and +8 to its
+ * pixels (a 640x480 24 bit picture of the five wizards, read from a BMP of the statistics window). The real library keeps it and DrawVidBackground paints it. */
+static uint32_t set_vid_background_to_dib(const uint32_t *a)
+{
+    if (a[1] >= VID_SLOTS || !slots[a[1]])
+        return 2;
+    slot_bg[a[1]] = a[0] > 0xFFFF ? a[0] : 0;
+    port_trace("magvid: SetVidBackgroundToDIB %u = 0x%x", a[1], a[0]);
+    return 0;
+}
+
+/* The picture of a slot, painted on the game's main window, the one that covers the screen (the real library draws it with DrawDibDraw, whole, on one device context: the
+ * two DrawVidBackground calls before the first clip are what put the statistics window's picture on the screen; docs/notes/duel-won-black-screen.md, third report).
+ * Centred when the screen is larger than the picture. */
+static void paint_vid_background(uint32_t handle)
+{
+    static uint32_t dc, dc_hwnd;
+    uint32_t obj = slot_bg[handle], bmi, bits, hwnd = wm_main_hwnd(), args[13];
+    int w, h;
+
+    if (!obj || !hwnd)
+        return;
+    bmi = RD32(obj + 4);
+    bits = RD32(obj + 8);
+    if (bmi <= 0xFFFF || bits <= 0xFFFF)
+        return;
+    w = (int32_t)RD32(bmi + 4);
+    h = (int32_t)RD32(bmi + 8);
+    if (h < 0)
+        h = -h;
+    if (w <= 0 || h <= 0)
+        return;
+    if (!dc || dc_hwnd != hwnd) {
+        dc = gdi_window_dc(hwnd);
+        dc_hwnd = hwnd;
+    }
+    memset(args, 0, sizeof(args));
+    args[1] = dc;
+    args[2] = (uint32_t)(screen_w > w ? (screen_w - w) / 2 : 0);
+    args[3] = (uint32_t)(screen_h > h ? (screen_h - h) / 2 : 0);
+    args[4] = (uint32_t)w; args[5] = (uint32_t)h;
+    args[6] = bmi; args[7] = bits;
+    args[10] = (uint32_t)w; args[11] = (uint32_t)h;
+    drawdib_draw(args);
+    wm_dirty = 1;
+}
+
 static uint32_t play_avi(const uint32_t *a)
 {
     Window *w = slot_window(a[0]);
@@ -122,6 +170,7 @@ static uint32_t unload_avi(const uint32_t *a)
     if (w) {
         wm_destroy(w->hwnd);
         slots[a[0]] = 0;
+        slot_bg[a[0]] = 0;
         port_trace("magvid: UnloadAVI %u", a[0]);
     }
     return 0;
@@ -154,7 +203,7 @@ static uint32_t set_vid_transparency(const uint32_t *a)
     return 0;
 }
 
-/* DrawVidBackground(handle): paints the background again where the video is. The statistics window does it when a clip is done, and a see-through clip (a
+/* DrawVidBackground(handle): paints the background (SetVidBackgroundToDIB) again. The statistics window does it before a clip and when it is done, and a see-through clip (a
  * figure over the window's own picture) is gone then; the clips that are whole rooms stay as their last picture, which is the room.
  * The window is kept (visible, undrawn): STATWIN waits for a click or a key after the last clip with a PeekMessage loop on its own thread, and the only
  * windows of that thread are these, so with the window gone nothing could ever end the wait (a won duel hung on a black screen). */
@@ -162,6 +211,8 @@ static uint32_t draw_vid_background(const uint32_t *a)
 {
     Window *w = slot_window(a[0]);
 
+    if (w)
+        paint_vid_background(a[0]);
     if (w && movie_window_alpha(w) && !movie_window_playing(w)) {
         movie_window_set_held(w, 1);                                         /* not drawn; the window itself stays (see the comment above) */
         port_trace("magvid: DrawVidBackground %u hides the clip", a[0]);
@@ -179,7 +230,7 @@ static uint32_t vid_status(const uint32_t *a)
 
 static const HostExport MAGVID[] = {
     {"InitVid", 1, accept}, {"ReleaseVid", 2, accept}, {"LoadAVI", 3, load_avi}, {"UnloadAVI", 4, unload_avi}, {"PlayAVI", 5, play_avi}, {"StopAVI", 6, stop_avi},
-    {"SetVidCallBack", 7, accept}, {"SetVidBackground", 8, accept}, {"SetVidBackgroundToBMP", 9, accept}, {"SetVidBackgroundToDIB", 10, accept},
+    {"SetVidCallBack", 7, accept}, {"SetVidBackground", 8, accept}, {"SetVidBackgroundToBMP", 9, accept}, {"SetVidBackgroundToDIB", 10, set_vid_background_to_dib},
     {"DrawVidBackground", 11, draw_vid_background}, {"PasteToVidBackground", 12, accept}, {"SetVidForeground", 13, accept}, {"PaintVid", 14, accept},
     {"SetVidPos", 15, set_vid_pos}, {"VidStatus", 16, vid_status}, {"LinkVids", 17, accept}, {"SetVidThreadPriority", 18, accept},
     {"SetVidTransparency", 19, set_vid_transparency}, {"_delay", 20, accept},
