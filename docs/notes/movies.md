@@ -42,7 +42,8 @@ structure it is handed.)
    flag meant centred, so a position that was given was ignored.
 4. **A loaded video is not visible until `PlayAVI`**: the hit clip's first frame is the wizard, which would otherwise stand there while the ball plays
    (STATWIN loads both clips, then plays them one after the other). `DrawVidBackground(handle)` (the game calls it before and after each clip) hides a
-   see-through clip that is not playing; an opaque one (a room) stays as its last picture, which is the room.
+   see-through clip that is not playing; an opaque one (a room) stays as its last picture, which is the room. It also paints the picture that `SetVidBackgroundToDIB(object, handle)` gave
+   the slot (the statistics picture: a won duel's screen behind the clips; duel-won-black-screen.md, third report).
 5. **ffmpeg is found** on the PATH and, for a program started from a launcher with a short PATH, in /opt/homebrew/bin, /usr/local/bin, /usr/bin; the
    pass-through option is `-fps_mode passthrough` (ffmpeg 5.1 and later) or `-vsync passthrough` before that (probed once). Without it MTGEND repeats frames
    for its 13 empty ones; without ffmpeg at all `LoadAVI` says 4 and the game goes on.
@@ -66,7 +67,7 @@ structure it is handed.)
 
 ## Not done / not verified
 
-- **The statistics window itself was not on screen** while these ran (a call into the middle of it, over the encounter screen): STATWIN also paints a foreground
+- **(Seen later: duel-won-black-screen.md, third report.) The statistics window itself was not on screen** while these ran (a call into the middle of it, over the encounter screen): STATWIN also paints a foreground
   mask over the video (`wht-mask.bmp` ...: `SetVidForeground` and `DrawVidBackground` with a rectangle) so a clip does not cover the wizard's frame; those
   calls still do nothing, so a clip may overlap the frame by a few pixels. The real trigger (a duel result, or the map's Statistics) was not reached from
   the saved game; the positions are the statwin's own numbers (origin + table).

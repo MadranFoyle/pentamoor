@@ -142,3 +142,22 @@ end turn, attack, block. What worked, from a duel that reached combat on both si
   their own, remove them, resume. If you kill one hard, reconnect, clear the breakpoints and single-step.
 - On the Worldmagic prompt a nudge moved the pointer from "Never mind" onto "Pay the gold" (not clicked);
   check before every click.
+
+## Seeing a screen in time, the disc, and the debugger (found while comparing the won-duel screen: `docs/notes/duel-won-black-screen.md`)
+
+- **`ORACLE_DISPLAY=none`** (`oracle_launch.sh`; default `cocoa`): a run nobody watches. With the Cocoa window the QEMU 11 on macOS twice stopped for good while the guest drew a lot (a clip playing): the main loop sits in
+  the display's refresh waiting for the vCPU thread, which waits for the main loop; nothing answers QMP or the debugger port, `sample` shows both. Killing that QEMU by its pid (and booting again) is the only way out.
+  Screenshots through QMP work without a window.
+- **The retail disc has to be in the drive when Windows starts** for STATWIN's clips and statistics picture (it looks for `statwin\water.avi` on the CD drives the first time it is asked, and a disc put in later through the monitor was
+  not noticed). Right after `oracle_launch.sh`: `oracle_ctl.py monitor 'change ide1-cd0 "/full/path/to/MTG v1.0.iso" raw'`. Not needed for the game's own screens.
+- **A clip or an animation in time**: `oracle_ctl.py burst PREFIX N INTERVAL` (screenshots, with the time each took), then compare frames with the port's. The guest runs slower than real time and unevenly.
+- **Restore points**: `oracle_ctl.py monitor 'savevm tag'` right after something slow (a duel up), `loadvm tag` to get back (a few seconds, about 100 MB in the overlay each). After a `loadvm` the guest can be stopped
+  (`oracle_ctl.py status` says `paused` or `debug`): `oracle_ctl.py monitor cont`.
+- **Breakpoints that log**: `probe_hits.py SECONDS ADDR=label ...` (time, label, registers, first stack words; steps off each breakpoint and goes on). A DLL may load at another base than its image base (STATWIN.DLL
+  at 0x01650000, MAGVID.DLL near 0x01680000 in a game started from the Startup folder); find the base by reading a pointer into it (the game's own import table: MAGIC.EXE 0x701020 held `status_show`).
+  Do not run two debugger clients: the second waits for ever, and one that is killed while the guest is stopped leaves it stopped (`oracle_ctl.py status` says `debug`; `probe_hits.py 0` starts it again).
+- **Writing a variable** (to win a duel): stop the guest inside the game first, then write; a poke from `oracle_qemu.GDBRemote` at an arbitrary stop lands in another process's page tables. A breakpoint on 0x4b42dc
+  (the function that copies the drawn life totals, see `duel-won.md`) is hit by the next click on Done, and there the write to 0x6a4a04 (the opponent's life) is safe.
+- **The "You won!" dialog** has no buttons: a click closes it, Return does not (it does in the port).
+- **The pointer**: after a move, check the arrow in a screenshot, not the number you asked for: the arrow's tip is where QMP's count put it, 1 to 2 pixels off, and a move that did not finish leaves it elsewhere; a click on
+  a card or a button that is 1 pixel off the row above is the usual "nothing happened".

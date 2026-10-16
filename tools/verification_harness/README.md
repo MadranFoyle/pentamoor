@@ -18,7 +18,8 @@ don't need Wine, MinGW, Frida, or the original discs to build and test.
   localize the earliest tick (and therefore the responsible function) automatically.
 - `oracle_launch.sh`, `oracle_qemu.py` — boot the Windows 98 oracle under QEMU and drive it (QMP
   keys/screenshots, gdbstub breakpoints/memory). See `docs/ORACLE_VM.md`.
-- `oracle_ctl.py` — command-line driver: `shot`, `click X Y`, `move X Y`, `key`.
+- `oracle_ctl.py` — command-line driver: `shot`, `click X Y`, `hold X Y S`, `move X Y`, `key`, `burst` (screenshots in time), `monitor` (`savevm`, `loadvm`, changing the disc), `status`.
+- `probe_hits.py` — log each time the original runs some addresses (time, registers, the first stack words), then go on.
 - `probe_steps.py` — breakpoint on the turn-step runner plus a watchpoint on the step code.
 - `probe_globals.py` — watchpoints on the card-event context globals.
 - `probe_duel_start.py` — what runs when a duel starts.
