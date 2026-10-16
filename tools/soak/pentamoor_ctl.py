@@ -135,12 +135,12 @@ class Game:
         self.w, self.h = (int(v) for v in res.split("x"))
         self.workdir = workdir or tempfile.mkdtemp(prefix="soak-")
         os.makedirs(self.workdir, exist_ok=True)
-        self.exe = os.path.join(repo, exe)
+        self.exe = os.environ.get("PENTAMOOR_RUN") or os.path.join(repo, exe)          # the launcher's variables: another runtime, another game module
         self.program = os.path.join(repo, program)
         # the game module (the library made from the lifted C) the runtime loads: game_magic / game_deck / game_duel next to it, by the program's name
         ext = "dylib" if sys.platform == "darwin" else "so"
         # module="none": the old single executable (make -C src/port static), which has the game linked in and takes no -m
-        self.module = module or os.path.join(os.path.dirname(self.exe), "game_%s.%s" % (os.path.basename(program).split(".")[0].lower(), ext))
+        self.module = module or os.environ.get("PENTAMOOR_MODULE") or os.path.join(os.path.dirname(self.exe), "game_%s.%s" % (os.path.basename(program).split(".")[0].lower(), ext))
         self.extra_env = extra_env or {}
         self.proc = None
         self.log_path = os.path.join(self.workdir, "game.log")
@@ -159,6 +159,10 @@ class Game:
         env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy", PORT_CONTROL=self.ctl_path, PORT_OVERLAY=overlay,
                    PORT_STUB="1", PORT_RES=self.res)
         env.update(self.extra_env)
+        for pair in os.environ.get("SOAK_ENV", "").split():      # SOAK_ENV="SDL_VIDEODRIVER=x11 DISPLAY=:80 PORT_STEAMDECK=1": the game's environment for a run on a real X server, a Deck's settings ...
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                env[k] = v
         self._log = open(self.log_path, "wb")
         # start_new_session: our own process group, so nothing we do can reach anyone else's game
         self.proc = subprocess.Popen([self.exe] + ([] if self.module == "none" else ["-m", self.module]) + [self.program], cwd=self.repo, env=env, stdout=self._log, stderr=subprocess.STDOUT,

@@ -115,7 +115,7 @@ python3 tools/install/install.py --self-test   # the module build in Python (com
 python3 tools/release/check_tree.py            # nothing tracked looks like decompiler output
 ```
 
-`tools/soak/` plays many duels through the control pipe and reports crashes and hangs (`soak.py`); `pad_play.py` plays a new game and a duel with controller commands only, `nav_play.py` checks the D-pad's moves between cards, buttons and menu rows in a duel, and `screen_nav_play.py` checks it on the screens the game draws itself (title, new game, village, shops, clues, stats, the deck builder). All need the
+`tools/soak/` plays many duels through the control pipe and reports crashes and hangs (`soak.py`); `pad_play.py` plays a new game and a duel with controller commands only, `nav_play.py` checks the D-pad's moves between cards, buttons and menu rows in a duel, `pad_realtime.py` plays a duel with the pad at a person's speed (buttons held 120 to 150 ms, 450 ms apart) and reads the input log (`SOAK_ENV="SDL_VIDEODRIVER=x11 DISPLAY=:1 PORT_STEAMDECK=1 PORT_FULLSCREEN=1"` runs any of them on a real X server in a Deck's setup), and `screen_nav_play.py` checks it on the screens the game draws itself (title, new game, village, shops, clues, stats, the deck builder). All need the
 installed game.
 
 ## Environment switches
@@ -134,6 +134,7 @@ All are environment variables; the full list with explanations is in [docs/PHASE
 | `PORT_FULLSCREEN=1` | a borderless full-screen window (the default on a Steam Deck or in Gamescope; `PORT_FULLSCREEN=0` turns that off) |
 | `PORT_STEAMDECK=1` / `0` | say this is (or is not) a Steam Deck, for the defaults above and below (otherwise: `SteamDeck=1`, SteamOS in `/etc/os-release`, Gamescope; `docs/notes/steamdeck.md`) |
 | `PORT_TEXTINPUT=auto` | SDL's text input (what brings up an on-screen keyboard) only while a text field has the focus; the default on a Deck, off elsewhere. `PORT_TEXT_LOG=1` prints each change |
+| `PORT_PAD_LOG=1` | a time-stamped log of what the input does (controllers SDL found, each button, what the pad asked the game to do, the D-pad's mode, the window each click reached) on stderr and in the file `pentamoor-input.log` in the folder the program was started in; `=PATH` names the file, `=stderr` keeps it off disk. For bug reports from a machine with no terminal (a Steam Deck: `docs/notes/steamdeck.md`, "When the pad does nothing in a duel") |
 | `PORT_PAD_BACKGROUND=1` | the pad keeps working while another window has the focus (the default on a Deck) |
 | `PORT_FRAME_MS` | the overworld's frame time in ms (default 60) |
 | `PORT_OVERLAY` | where saves and other writes go |

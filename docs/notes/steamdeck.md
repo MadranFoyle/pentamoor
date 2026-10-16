@@ -76,6 +76,37 @@ What changed (`front_sdl.c`, `textin.c`, tests in `test_steamdeck.c` and `test_w
   `PORT_TEXT_LOG=1` prints each change, `textinput` in `PORT_CONTROL` the state.
 - Other places the game takes typed text (a saved game's name, a deck's name through the file dialog, the Gauntlet or duel names) were not looked for one by one; the file dialogs are covered by `wm_text_focus`.
 
+## When the pad does nothing in a duel: what to send
+
+Report from a Deck (Game mode, the archive of `main` at de0e03f): "the controller input isn't working at all", then "it kind of works for some things, but not in duels". Nothing in the program is known to be wrong
+(the next section lists what was run and what that found: nothing), so the program now writes down what it sees, and the log says which of the possible causes it is.
+
+**The switch** is `PORT_PAD_LOG=1`. It prints to stderr and writes the file `pentamoor-input.log` in the folder the program was started in (the game's own folder, the one with `pentamoor` in it; emptied at each start). `PORT_PAD_LOG=/some/file.log`
+names the file, `PORT_PAD_LOG=stderr` keeps it off disk. A Deck in Game mode has no terminal, so the file is the way:
+
+1. Game mode: Library > Pentamoor > the gear > Properties > Launch Options: `PORT_PAD_LOG=1 %command%` (that exact order: variable first).
+2. Start the game from Steam, get to the trouble (a duel; press the D-pad up and down, A on a card, B, X, move the left stick), then quit the game (Steam button > Exit game) so the file is complete.
+3. Desktop mode (Steam button > Power > Switch to Desktop): send `pentamoor-input.log` from the game's folder, and say: which layout is chosen (Library > Pentamoor > the controller icon: its name), what each button you pressed
+   did or did not do, and whether the cursor moved with the stick, whether it was drawn (a black and white arrow), whether the on-screen keyboard came up.
+   From desktop mode the same works in Konsole: `cd` to the folder, `PORT_PAD_LOG=1 ./pentamoor`.
+
+**How to read it.** Every line starts with the time of day (UTC) and `padlog:`. In order of what happens:
+
+| In the log | It means |
+|---|---|
+| `start: SDL ..., video driver ..., Steam Deck yes/no, full screen ...` and `env: ...` | where the program thinks it runs; `SteamDeck=-` and `Steam Deck yes` together mean the file system said it is a Deck, not Steam |
+| `0 joystick(s) at start: SDL sees no controller` or `joystick N '...' is not a game controller (SDL has no mapping for it)` | **the pad code has nothing to read**: Steam Input's Desktop layout makes the Deck a keyboard and a mouse. Choose a Gamepad layout (`The controller layout` above) |
+| `controller N opened: '...' guid ... mapping ...` | a pad is in use; two lines with different names mean two devices (the Deck's own controller and Steam's virtual one) |
+| `controller button a down (pad cursor active, D-pad moves between targets)` | SDL delivered the press. If pressing buttons prints nothing, the events do not reach the program (focus, an overlay, the layout) |
+| `pad: left button down at (x,y)`, then `mouse left down at (x,y) -> window 0x... MAGICGAME_CardClass 'Hand Card'` | the press went to the game, and to that window. A `pad:` line with no `mouse` line after it (the D-pad's lines excepted) means the game did not take it |
+| `pad: D-pad up from (x,y): asks the game for the next target`, then `D-pad: the game chose a target, the pointer goes to (x,y)` or `D-pad: no target that way ...` | the D-pad in a duel, a dialog or a menu. `D-pad mode: duel -> none` says it was an arrow key (which the duel ignores) from then on |
+| `the real mouse or a touch took the cursor from the pad at (x,y)` many times, with `mouse moved ...` | something sends mouse motion (a trackpad, the touch screen, the compositor) and gives the cursor away each time; the pad's own cursor jumps and what it held is let go |
+| `window: focus lost` / `focus gained` | the game's window lost the keyboard focus (Steam's overlay, a notification, the on-screen keyboard); keys and, without the background hint, pad events stop meanwhile |
+| `the game's (Y/N) question: asking` | the program believes the game asks "Buy for 20 gold? (Y/N)": A and B are then y and n and clicks do nothing. This must not appear in a duel |
+| `key ... down`, `mouse button ... down` | the keyboard and mouse events SDL delivers: what a Gamepad layout that also emulates them sends, or what the Desktop layout sends instead of a pad |
+
+The log has no game data in it (window class names and titles, and positions on the screen), but it does list the keys pressed (as key codes and characters: a name typed into the new game's box is in it), so read it before pasting it somewhere public.
+
 ## Checked (on this Mac and on `runbox`, a headless x86-64 CachyOS box; no Deck)
 
 - `make -C src/port test check-front` on macOS and Linux; `python3 -m pytest tools/install tools/steamdeck` (the VDF writer against a hand-built shortcuts.vdf: parse, round trip, entry bytes, numbering, refusal of
@@ -88,12 +119,22 @@ What changed (`front_sdl.c`, `textin.c`, tests in `test_steamdeck.c` and `test_w
   image: the compiler was downloaded (Zig 0.16), 3 min 26 s to a game that starts (the title screen, "Start New Game" with a real click, in the full-screen setup above), `--clean` left 920 MB. The real Konsole
   branch (no kdialog or zenity) ran in the virtual X server: the window showed the installer's text and closed on Enter.
 - The Steam shortcut writer on fake Steam folders, never on a real Steam.
+- **The pad in a duel, for the report above** (runbox, x86-64 Linux, SDL 2.32 as `sdl2-compat`; the Mac, arm64, for `pad_realtime.py` and the unit tests; all with `PORT_CONTROL`'s `pad` steps, which push the SDL events a controller sends):
+  `nav_play.py` (the D-pad's moves in a duel) on the dummy drivers and on a real X server in a Deck's setup (`PORT_STEAMDECK=1 PORT_FULLSCREEN=1`, 1280x800, text input managed): all checks pass, 48 to 49 targets, every move on a target;
+  `pad_play.py` (a new game, a duel, A, B, Back, Done) in the same setup: passes; `pad_realtime.py` (new: buttons held 120 to 150 ms, 450 ms apart, a direction held 1.3 s, the stick to bring the pointer near, the input log read back)
+  on the dummy drivers, in the Deck's setup, with the game modules compiled by Zig as a Deck's install does (`-O1`, no sanitizer: the module has no `ud2` and no ubsan symbol), and with the game and the script on one core
+  shared with three busy loops (slower than a Deck's CPU): all pass. Real X events (XTest) in a duel in the full-screen setup (picture at 128,16): a left click held 30 ms on Done and on a hand card, a right click and Escape,
+  Enter passes the phase, and the pad works right after the real mouse was used. In all of them: the D-pad mode in the log stays `duel` (it goes through `dialog` for the "Sorcerer casts..." card the game shows for
+  each of the opponent's spells; A dismisses that, wherever the cursor is), the game's (Y/N) question is never reported, no message box is shown, SDL's text input is never switched on (no on-screen keyboard), the only mouse motion in the log is what the scripts sent (hiding
+  and showing the pointer as the pad takes and gives back the cursor sent none, on X11). **No failure was found.** What this leaves: the cause is in what only a Deck has (below).
 
 ## Not verified (what a Deck must check)
 
 1. **Everything on the hardware**: the 1280x800 screen in Game mode (Gamescope, `SteamDeck=1`): that the window really is full screen at the desktop mode, that the scaling and bars are as above and that the
    touch screen and trackpads land where the pointer is drawn (SDL turns touch into the mouse; the touch path through `SDL_RenderSetLogicalSize` was not exercised at all).
-2. **The pad**: that SDL sees the Deck with the Gamepad template as a game controller with these button names, the sticks' drift against the 0.22 dead zone (`controller.md`), that the Steam overlay and Steam+X do
+2. **The pad** (this is where the report "the pad does not work in duels" belongs; send the input log, above): which layout was in use (Desktop gives SDL no controller at all: `0 joystick(s) at start`; the shipped template has both trackpads in
+   *absolute* mouse mode, where a thumb that rests on one puts the pointer where it touches and takes the cursor from the pad each time: `took the cursor from the pad` lines), whether the Deck's own controller and Steam's virtual one are both
+   open (two `controller N opened` lines: every press then arrives twice, which `pad.c` ignores for buttons; two sticks that report differently would fight over the cursor; unverified); that SDL sees the Deck with the Gamepad template as a game controller with these button names, the sticks' drift against the 0.22 dead zone (`controller.md`), that the Steam overlay and Steam+X do
    not leave the pad's cursor or a key stuck, that `SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` is wanted (or whether it moves the cursor while the overlay is up).
 3. **The layout file** `controller_neptune_pentamoor.vdf`: written from memory of the format (`controller_mappings`, `group`s with a `mode`, `inputs` with `activators`/`Full_Press`/`bindings`, a `preset` with
    `group_source_bindings`); no Steam to load it in. Unsure: whether Steam lists a file copied into `controller_base/templates/` (as opposed to the per-user `userdata/<id>/config/controller_configs/`), the names

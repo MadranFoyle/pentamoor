@@ -422,6 +422,13 @@ static int class_shown(const char *name)
     return 0;
 }
 
+const char *navwm_mode_name(int mode)
+{
+    static const char *const modes[] = {"none", "menu", "combo", "dialog", "duel", "deck", "screen"};
+
+    return mode >= 0 && mode < (int)(sizeof(modes) / sizeof(modes[0])) ? modes[mode] : "?";
+}
+
 int navwm_mode(void)
 {
     if (wm_popup_levels() > 0)
@@ -499,13 +506,12 @@ int navwm_pick(int x, int y, int dir, int *tx, int *ty)
 
 void navwm_dump(FILE *f, int x, int y)
 {
-    static const char *const modes[] = {"none", "menu", "combo", "dialog", "duel", "deck", "screen"};
     NavTarget t[NAV_MAXTARGETS];
     int n, cur, i;
     double t0 = port_now();
 
     n = navwm_collect(t, NAV_MAXTARGETS, x, y, &cur);
-    fprintf(f, "  nav: mode %s, %d targets, pointer (%d,%d) on %d, found in %.1f ms\n", modes[navwm_mode()], n, x, y, cur, (port_now() - t0) * 1000.0);
+    fprintf(f, "  nav: mode %s, %d targets, pointer (%d,%d) on %d, found in %.1f ms\n", navwm_mode_name(navwm_mode()), n, x, y, cur, (port_now() - t0) * 1000.0);
     for (i = 0; i < n; i++)
         fprintf(f, "  target %d zone %d kind %d id 0x%x (%d,%d)-(%d,%d) scroll %d '%s'\n", i, t[i].zone, t[i].kind, t[i].id, t[i].x0, t[i].y0, t[i].x1, t[i].y1, t[i].scroll, t[i].label);
 }

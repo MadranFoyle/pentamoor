@@ -9,6 +9,7 @@
 #include "gdi.h"
 #include "gdi_int.h"
 #include "navwm.h"
+#include "padlog.h"
 #include "sched.h"
 #include "steamdeck.h"
 #include "wm.h"
@@ -106,6 +107,7 @@ static pthread_mutex_t nlock = PTHREAD_MUTEX_INITIALIZER;
 static unsigned nav_n;
 static int nav_kind, nav_x, nav_y, nav_dir;
 static volatile int nav_ready;
+static int nav_mode_now;
 
 int front_nav_ready(void) { return nav_ready; }
 
@@ -140,8 +142,11 @@ static void nav_serve(const Ev *e)
         y = pend_ty;
     }
     r = navwm_pick(x, y, e->kind, &tx, &ty);
-    if (r == NAV_NONE)
+    if (r == NAV_NONE) {
+        if (padlog_on())
+            padlog("D-pad: no target that way from (%d,%d) in mode %s: the pointer stays", x, y, navwm_mode_name(navwm_mode()));
         return;
+    }
     if (r != NAV_SCROLL) {
         pend = 1; pend_fx = e->x; pend_fy = e->y; pend_tx = tx; pend_ty = ty; pend_t = now;
     }
@@ -242,14 +247,44 @@ int front_ui_pass(uint32_t *id, uint32_t *held_ms)
 
 void front_ui_saw(void) { press_seen = 1; }
 
+/* PORT_PAD_LOG: the window a click or key is about to reach (guest side: the tree may be read here) */
+static void log_window(const char *what, uint32_t h)
+{
+    const Window *w = h ? wm_window(h) : NULL;
+    char title[41] = "";
+    int i;
+
+    for (i = 0; w && w->title && w->title[i] && i < 40; i++)           /* a title can hold a line break: the log is one line per event */
+        title[i] = (unsigned char)w->title[i] < 32 ? ' ' : w->title[i];
+    title[i] = 0;
+    padlog("%s -> window 0x%x %s '%s'", what, h, w && w->cname ? w->cname : "(none)", title);
+}
+
+static void log_deliver(const Ev *e)
+{
+    static const char *const kinds[] = {"move", "left down", "left up", "right down", "right up", "wheel"};
+    char what[80];
+
+    if (e->type == 0 && e->kind != IN_MOVE && e->kind != IN_WHEEL) {
+        snprintf(what, sizeof(what), "mouse %s at (%d,%d)", e->kind >= 0 && e->kind < 6 ? kinds[e->kind] : "?", e->x, e->y);
+        log_window(what, wm_top_dialog() ? wm_top_dialog() : wm_hit_test(e->x, e->y));
+    } else if (e->type == 1 && e->down && !e->repeat) {
+        snprintf(what, sizeof(what), "key vk 0x%x ch %d", e->vk, e->ch);
+        log_window(what, wm_top_dialog() ? wm_top_dialog() : wm_key_target());
+    }
+}
+
 static void deliver(const Ev *e)
 {
+    if (padlog_on())
+        log_deliver(e);
     if (e->type == 0) {
         int ans = yesno_mouse(e->kind);
 
         if (ans < 0)                                     /* the release of a press that answered a yes/no question (yesno.c) */
             return;
         if (ans) {                                       /* a press that answers one: the key the game is waiting for, in place of the click */
+            padlog("the press answered the game's yes/no question with '%c' instead of clicking", ans);
             front_push_key(ans == 'y' ? 0x59 : 0x4E, ans == 'y' ? 0x15 : 0x31, 1, ans, 0);
             front_push_key(ans == 'y' ? 0x59 : 0x4E, ans == 'y' ? 0x15 : 0x31, 0, -1, 0);
             return;
@@ -341,7 +376,21 @@ void front_serve(double max_wait)
     now = port_now();
     if (now >= next_frame) {
         next_frame = now + 1.0 / 30;
-        nav_ready = navwm_mode() != NAVWM_NONE;
+        nav_mode_now = navwm_mode();
+        nav_ready = nav_mode_now != NAVWM_NONE;
+        if (padlog_on()) {
+            static int last_mode = -1, last_asking = -1;
+            int asking = yesno_waiting();
+
+            if (nav_mode_now != last_mode) {
+                padlog("D-pad mode: %s -> %s", last_mode < 0 ? "(start)" : navwm_mode_name(last_mode), navwm_mode_name(nav_mode_now));
+                last_mode = nav_mode_now;
+            }
+            if (asking != last_asking) {
+                padlog("the game's (Y/N) question: %s", asking ? "asking (A is y, B is n)" : "not asking");
+                last_asking = asking;
+            }
+        }
         if (got || wm_dirty || frame_n == 0 || now - last_compose >= 0.25) {
             static uint8_t scratch[SCREEN_MAX_W * SCREEN_MAX_H * 3];
 
