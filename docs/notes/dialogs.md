@@ -123,3 +123,29 @@ the program stayed; Tab then Enter -> IDNO (the program left); `pad press left`,
 `PORT_MSGBOX` under `PORT_CONTROL` the same call logged `-> IDYES` and showed nothing. **Not checked:** the box at 640x480 and 800x600, in `MAGIC.EXE` and `DUEL.EXE` (no path to one of their errors was
 found without breaking the game), with a real mouse, keyboard or controller (all input here was the control pipe), on Windows, the Sell and Take "(Y/N)" questions, and against a real Windows 98 box
 (sizes and spacing follow its look, not measured). A message box is modal and the game waits behind it, which it also did on Windows.
+
+## Enter in a dialog with nothing to press: the "You won!" screen
+
+In the original **a click closes the "You won!" dialog and Return does not** (`duel-won-black-screen.md`: 70 s unchanged, twice); in the port Return closed it too. The reading of its procedure
+(MAGIC.EXE 0x4ae995, template 246, opened by `DialogBoxParamA` at 0x4ae895) explains both. The template has five statics and two owner-drawn buttons ("&Next round" 0x493, "&Quit Gauntlet" 0x494); for a duel
+that is not a Gauntlet's the initialisation hides both buttons and returns 0 (it sets no focus). The procedure closes the dialog (`EndDialog`) on:
+
+- `WM_LBUTTONDOWN` (it starts a move of the window by `WM_SYSCOMMAND` 0xF012 and ends the dialog if the window did not move more than 5 pixels: a click),
+- `WM_CHAR` for 13, 32 and 27,
+- `WM_COMMAND` 0x493, 0x494 and 2 (IDCANCEL),
+
+and answers `WM_COMMAND` with IDOK (1) with a plain "handled". Windows runs every key of a modal dialog through the dialog manager (`IsDialogMessage`): Enter with no default push button (no `DM_SETDEFID`
+here) and no control to press is sent to the procedure as `WM_COMMAND` with IDOK, and **no `WM_CHAR` 13 is delivered**; Esc is `WM_COMMAND` with IDCANCEL (which closes it); Space is an ordinary character (closes it).
+So the `WM_CHAR` cases for 13 and 27 are dead code in the original, and Enter does nothing.
+
+`input.c` (`wm_inject_key`) used to deliver Enter to a dialog without an IDOK control as `WM_KEYDOWN` and `WM_CHAR` (the change that let the "You won!" screen be left at all, `PHASE_C.md`: it ate the key before). Now,
+for a dialog with no IDOK control and **no visible, enabled push button** (plain, default or owner-drawn: nothing the dialog manager could press), Enter is sent as `WM_COMMAND` with IDOK and no control, as Windows
+does, and no character follows. A dialog that has such a button, or an IDOK control, or a message box (`own_keys`) is as before; so is Esc (the character, which closes the dialog with 1 where the original's IDCANCEL
+closes it with 0: nothing reads it for this dialog) and Space. A Gauntlet's result screen (both buttons shown) is not changed either; there the original would press the focused button on Enter, which the port does
+not do (the mouse, A on a controller, does). Other dialogs of `MAGIC.EXE` and `DUEL.EXE` without an IDOK control (templates 223, 229, 233, 235, 240, 243, 244, 247, 249 by the resource tables) were not played with Enter; the
+ones with buttons keep their behaviour by the rule, and the list ("ShowList from Sid") never took Enter.
+
+Tested: `test_wm` (`test_dialog`: a dialog with a text and a push button still gets `WM_CHAR` 13; a dialog with only a text gets `WM_COMMAND` 1 and no 13, and Space as a character closes it; the old expectation that the
+text-only dialog got the 13 is gone) and `tools/soak/won_dialog.py` (a duel won by poking the opponent's life: Return leaves the dialog, a click closes it; 640x480). Esc (the pipe's `key escape`) closes it in the running game too, so on a controller **Back or A with the cursor on the dialog closes it** (X and Start are Enter, which does nothing here, as in the original). Space was
+not tried end to end: the control pipe's `key space` sends no character (SDL makes the character from a text event), and `text` cannot send a blank (the parser skips it), so only the unit test covers it.
+Not checked in the Windows 98 VM again: the reading above is of the code and agrees with what was seen there.

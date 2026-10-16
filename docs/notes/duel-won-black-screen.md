@@ -70,7 +70,7 @@ Not a freeze this time; the question was whether black is what the original show
 
 Screenshots through QMP, in time (the guest is slower than real time and uneven, so only the order and the places count, not the timing; the pictures are game content and stay out of the repository):
 
-1. "You won!" (the duel board with a dark blue patterned panel, "You won!", the next draws): **a click closes it; Return does not** (70 s unchanged, tried twice; ours closes on Return too: left as it is).
+1. "You won!" (the duel board with a dark blue patterned panel, "You won!", the next draws): **a click closes it; Return does not** (70 s unchanged, tried twice; ours closed on Return too, then: fixed, see `dialogs.md`, "Enter in a dialog with nothing to press").
 2. One black screen (the palette fade and the game's two black `FillRect`s, `0x50d5e7`), for about a second.
 3. **The statistics picture, full screen at 0,0**: five wizards in a row (blue, green, white, red, black) in front of a dark hall, a large crystal ball on its stand at the bottom middle. It is there from the first picture after the black, before any clip.
 4. The crystal-ball clip plays in the ball at (224,280) (a figure grows in it; it ends on a skull), then the wizard's hit clip at (340,48) over the red wizard (a white slash), each see-through over that picture.
