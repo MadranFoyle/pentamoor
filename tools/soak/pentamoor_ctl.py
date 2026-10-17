@@ -265,7 +265,7 @@ class Game:
         return None
 
     def shot(self, path):
-        """Screenshot to a PNG (needs PIL); returns path or None."""
+        """Screenshot to a PNG (needs PIL; else a PPM next to it); returns the path of the file made, or None."""
         ppm = os.path.join(self.workdir, "shot.ppm")
         if os.path.exists(ppm):
             os.unlink(ppm)
@@ -284,7 +284,7 @@ class Game:
             return path
         except Exception:
             shutil.copy(ppm, path.replace(".png", ".ppm"))
-            return None
+            return path.replace(".png", ".ppm")
 
     def peek(self, addr, n=1):
         off = self.log_size()
