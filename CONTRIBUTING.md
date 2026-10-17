@@ -133,6 +133,8 @@ python3 tools/install/install.py --self-test   # the module build in Python (com
 python3 tools/release/check_tree.py            # nothing tracked looks like decompiler output
 ```
 
+`tools/display/` checks the display work ([docs/notes/display.md](docs/notes/display.md)) against real windows, with the installed game: `xe2e.py` on a Linux box with Xvfb (it builds `minwm.c`, a 150-line window manager, and `xtool.c`, which makes real key and pointer events with XTest, and plays the title screen through full screen, the scaling modes and filters, resizing, `display.cfg` and clicks on the drawn buttons), and `hidden_e2e.py` on any machine with a video driver (a real window that is never shown, `PORT_HIDDEN=1`: a Retina Mac's Metal drawable, the filters, the pointer mapping in window points).
+
 `tools/soak/` plays many duels through the control pipe and reports crashes and hangs (`soak.py`); `pad_play.py` plays a new game and a duel with controller commands only, `nav_play.py` checks the D-pad's moves between cards, buttons and menu rows in a duel, `pad_realtime.py` plays a duel with the pad at a person's speed (buttons held 120 to 150 ms, 450 ms apart) and reads the input log (`SOAK_ENV="SDL_VIDEODRIVER=x11 DISPLAY=:1 PORT_STEAMDECK=1 PORT_FULLSCREEN=1"` runs any of them on a real X server in a Deck's setup), and `screen_nav_play.py` checks it on the screens the game draws itself (title, new game, village, shops, clues, stats, the deck builder). All need the
 installed game.
 
@@ -147,9 +149,13 @@ All are environment variables; the full list with explanations is in [docs/PHASE
 | `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy` | run with no display or speakers (what CI and automated runs use) |
 | `PORT_SCRIPT`, `PORT_CONTROL` | drive the window by a script file or by a named pipe (clicks, keys, screenshots) |
 | `PORT_RES=640x480` / `800x600` / `1024x768` | the screen's size (default 1024x768, which uses the game's larger layouts; 640x480 is the original's) |
-| `PORT_WINDOW=WxH` | the SDL window's size (default: the screen's, smaller if the display cannot hold it; the picture and the mouse scale with it) |
+| `PORT_WINDOW=WxH` | the SDL window's size in points (default: the last one used, else the largest whole multiple of the screen that fits 90% of the display; the picture and the mouse scale with it; not written to `display.cfg`) |
 | `PORT_NOPAD=1` | no game controller (a pad is otherwise the mouse and keyboard whenever one is used; `docs/notes/controller.md`) |
 | `PORT_FULLSCREEN=1` | a borderless full-screen window (the default on a Steam Deck or in Gamescope; `PORT_FULLSCREEN=0` turns that off) |
+| `PORT_HIDDEN=1` | a test aid: the window is made and drawn to but never shown (the `winshot FILE` and `wclick X Y` control steps read back what it drew, at the drawable's size in pixels, and click in window coordinates: `tools/display/hidden_e2e.py`) |
+| `PORT_SCALE=fit` / `integer` / `stretch` | how the picture fills the window: the largest size with its shape kept (a whole-number scale when that loses under 10%), always a whole-number scale, or the whole window ignoring the shape. Ctrl+F11 cycles it |
+| `PORT_FILTER=nearest` / `linear` / `sharp` | crisp pixels, smooth, or a whole-number enlargement then smooth (the default). Shift+F11 cycles it |
+| `port_overlay/display.cfg` | the display settings kept between runs (full screen, scale, filter, window size and place), written by the front end in the overlay folder; the three variables above and `PORT_FULLSCREEN` win over it. Not written on SDL's dummy and offscreen drivers. `docs/notes/display.md` |
 | `PORT_STEAMDECK=1` / `0` | say this is (or is not) a Steam Deck, for the defaults above and below (otherwise: `SteamDeck=1`, SteamOS in `/etc/os-release`, Gamescope; `docs/notes/steamdeck.md`) |
 | `PORT_TEXTINPUT=auto` | SDL's text input (what brings up an on-screen keyboard) only while a text field has the focus; the default on a Deck, off elsewhere. `PORT_TEXT_LOG=1` prints each change |
 | `PORT_PAD_LOG=1` | a time-stamped log of what the input does (controllers SDL found, each button, what the pad asked the game to do, the D-pad's mode, the window each click reached) on stderr and in the file `pentamoor-input.log` in the folder the program was started in; `=PATH` names the file, `=stderr` keeps it off disk. For bug reports from a machine with no terminal (a Steam Deck: `docs/notes/steamdeck.md`, "When the pad does nothing in a duel") |

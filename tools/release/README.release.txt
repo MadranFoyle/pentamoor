@@ -53,6 +53,9 @@ Install and play
 @unix Other things to run: "./pentamoor deck" and "./pentamoor duel" run the standalone deck builder and duel program.
 @windows Other things to run: "pentamoor.bat deck" and "pentamoor.bat duel" run the standalone deck builder and duel program.
 The game runs at 1024x768 (PORT_RES=640x480 gives the original size). Saves go to the port_overlay folder.
+Display: F11 or Alt+Enter switches full screen on and off (on a controller: press both sticks in and hold for a second), Ctrl+F11 changes how the
+picture fills the window (fit, integer, stretch), Shift+F11 the filter (nearest, linear, sharp). The window can be resized. The choices are kept
+in port_overlay/display.cfg (PORT_SCALE, PORT_FILTER, PORT_FULLSCREEN and PORT_WINDOW=WxH set them for one run).
 @unix "./pentamoor-install --help" lists the installer's options: --check shows what is ready, --self-test checks the
 @windows "pentamoor-install.bat --help" lists the installer's options: --check shows what is ready, --self-test checks the
 compiler, --compiler picks one (for example --compiler gcc), --no-download refuses to fetch anything,

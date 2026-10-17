@@ -2,7 +2,7 @@
 
 The Steam Deck (SteamOS 3: Arch-based, x86-64, a 1280x800 screen, a read-only root file system with no C compiler or `make`, Python 3 and SDL2 present, a built-in game controller, KDE in desktop mode and
 Gamescope in Game mode) is a release target of its own: `pentamoor-<version>-steamdeck.tar.gz`. **Nothing here has been run on a real Deck.** What was run is listed under "Checked", what was not under
-"Not verified" (that list is what someone with a Deck has to go through). The files are in `tools/steamdeck/` and the C is `src/port/steamdeck.c`, `textin.c`, `textfocus.c` and `front_sdl.c`.
+"Not verified" (that list is what someone with a Deck has to go through). The files are in `tools/steamdeck/` and the C is `src/port/steamdeck.c`, `textin.c`, `textfocus.c` and `front_sdl.c`; the display rules it uses (scaling, full screen toggle, settings file) are `src/port/display.c`, see [display.md](display.md).
 
 ## For a person with a Deck
 
@@ -50,9 +50,9 @@ All of it only on a Deck or Gamescope (`src/port/steamdeck.c`, `deck_here`: env 
 
 | What | On a Deck | Elsewhere |
 |---|---|---|
-| Window | full screen (`SDL_WINDOW_FULLSCREEN_DESKTOP`: the display's own size and mode, no mode switch); `PORT_FULLSCREEN=0` turns it off | a window, as before; `PORT_FULLSCREEN=1` full screen |
-| Scaling in full screen | `view_scale`: the screen (1024x768) is scaled with its 4:3 shape kept; a whole-number scale when it uses at least 90% of the best scale, else the fractional one smoothed (linear). 1280x800: 1x, the picture 1024x768 with bars 128 px at the sides and 16 above and below, every pixel square. A 1080p television (docked): 1.41x, 1440x1080. 4K: 2.81x. `PORT_RES=640x480`: 1.67x | the same function whenever it is full screen; a window keeps the nearest-neighbour scale it had |
-| Mouse and touch | screen pixels through `SDL_RenderSetLogicalSize` (and `SDL_RenderSetIntegerScale` when whole-number), so a click lands where it is drawn in the bars' offset too | unchanged |
+| Window | full screen (`SDL_WINDOW_FULLSCREEN_DESKTOP`: the display's own size and mode, no mode switch); `PORT_FULLSCREEN=0`, F11, Alt+Enter or L3+R3 held leave it, and `display.cfg` remembers the choice (a saved `fullscreen=0` beats the Deck's default) | a window, as before; `PORT_FULLSCREEN=1` full screen |
+| Scaling in full screen | the screen (1024x768) is scaled with its 4:3 shape kept by `display_fit` (`display.c`, formerly `view_scale`, which still calls it): a whole-number scale when it uses at least 90% of the best scale, else the fractional one. 1280x800: 1x, the picture 1024x768 with bars 128 px at the sides and 16 above and below, every pixel square. A 1080p television (docked): 1.41x, 1440x1080. 4K: 2.81x. `PORT_RES=640x480`: 1.67x. The default filter is now `sharp` (whole-number enlargement, then a linear step): the 1.41x television picture is no longer plainly linear. The Deck can change it with Ctrl+F11 / Shift+F11 on a keyboard, `PORT_SCALE`, `PORT_FILTER`, `display.cfg`: `display.md` | the same function for every window and full screen (`display.md`) |
+| Mouse and touch | screen pixels through `display_to_screen` (`display.md`: the picture's rectangle in the drawable, no `SDL_RenderSetLogicalSize` any more), so a click lands where it is drawn in the bars' offset too | the same |
 | Pad while another window has the focus | `SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` | `PORT_PAD_BACKGROUND=1` |
 | Minimise on focus loss (full screen) | off (`SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS=0`) | the same when full screen |
 | SDL text input (what brings Steam's keyboard up) | on only while a text field has the focus (below) | always on, as before (`PORT_TEXTINPUT=auto` makes it follow the focus anywhere) |
@@ -131,7 +131,7 @@ The log has no game data in it (window class names and titles, and positions on 
 ## Not verified (what a Deck must check)
 
 1. **Everything on the hardware**: the 1280x800 screen in Game mode (Gamescope, `SteamDeck=1`): that the window really is full screen at the desktop mode, that the scaling and bars are as above and that the
-   touch screen and trackpads land where the pointer is drawn (SDL turns touch into the mouse; the touch path through `SDL_RenderSetLogicalSize` was not exercised at all).
+   touch screen and trackpads land where the pointer is drawn (SDL turns touch into the mouse; the touch path through `display_to_screen` was not exercised at all).
 2. **The pad** (this is where the report "the pad does not work in duels" belongs; send the input log, above): which layout was in use (Desktop gives SDL no controller at all: `0 joystick(s) at start`; the shipped template has both trackpads in
    *absolute* mouse mode, where a thumb that rests on one puts the pointer where it touches and takes the cursor from the pad each time: `took the cursor from the pad` lines), whether the Deck's own controller and Steam's virtual one are both
    open (two `controller N opened` lines: every press then arrives twice, which `pad.c` ignores for buttons; two sticks that report differently would fight over the cursor; unverified); that SDL sees the Deck with the Gamepad template as a game controller with these button names, the sticks' drift against the 0.22 dead zone (`controller.md`), that the Steam overlay and Steam+X do

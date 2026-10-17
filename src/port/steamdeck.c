@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "display.h"
 #include "steamdeck.h"
 
 static int ieq(const char *a, const char *b)
@@ -134,32 +135,7 @@ int fullscreen_wanted(const char *env, int deck)
 
 double view_scale(int sw, int sh, int dw, int dh, int *integer, int *vw, int *vh)
 {
-    double f, s;
-    int k, whole = 0;
-
-    if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) {
-        if (integer)
-            *integer = 0;
-        if (vw)
-            *vw = sw;
-        if (vh)
-            *vh = sh;
-        return 1.0;
-    }
-    f = (double)dw / sw < (double)dh / sh ? (double)dw / sw : (double)dh / sh;
-    k = (int)(f + 1e-9);
-    s = f;
-    if (k >= 1 && k * 100.0 >= f * INT_SCALE_MIN) {
-        whole = 1;
-        s = k;
-    }
-    if (integer)
-        *integer = whole;
-    if (vw)
-        *vw = (int)(sw * s + 0.5);
-    if (vh)
-        *vh = (int)(sh * s + 0.5);
-    return s;
+    return display_fit(sw, sh, dw, dh, integer, vw, vh);        /* the rule is shared with the "fit" scaling mode of every window (display.c) */
 }
 
 int text_wanted_rule(uint32_t now_ms, uint32_t name_ms, int edit_focus)

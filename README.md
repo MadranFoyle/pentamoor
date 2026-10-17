@@ -75,7 +75,7 @@ from your files, a game module (a `.so` or `.dylib` per program) that the runtim
 Other things to run:
 
 - `./pentamoor deck` and `./pentamoor duel` run the standalone deck builder and duel program.
-- The game runs at 1024x768, using its own larger layouts; the window is made smaller to fit a small display. `PORT_RES=640x480 ./pentamoor` gives the original's size, `PORT_RES=800x600` the one between.
+- The game runs at 1024x768, using its own larger layouts; the window is scaled to what the display holds (see [Display](#display)). `PORT_RES=640x480 ./pentamoor` gives the original's size, `PORT_RES=800x600` the one between.
 - `PORT_FRAME_MS=40 ./pentamoor` changes the overworld's speed (default 60; lower is faster).
 - Saves go to `port_overlay/`, not into the game's folder.
 
@@ -97,7 +97,29 @@ or Switch pad: anything SDL knows as a game controller, plugged in before or whi
 | Right stick | arrow keys (castles, dungeons) |
 
 The game's own "(Y/N)" questions (buying a card in a village, for one) are answered with a key; with a mouse or a controller the left button (A) is yes and the right one (B) is no, and the screen says so.
-Typing a name needs a keyboard (on a Steam Deck, Steam's keyboard: Steam + X). `PORT_NOPAD=1` turns the controller off, `PORT_FULLSCREEN=1` starts full screen (on a Steam Deck it does by itself; `PORT_FULLSCREEN=0` turns that off). Details and what is not tested: [docs/notes/controller.md](docs/notes/controller.md).
+Typing a name needs a keyboard (on a Steam Deck, Steam's keyboard: Steam + X). `PORT_NOPAD=1` turns the controller off. Details and what is not tested: [docs/notes/controller.md](docs/notes/controller.md).
+
+### Display
+
+The game's picture is scaled to the window or the screen with its shape kept, and the mouse follows it, on every system (a Retina Mac and a scaled Windows display get the full resolution of the screen).
+The window starts at the largest whole-number multiple of the game's size that fits about 90% of your screen, can be dragged to any size (not below the picture's own size), and is called Pentamoor.
+
+| Keys | |
+|---|---|
+| F11 or Alt+Enter | full screen on and off (borderless; leaving it puts the window back where it was) |
+| Ctrl+F11 | scaling: `fit`, `integer`, `stretch`, in turn |
+| Shift+F11 | filter: `nearest`, `linear`, `sharp`, in turn |
+| Controller: both sticks pressed in (L3 + R3), held for a second | full screen on and off (Back + Start would cancel and then confirm whatever the game is asking) |
+
+Ctrl+F11 and Shift+F11 show a line such as "Scaling: integer, filter: sharp" for a moment. The keys of the display are not passed on to the game.
+
+- **Scaling.** `fit` (the default) makes the picture as large as it will go with its 4:3 shape kept, using a whole-number scale (every pixel square) when that uses at least 90% of the best size and a fractional one otherwise.
+  `integer` always uses the largest whole-number scale, with black bars. `stretch` fills the window whatever its shape (the picture is distorted; off by default).
+- **Filter.** `nearest` is crisp pixels, `linear` is smooth, `sharp` (the default) is the usual retro look: the picture is first enlarged by a whole number with crisp pixels and then scaled smoothly the rest of the way,
+  so it is exactly `nearest` at a whole-number scale and does not shimmer or smear at the others.
+- **Settings are kept** between runs in `display.cfg` in the saves folder (`port_overlay/`): full screen, scaling, filter, and the window's size and place. It is plain text (`scale=integer`, `window=1280x800`, ...); delete it or a line of it to get the defaults.
+  The environment wins over the file and is not written back: `PORT_FULLSCREEN=1`, `PORT_SCALE=fit|integer|stretch`, `PORT_FILTER=nearest|linear|sharp`, `PORT_WINDOW=WxH`. On a Steam Deck the game starts full screen by itself (`PORT_FULLSCREEN=0` or the key turns that off).
+  How it works and what was tested: [docs/notes/display.md](docs/notes/display.md).
 
 ## Where things stand
 

@@ -171,23 +171,6 @@ int front_take_frame(uint8_t *rgb, unsigned *seen)
     return got;
 }
 
-/* The window for a screen of sw x sh on a display whose usable area is usable_w x usable_h: the screen itself, or smaller with the same shape when it does not fit. */
-void window_size_for(int sw, int sh, int usable_w, int usable_h, int *w, int *h)
-{
-    int max_w = usable_w - 16, max_h = usable_h - 56;            /* the frame, the title bar and a margin */
-    double s;
-
-    *w = sw;
-    *h = sh;
-    if (usable_w <= 0 || usable_h <= 0 || (*w <= max_w && *h <= max_h))
-        return;
-    s = (double)max_w / *w < (double)max_h / *h ? (double)max_w / *w : (double)max_h / *h;
-    if (s < 0.25)
-        s = 0.25;
-    *w = (int)(*w * s);
-    *h = (int)(*h * s);
-}
-
 /* How long a pressed button or key stays down before the next event is delivered. The game polls the state of the buttons and keys, and a press
  * and release delivered together would be missed by the thread that polls.
  *

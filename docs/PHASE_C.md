@@ -533,9 +533,9 @@ from anywhere: it starts as 640 (and 480 for the height at 0x52245c) in the data
 and `DUEL.EXE` take the size from `GetSystemMetrics` alone), and answers `GetSystemMetrics`, the desktop window, the device context and the SDL window with the same size
 (`screen_w`/`screen_h`, set once in `main`; the frame buffers are sized for up to 1600x1200).
 
-The SDL window is the screen's size, made smaller (same 4:3 shape) when the display's usable area cannot hold it (`window_size_for`, `front.c`), resizable, with the picture and the mouse
-scaled together (`SDL_RenderSetLogicalSize`); `PORT_WINDOW=WxH` picks a window size. A run with `PORT_CONTROL` or `PORT_SCRIPT` keeps the screen's size, and its scripted mouse positions
-(and `shot`) are in screen pixels whatever the window is.
+The SDL window starts as the largest whole-number multiple of the screen that fits 90% of the display's usable area (or the size `display.cfg` remembers), is resizable and called Pentamoor, and the picture is scaled into it by our own rectangle
+(`display_layout`; scaling modes `fit`, `integer`, `stretch`, filters `nearest`, `linear`, `sharp`, full screen by F11 / Alt+Enter) with the mouse mapped back by `display_to_screen`: [notes/display.md](notes/display.md). `PORT_WINDOW=WxH` picks a window size.
+Scripted mouse positions (`PORT_CONTROL`, `PORT_SCRIPT`) and `shot` are in screen pixels whatever the window is; on SDL's dummy driver the window is the screen's size.
 
 Walked at the three sizes: the title screen and new game, the overworld (walking, scrolling), encounters, villages, Buy Cards, the deck builder inside the game and standalone, the world
 map, the Clues screens, Wiz Stats and the Journal, a castle and a dungeon, duels from the coin toss on, and `DUEL.EXE`'s dialogs and file dialog. `docs/notes/resolution.md` has what was

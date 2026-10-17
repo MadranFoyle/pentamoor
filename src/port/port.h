@@ -87,6 +87,7 @@ uint32_t guest_call(uint32_t target, int nargs, const uint32_t *args);
 /* text and files */
 int c_format(char *out, size_t cap, const char *fmt, uint32_t va);
 void paths_init(const char *root, const char *overlay);
+const char *paths_overlay_default(void);                       /* $PORT_OVERLAY or "port_overlay" */
 void paths_normalize(const char *path, char *out, size_t cap);
 int port_glob(const char *pattern, const char *name);                                       /* fnmatch(pattern, name, 0): * ? [set] (controls.c) */
 void paths_mkdirs(const char *host);                                                  /* mkdir -p of a host path */

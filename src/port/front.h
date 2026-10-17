@@ -38,7 +38,6 @@ void front_serve(double max_wait);                                        /* del
 
 /* The hold on a pressed button or key (front.c): whether the event after a press must wait yet. held_ms: how long the press has been down; mouse: it is a
  * mouse button; seen: a screen's loop has seen the button down; ui_active: such a loop has passed lately. */
-void window_size_for(int sw, int sh, int usable_w, int usable_h, int *w, int *h);   /* front.c: the window that fits a display */
 int front_hold_rule(uint32_t held_ms, int mouse, int seen, int ui_active);
 /* From the pre-call hook of a screen's loop pass (pace.c): note that a pass is starting; *id is the number of the latest mouse press (0: none yet), *held_ms how long it has lasted
  * (0 if it is up); returns whether it is down. front_ui_saw: the pass has the button down, so the press has been seen and may end. */

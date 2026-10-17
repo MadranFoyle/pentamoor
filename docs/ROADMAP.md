@@ -2,10 +2,14 @@
 
 What the project is aiming at beyond the current state, so decisions made today do not make it harder later. The strategy that got us here is in [PORT_STRATEGY.md](PORT_STRATEGY.md); the state of the native program is in [PHASE_C.md](PHASE_C.md).
 
-## Now: display
+## Display (done)
 
 The game has layouts for 640x480, 800x600 and 1024x768 only (art and code branch on the screen's width: [notes/resolution.md](notes/resolution.md)), so the program runs at 1024x768 and the front end does the rest:
 scaling to any window or display with the aspect ratio kept and the mouse mapped, better scaling (integer scaling, a sharper filter), and a fullscreen mode. Larger or wider layouts need the game's own layout code, so they wait for the rewrite below.
+
+Done: [notes/display.md](notes/display.md). A fullscreen toggle (F11, Alt+Enter, both sticks held on a pad), the scaling modes `fit`, `integer` and `stretch` and the filters `nearest`, `linear` and `sharp` (keys and `PORT_SCALE`, `PORT_FILTER`),
+the mouse mapped through the picture's own rectangle at any window, display and display-scaling factor (a Retina window gets its full resolution), a resizable window that starts as the largest whole multiple of the screen that fits, and `display.cfg`
+in the overlay folder that keeps all of it between runs. The pure rules are in `src/port/display.c` and take the screen size as a parameter, as new code should. Not yet seen on real hardware: a Retina Mac, Windows with display scaling, Wayland.
 
 ## Long term: replacing the lifted code with clean C
 

@@ -93,7 +93,7 @@ static int game_main(void *p)
             } else
                 snprintf(root_buf, sizeof(root_buf), "..");
         }
-        snprintf(overlay, sizeof(overlay), "%s", getenv("PORT_OVERLAY") ? getenv("PORT_OVERLAY") : "port_overlay");
+        snprintf(overlay, sizeof(overlay), "%s", paths_overlay_default());
         paths_init(root, overlay);
     }
     if (pe_load(argv[1], &img) != 0)
