@@ -22,6 +22,15 @@
 #include "test_util.h"
 #include "msgbox.h"
 #include "wm.h"
+
+/* setenv/unsetenv for the tests, on Windows too (where _putenv_s with an empty value removes the variable) */
+#ifdef _WIN32
+static void test_setenv(const char *name, const char *value) { _putenv_s(name, value); }
+static void test_unsetenv(const char *name) { _putenv_s(name, ""); }
+#else
+static void test_setenv(const char *name, const char *value) { setenv(name, value, 1); }
+static void test_unsetenv(const char *name) { unsetenv(name); }
+#endif
 #include "winhelp.h"
 #include "yesno.h"
 
@@ -1510,6 +1519,36 @@ static void test_msgbox(void)
     msgbox_set_mode(MSGBOX_ASK);
     CHECK(msgbox_mode() == MSGBOX_ASK);
     msgbox_set_mode(0);
+
+    /* PORT_HEADLESS is on when set to something other than "" or "0", in the message-box rule and for port_env_on alike */
+    {
+        const char *names[] = {"PORT_HEADLESS", "PORT_MSGBOX", "PORT_CONTROL", "PORT_SCRIPT", "SDL_VIDEODRIVER"};
+        char *saved[5];
+        int i;
+
+        for (i = 0; i < 5; i++) {
+            const char *v = getenv(names[i]);
+
+            saved[i] = v ? strdup(v) : NULL;
+            test_unsetenv(names[i]);
+        }
+        CHECK(!port_env_on("PORT_HEADLESS") && msgbox_mode() == MSGBOX_ASK);
+        test_setenv("PORT_HEADLESS", "1");
+        CHECK(port_env_on("PORT_HEADLESS") && msgbox_mode() == MSGBOX_AUTO);
+        test_setenv("PORT_HEADLESS", "0");
+        CHECK(!port_env_on("PORT_HEADLESS") && msgbox_mode() == MSGBOX_ASK);
+#ifndef _WIN32                                              /* Windows cannot hold an empty variable: _putenv_s(name, "") removes it */
+        test_setenv("PORT_HEADLESS", "");
+        CHECK(!port_env_on("PORT_HEADLESS") && msgbox_mode() == MSGBOX_ASK);
+#endif
+        for (i = 0; i < 5; i++) {
+            if (saved[i])
+                test_setenv(names[i], saved[i]);
+            else
+                test_unsetenv(names[i]);
+            free(saved[i]);
+        }
+    }
 
     /* the log line */
     msgbox_log_line(line, sizeof(line), "End of duel", "Want to play again?", IDYES, 0);
