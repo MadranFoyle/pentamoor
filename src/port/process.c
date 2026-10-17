@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "plat.h"
 #include "port.h"
@@ -98,7 +99,7 @@ static char *put(ProcChild *c, size_t *at, const char *s)
 }
 
 void proc_child(ProcChild *c, const ProcPlan *plan, const char *runtime, const char *module_dir, const char *host_exe, const char *root, const char *overlay, int width,
-                int height, const char *control)
+                int height, const char *control, const char *shm)
 {
     size_t at = 0;
     char tmp[1400], stem[64];
@@ -128,6 +129,10 @@ void proc_child(ProcChild *c, const ProcPlan *plan, const char *runtime, const c
         c->set[ns] = put(c, &at, tmp);
         c->control = c->set[ns++] + strlen("PORT_CONTROL=");
     }
+    if (shm && *shm) {
+        snprintf(tmp, sizeof(tmp), "PORT_SHM=%s", shm);
+        c->set[ns++] = put(c, &at, tmp);
+    }
     c->set[ns] = NULL;
     c->unset[nu++] = put(c, &at, "PORT_SCRIPT");
     c->unset[nu] = NULL;
@@ -136,6 +141,31 @@ void proc_child(ProcChild *c, const ProcPlan *plan, const char *runtime, const c
 /* ---- children ------------------------------------------------------------------------------------------------------------------- */
 #define MAX_CHILDREN 16
 static struct { long id; int used, done, code; } children[MAX_CHILDREN];
+
+/* The folder the named memory is handed over in: the one this process was given ($PORT_SHM, if it was started by another program), else one it makes beside the saves and takes away
+ * when it ends. */
+static char shm_made[1200];
+static const char *shm_dir;
+
+static void shm_cleanup(void)
+{
+    if (shm_made[0])
+        k32_shared_remove(shm_made);
+}
+
+static const char *shm_folder(void)
+{
+    const char *given = getenv("PORT_SHM");
+
+    if (shm_dir)
+        return shm_dir;
+    if (given && *given)
+        return shm_dir = given;
+    snprintf(shm_made, sizeof(shm_made), "%s/shm-%ld", paths_overlay(), (long)getpid());
+    paths_mkdirs(shm_made);
+    atexit(shm_cleanup);
+    return shm_dir = shm_made;
+}
 
 int proc_start(const char *application, const char *command_line, long *id)
 {
@@ -176,7 +206,8 @@ int proc_start(const char *application, const char *command_line, long *id)
         port_log("process: not started: the path of the runtime itself is not known");
         return 2;
     }
-    proc_child(&child, &plan, runtime, module_dir, host, paths_root(), paths_overlay(), screen_w, screen_h, control);
+    k32_shared_flush(shm_folder());                          /* what this program has in its named memory is what the new one finds there */
+    proc_child(&child, &plan, runtime, module_dir, host, paths_root(), paths_overlay(), screen_w, screen_h, control, shm_dir);
     if (child.control)
         plat_make_control(child.control);                        /* the pipe the child reads */
     for (i = 0; i < MAX_CHILDREN && children[i].used; i++)
@@ -209,6 +240,10 @@ int proc_done(long id, int *exit_code)
                     return 0;
                 children[i].done = 1;
                 children[i].code = r > 0 ? code : -1;
+                if (shm_dir) {
+                    k32_shared_reload(shm_dir);                  /* and what it left there is this program's again */
+                    port_trace("process: child %ld ended with %d; named memory read back from %s", id, children[i].code, shm_dir);
+                }
             }
             *exit_code = children[i].code;
             return 1;

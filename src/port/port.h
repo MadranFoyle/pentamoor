@@ -39,6 +39,10 @@ typedef struct WinApi {
 extern const WinApi KERNEL32_APIS[], KERNEL32_RT_APIS[], WINSYS_APIS[], PROCESS_APIS[], CRT_APIS[], STDIO_APIS[], VIDEO_APIS[];
 
 void k32_set_last_error(uint32_t code);                 /* SetLastError for the calls of other files (kernel32.c) */
+uint32_t k32_mapping_view(uint32_t handle, uint32_t offset);   /* the memory of a named or anonymous file mapping, for a DIB section made from it (gdi.c) */
+void k32_shared_flush(const char *dir);                 /* named memory (CreateFileMappingA with a name) handed over to a program that is started, and back (process.c) */
+void k32_shared_reload(const char *dir);
+void k32_shared_remove(const char *dir);
 
 /* The implementation of an import by (library, function), or NULL (modules.c; msvcrt.dll is found in msvcrtd.dll's table). */
 const WinApi *port_find_api(const char *dll, const char *name);

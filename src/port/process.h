@@ -5,7 +5,9 @@
  * portrait editor, when a colour is chosen, and waits for it. So a program that asks to start another is answered by starting another copy of the runtime, for that program, with its
  * game module: the module is the one the active build's profile names for the file (profile.h, `programs`), in the folder of the running module. The new process gets the same game
  * folder, the same overlay (saves are shared), the same screen size, and the arguments the program was given (in $PORT_CMDLINE, which GetCommandLineA and the C runtime's argv
- * show it as); a copy of PORT_CONTROL, if one is set, is a pipe of its own (the same name and ".<file>"), and PORT_SCRIPT is not passed on. A program the profile does not name is
+ * show it as); a copy of PORT_CONTROL, if one is set, is a pipe of its own (the same name and ".<file>"), and PORT_SCRIPT is not passed on. The programs of the game that start each
+ * other share named memory (the "graphic pages" `rpbips1`..`rpbips5`: kernel32.c, CreateFileMappingA): it is handed over in files in a folder named by $PORT_SHM when the new program
+ * starts and again when it has ended, which is right for a program that waits for the other (the only way the game starts one). A program the profile does not name is
  * not started: the call fails as it did before there was a process model.
  *
  * What the original does that this does not: two programs there share one screen; here each has its own window (the parent's stays up, and idle, while it waits).
@@ -45,7 +47,7 @@ typedef struct ProcChild {
     char buf[8192];
 } ProcChild;
 void proc_child(ProcChild *c, const ProcPlan *plan, const char *runtime, const char *module_dir, const char *host_exe, const char *root, const char *overlay, int width,
-                int height, const char *control);
+                int height, const char *control, const char *shm);
 
 /* Start the program a command line names, as the active profile allows; 0 and an id in *id on success, else a Windows error number (2: no such program). */
 int proc_start(const char *application, const char *command_line, long *id);

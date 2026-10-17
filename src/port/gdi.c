@@ -1402,8 +1402,11 @@ static uint32_t CreateDIBSection(const uint32_t *a)
         memcpy(b->palette, di.pal, sizeof(b->palette));
     }
     dib_stride(b, &stride);
-    b->bits = heap_alloc((uint32_t)(stride * b->h));
-    guest_zero(b->bits, (uint32_t)(stride * b->h));
+    b->bits = a[4] ? k32_mapping_view(a[4], a[5]) : 0;       /* made from a file mapping (hSection): the pixels are the mapping's memory, shared with whoever has it */
+    if (!b->bits) {
+        b->bits = heap_alloc((uint32_t)(stride * b->h));
+        guest_zero(b->bits, (uint32_t)(stride * b->h));
+    }
     if (a[3])
         WR32(a[3], b->bits);
     return obj_new(O_BITMAP, b);
