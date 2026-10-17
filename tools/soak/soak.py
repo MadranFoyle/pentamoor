@@ -40,7 +40,8 @@ from pentamoor_ctl import Game  # noqa: E402
 RESUME = {640: (330, 390), 800: (412, 487), 1024: (528, 624)}
 DUEL = {640: (290, 325), 800: (360, 388), 1024: (470, 486)}
 
-DUMP_PREFIXES = ("  win ", "  queue", "  popup", "  item ", "  peek", "  poke", "  hit ", "  pad:", "  nav:", "  target ")
+DUMP_PREFIXES = ("  win ", "  queue", "  popup", "  item ", "  peek", "  poke", "  hit ", "  pad:", "  nav:", "  target ",
+                 "  thread ", "    [import]", "    [fn]", "    [call]")                # what `threads`, `trace on` and `calls on` print when someone looks at a stuck game by hand
 KNOWN_STDERR = (re.compile(r"^loaded .* at 0x"), re.compile(r"^display \(\w+\): (window|full screen), window \d+x\d+ points"),re.compile(r"^build: v\d"), re.compile(r"^\d\d:\d\d:\d\d\.\d+ padlog: "), re.compile(r"^LoadLibraryA\((deckdll|statwin)\.dll\) -> mapped"),
                  # the deck builder asks MAGIC.EXE for an export (ManaLink's has it) that 1.0's does not have (pefile: 15 exports, no szDeckName): Windows answers NULL too
                  re.compile(r"^GetProcAddress\(0x400000, szDeckName\) -> not found$"))

@@ -1,8 +1,8 @@
 # A duel that sits on "Fast Effects?...Draw Phase" with the player at 0 life or less
 
-**The engine's own loop, not a crash and not a hang of the port; why it never ends was found to the point of the line of code, whether the original does the same was not settled.** Found by the long soak
-runs of 2026-10-17 (`tools/soak/soak.py` with duels of 12 to 40 turns: [duel-ux.md](duel-ux.md), "Long runs"): eight times in about 400 duels on Linux x86_64 at 1024x768, never in the three hours of short duels (conceded after
-3 to 9 turns), and not in the 25 or so long duels on macOS arm64 (too few to say that it cannot happen there).
+**An endless loop in the engine's own prompt code, not a crash and not a hang of the port: where it loops was found to the line of code, what brings it about and whether the original does the same were not settled.** Found by the long soak
+runs of 2026-10-17 (`tools/soak/soak.py` with duels of 12 to 40 turns: [duel-ux.md](duel-ux.md), "Long runs"): thirteen times in about 570 long duels on Linux x86_64 at 1024x768 (the same state every time), never in the three hours of short duels (conceded after
+3 to 9 turns), and not in the 43 long duels on macOS arm64 (at the Linux rate that would be one: too few to say that it cannot happen there).
 
 ## What it looks like
 
@@ -30,19 +30,21 @@ not spinning (2% CPU).
 | poke, then Done | result |
 |---|---|
 | the player's life to 1 | nothing: the loop does not depend on the life once it is in it |
-| the "paid" field of the two Asp Legacy cards (card table, field +0x24) to 1 | nothing |
+| the "paid" field (+0x24 of a card's 288-byte entry, the table at 0x6a5f30, 23,328 bytes per player) of the player's two cards with id 434 to 1 | nothing |
+| the same field of all three unpaid effect cards the player had (ids 434, 434 and 427; two more, used up, had id -1 and the field at 1) | the flags 0x6a4920 go to 0, the next Done leaves the prompt and the duel ends ("Druid won / Next round / Quit Gauntlet") |
 | the game-over flag 0x6a285c to 1 | the loop is left, the duel goes on into the next phase with the player at -8: nothing ends it |
 | the prompt's nesting 0x6ff684 to 2 (the rule "bit 0 of 0x6a4920 and nesting 1" no longer applies) | the loop is left at once, the end-of-game test runs, the dialog "Druid won / Next round / Quit Gauntlet" opens |
 
-So the rule `bit 0 of 0x6a4920 and nesting 1` is the whole reason; what feeds it on every pass is the effects that "ask again" (the Asp Legacy's, the computer's cards' activation, both in the list above).
+So the rule `bit 0 of 0x6a4920 and nesting 1` is the whole reason, and what feeds it on every pass is the player's unresolved effect cards: in the three processes that were looked at with the card table the player had exactly three unpaid effect cards (ids 434, 434 and 427 in two of them, 434 three times in the third; 434 is the Asp Legacy) next to two or three that had been used up, and marking all three as paid frees the prompt.
 
 ## What is not known
 
-- Why the effects ask again forever when the player is dead and not when the player has life left (duels in which "Naf's Asp takes 1 life!" was shown went on normally in the same runs): perhaps the
-  end-of-game test, which is what normally ends the duel after the prompt, is reached only if the prompt is left, and the player is already at 0 or less when it opens; where the last life went was not traced.
-- **Whether the original program does the same.** The code is the original's, lifted as it is, and the loop is driven by game data, not by timing or by anything the port supplies, so the likeliest answer is yes: a
-  player who is taken to 0 life by the Asp's loss at the start of the draw phase cannot pass that prompt and has to concede from the menu (which works). It could not be compared with the original here (it
-  needs the exact state in the Windows 98 oracle).
+- What brings it about. Not simply "the player has 0 life when the prompt opens": in two duels the life was poked to 0 while a Draw Phase prompt was open (a prompt that comes up when an Asp Legacy is pending,
+  with the player at 4 and 7 life), and the duel ended normally 4 to 6 s later in both. In the stuck cases the player was already at 0 or less when the soak came to the prompt, and where the last life went was not traced
+  (the dialog "Naf's Asp takes 1 life!" had been shown earlier in the duel). The same Sorcerer deck was in all of them, so the cards that matter are the Asp and its Legacy.
+- **Whether the original program does the same.** The code is the original's, lifted as it is, and the loop is driven by game data (the effects' flags), not by timing, so a difference would have to come from
+  state that the runtime hands the game wrongly, and nothing found points to that; but it could not be compared with the original here (that needs the exact state in the Windows 98 oracle), so it stays open. A
+  player in this state has to concede from the menu, which works.
 - Not a reason to change the port: nothing here is wrong in the runtime (all threads answer, the clicks arrive, Concede ends the duel).
 
 ## What was added to find it
