@@ -251,7 +251,8 @@ def test_command_line_lists_targets_and_refuses_an_unknown_one(capsys):
     assert "unknown target" in lines[-1]
 
 
-def test_command_line_reports_a_compiler_that_does_not_work(tmp_path):
+def test_command_line_reports_a_compiler_that_does_not_work(tmp_path, monkeypatch):
+    fake_host(monkeypatch, "linux", "x86_64")                                                # so that the Windows target is another system on every machine the tests run on
     lines = []
     assert modbuild.main(["--gen", str(tmp_path / "nothing"), "--programs", "deck", "--out", str(tmp_path / "out"), "--build-dir", str(tmp_path / "obj"),
                           "--compiler", sys.executable, "--target", "x86_64-windows-gnu"], say=lines.append) == 1
