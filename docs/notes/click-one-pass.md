@@ -62,3 +62,8 @@ has come into being since (its handle is not below the remembered one) and is no
 a button that is pressed and released on itself). `test_wm` +6 checks (`test_release_follows_press`: it fails without the change).
 Checked: the sequence above before and after (the village comes back at once after Exit and after "Remove Extra Cards", both variables 0), F1 as before.
 Not checked: with a controller (A is a press and a release like the mouse's, so the same), a very long press (the same path), the standalone `DECK.EXE` (it opens no window on a press).
+
+## A press that comes in while a pass is running
+
+The pre-call hook offers the baton before it looks at the press, so the pass cannot be preempted in the middle and the window's thread has dispatched the latest press before the pass reads it: the Journal's Done lost
+its click without that (`journal-done.md`).

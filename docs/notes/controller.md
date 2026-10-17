@@ -23,7 +23,7 @@ All of this is one table at the top of `pad.c` (`binds[]`, with the numbers besi
 | B | right click (the game's menus on a card, the castle pager's previous page) | |
 | X, Start | Enter | the default button of a dialog, the Done of a prompt bar, the name entry |
 | Y | a double click at the cursor | on a card in a duel the game pays its mana for you; two presses 70 ms apart, well inside the game's double-click time |
-| Back | Escape | cancel; "Ready to Quit?" on the map. Y is not Escape on purpose: Escape closes the game on some screens, and Y is easy to hit |
+| Back | Escape | cancel; "Ready to Quit?" on the map. **At the title menu it has to be held half a second** (below). Y is not Escape on purpose: Escape closes the game on some screens, and Y is easy to hit |
 | LB, RB | Page Up, Page Down, repeating | the list boxes, the file dialog and the deck builder's card row (RB scrolled the stock row a page at 1024x768) |
 | Left stick pressed in | Space | the map reads Space as "stop" (`Adventure_PlayLocationMusic`, key 0x20); not tried |
 | Right trigger (held) + left stick | **walk** on the map (below) | |
@@ -113,3 +113,29 @@ does not look at it), so the code from the event on is the real one:
 - **The game's own keyboard navigation of buttons** (Tab and Shift+Tab, and the up and down arrows on some screens, step through a screen's button table by index and call `SetCursorPos` to put the pointer on the
   button: `FUN_0041f3ea`, 0x41f3ea) is not followed: `SetCursorPos` only changes the number `GetCursorPos` answers, so neither the real pointer nor the pad's cursor moves with it. The D-pad does not use it: on the
   game's own screens it reads the same table (`controller-screens.md`) and moves by the picture, and in the map it is the arrow keys.
+
+## Back where Escape leaves the game with no question
+
+Back is Escape, and Escape ends the game on some screens. Which, found by pressing it on each screen reached headless (the saved game, 640x480, the keyboard's `key escape`; `tools/soak` has the recipes, the table is what was seen):
+
+| screen | Escape does |
+|---|---|
+| **title menu** (Start New Game, Load, Resume, Exit) | **leaves the game at once**, no question (exit status 1; the title menu takes Escape as its Exit) |
+| new game: difficulty, colour, visage | back one screen |
+| the map | the text menu "Ready to Quit?" (two lines); Escape again closes it. Its Quit line, in the menu B opens, quits without asking: it is a line the player picks |
+| village, the Clues, the deck builder (F1) | leaves to the map |
+| castle gate, the maze of a castle or a dungeon | leaves (the first one closes the rule card, the second leaves the maze) |
+| world map, Plain/Info/City Info | nothing |
+| the encounter's menu ("Will you... Duel / Pay") | not tried (a text menu: Escape answers "cancel" there, 0x489b4d) |
+| dialogs and menus of the port | cancel |
+
+So the title menu is the one place where a tap of Back closes the game with no confirmation (a controller user who presses Back to leave a screen they are not on lands there after a few of them). `pad.c` now holds Back for `PAD_BACK_HOLD_MS`
+(500 ms) when `pad_set_back_guard`'s function says the title menu is on: the key goes down at 500 ms if the button is still held and up when it is let go; a shorter press sends nothing. The function is `main.c`'s `title_guard`:
+`screens_kind() == SCREEN_TITLE`, which `screens.c` knows from the title's loop (`title.loop` in the build profile, 0x47a2e6 to 0x47a94c: the pass of the button table that returns into it). It is asked when Back is
+pressed. Everything else keeps Back as a tap (dialogs, menus, duels, "Ready to Quit?"), and the keyboard's Escape is as it was (the original's behaviour).
+
+Tested: `test_pad` (+9: the tap, a short hold, a hold with no repeat, a release in the middle, the guard asked at the press, no guard installed), `test_profile` (the range), `test_wm` (the title loop is `SCREEN_TITLE`, a table screen for the D-pad), and
+`tools/soak/back_guard.py` (640x480, headless, controller commands: at the title menu a tap and a 0.3 s hold do nothing and a 0.9 s hold ends the game; a tap on the difficulty screen goes back; on the map a tap opens
+"Ready to Quit?" and a second closes it).
+Not checked: with a real controller (the hold's feel: 0.5 s is a guess; nothing on the screen says "hold"), the dungeon of the saved game's entry 5 (the process crashed on entering it, with or without this change: `-11`, see
+`castle-dungeon-stats.md`), the encounter menu's Escape, the Load Saved Game dialog's.

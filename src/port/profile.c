@@ -36,6 +36,7 @@ static const BuildProfile PROFILES[] = {
                      .left = 0x539dec, .top = 0x539df0, .right = 0x676d44, .line_h = 0x527b30, .first = 0x676d50, .count = 0x676d40, .mask = 0x676d58},
         .buycards = {.loop = {0x509517, 0x509fd4}, .ids = 0x61e060, .count_ebp = -0xa8, .boxes_ebp = -0xa0},
         .clues = {.loop = {0x48f523, 0x49094c}, .count_ebp = -0x12d8},
+        .title = {.loop = {0x47a2e6, 0x47a94c}},
         .keys = {.wait = 0x48ac2f, .pop = 0x4080b2, .wait_loop_ret = 0x48ac3d,
                  .sites = {0x509e4a, 0x4f156e, 0x45119d}, .nsites = 3, .name_loop = {0x47be64, 0x47c080}},
         .display = {.width = 0x522458, .height = 0x52245c},

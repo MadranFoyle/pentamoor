@@ -30,7 +30,7 @@ mirrors (player, opponent). The engine reads the real values at the next state c
 3. wait for the prompt bar "Main phase (before combat)" with its Done button (`windows`: `MAGIC_TellUserClass`).
 4. `poke 0x6a4a04 0`, then click Done (any action that makes the engine look again works). The "You won!" dialog opens (class #32770, two static
    texts "You won!" and "Your next draw:", **no buttons**).
-5. `key return` (Space and Esc work too; the dialog reads them as characters). What follows:
+5. click in the dialog (`key escape` works too; Return does not close it any more, as in the original: `dialogs.md`). What follows:
    - a moment of black, then the wizards' statistics picture (the original has it too; it was black here until the third report of duel-won-black-screen.md), a crystal ball clip (STATWIN R_MWZ.avi, 6.7 s, with STATSCRN.WAV) at (304,340) and then the wizard's hit clip (RED-HIT.AVI) at
      (420,108) at 800x600: the same spell-hit animation STATWIN plays for a spell cast at a wizard. About 12 s in all.
    - then the game waits for a click or a key (the clips' windows are the only windows of that thread). `key return` once more (or a click on the hit clip's place).
@@ -59,7 +59,7 @@ goes to the main window and does nothing; the original probably worked the same,
 
 - Won at 800x600 (Return, Return, "Take the cards") and 1024x768 (the toss was lost that time, "Sorcerer will start first"; the poke worked from the first
   prompt of the turn, "Fast Effects?...Main Phase"). 640x480 not run.
-- Dismissals at 1024x768: in the "You won!" dialog Return works (800x600) and a click inside the dialog works, **Space did not** (the dialog stayed); in the
+- Dismissals at 1024x768: in the "You won!" dialog Return worked (800x600; it no longer does, as in the original: `dialogs.md`) and a click inside the dialog works, **Space did not** (the dialog stayed); in the
   held-clip wait Esc worked (1024x768) and Return worked (800x600). The reward screen drew three cards this time (Lightning Bolt, Inferno, Will-O'-The-Wisp)
   and its card text boxes run over the art, the known 1024x768 text-box issue of `overworld.md`.
 - "Take the dungeon clue." (1024x768, click (280,552)) opens a cave screen: "Soulchant Monastery, Creatures: Contains large Green creatures", the three

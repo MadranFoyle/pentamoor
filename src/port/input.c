@@ -268,6 +268,24 @@ int wm_inject_mouse(int kind, int x, int y)
     return 1;
 }
 
+/* Whether a dialog has a button the dialog manager can press with Enter: a visible, enabled push button (plain, default or owner-drawn) among its children. */
+static int dialog_has_push_button(uint32_t hdlg)
+{
+    int i, n = wm_window_count();
+
+    for (i = 0; i < n; i++) {
+        Window *c = wm_window_at_index(i);
+        uint32_t kind;
+
+        if (!c || c->parent != hdlg || !c->visible || !c->enabled || !c->cname || strcasecmp(c->cname, "BUTTON"))
+            continue;
+        kind = c->style & 0xFu;
+        if (kind == 0 || kind == 1 || kind == 0xB)           /* BS_PUSHBUTTON, BS_DEFPUSHBUTTON, BS_OWNERDRAW */
+            return 1;
+    }
+    return 0;
+}
+
 /* One half of a key press, as a keyboard sends it: WM_KEYDOWN (and WM_CHAR when it types something) or WM_KEYUP, with the scan code in
  * lParam; the key's state (GetKeyState) follows. */
 int wm_inject_key(uint32_t vk, uint32_t scancode, int down, int ch, int repeat)
@@ -291,7 +309,17 @@ int wm_inject_key(uint32_t vk, uint32_t scancode, int down, int ch, int repeat)
                 return 1;
             }
         }
-        /* a key of a modal dialog is for the dialog (a dialog without such buttons, like the one that says "You won!", reads Enter, Space and Esc itself as characters) */
+        /* Enter in a dialog with no IDOK control, no default push button and no button that could have the focus (the one that says "You won!" when it is not a Gauntlet's: its
+         * two buttons are hidden): the dialog manager (IsDialogMessage, which the original's DialogBox loop runs every key through) takes the key and sends the dialog WM_COMMAND with
+         * IDOK and no control, and the procedure of that dialog answers it with nothing; it never sees WM_CHAR 13, though it has a case for it. Checked in the original: Enter does
+         * not close it, a click does (docs/notes/duel-won-black-screen.md). Space is not a dialog key (WM_CHAR, closes it), and Esc is IDCANCEL there (the procedure closes on that too),
+         * which the code below delivers as the character; the difference is the dialog's result (0 or 1), which nothing reads. */
+        if (vk == 0x0D && !(wm_window(hdlg) && wm_window(hdlg)->own_keys) && !dialog_has_push_button(hdlg)) {
+            if (down && !repeat)
+                wm_post(hdlg, WM_COMMAND, 1, 0);
+            return 1;
+        }
+        /* a key of a modal dialog is for the dialog (a dialog without such buttons reads Space and Esc itself as characters) */
         if (down) {
             wm_post(hdlg, WM_KEYDOWN, vk, 1 | sc | (repeat ? 0x40000000u : 0));
             if (ch >= 0)

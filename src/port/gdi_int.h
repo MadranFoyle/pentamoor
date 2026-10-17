@@ -39,8 +39,10 @@ typedef struct Bitmap {
     uint8_t *mono;           /* 1-bpp DDB: 0 / 1 per pixel */
 } Bitmap;
 
-typedef struct Brush { int solid; uint8_t rgb[3]; uint32_t pattern; /* a bitmap handle, or 0 */ } Brush;
-typedef struct Pen { int solid; uint8_t rgb[3]; int width; } Pen;
+/* A brush or pen made from a PALETTEINDEX colour (flag byte 1) keeps the index (cref, rel = 1) and means the entry of the palette of the DC it is drawn with: rgb is that entry as of the
+ * last place it was resolved (creation: the system palette; SelectObject, SelectPalette and FillRect: the DC's). docs/notes/deck-footer-colours.md. */
+typedef struct Brush { int solid; uint8_t rgb[3]; uint32_t pattern; /* a bitmap handle, or 0 */ uint32_t cref; int rel; } Brush;
+typedef struct Pen { int solid; uint8_t rgb[3]; int width; uint32_t cref; int rel; } Pen;
 typedef struct Font { char face[40]; int size, weight, italic, height; } Font;
 typedef struct Region { int l, t, r, b; } Region;
 
@@ -83,6 +85,9 @@ int nearest_index(const uint8_t rgb[3]);
 void quantize(const uint8_t *rgb, int count, uint8_t *out);
 uint32_t colorref_rgb(const DC *dc, uint32_t c, uint8_t out[3]);
 int color_index(const DC *dc, uint32_t c);
+void brush_color(const DC *dc, const Brush *b, uint8_t out[3]);     /* a solid brush's colour on this DC (a palette-relative one through the DC's palette) */
+void pen_color(const DC *dc, const Pen *p, uint8_t out[3]);
+void dc_resolve_tools(DC *dc);                                      /* the DC's selected pen and brush, again, after its palette changed */
 
 /* surfaces */
 Surface *surface_new(int w, int h);
@@ -129,10 +134,13 @@ TTFont *ttf_load(const char *path);
 const char *ttf_family(const TTFont *f);
 const char *ttf_style(const TTFont *f);
 void ttf_text_metrics(const TTFont *f, double em, int *height, int *avg_width);           /* tmHeight and tmAveCharWidth (the dialog base units) */
+int ttf_avg_width(const TTFont *f, double em);                                            /* tmAveCharWidth: the OS/2 table's xAvgCharWidth, rounded; 0 if none */
 int ttf_ascent(const TTFont *f, double em);                                               /* tmAscent: the rounded ascent */
-void ttf_metrics(const TTFont *f, double em, int *ascent, int *descent);              /* hinted-like integer metrics at an em size in pixels */
+void ttf_metrics(const TTFont *f, double em, int *ascent, int *descent);              /* hinted-like integer metrics at an em size in pixels (the ascent and the descent rounded up: where glyphs are placed) */
+void ttf_cell(const TTFont *f, double em, int *ascent, int *descent);                 /* the cell Windows reports at a whole ppem: both rounded to nearest (tmAscent, tmDescent) */
 double ttf_advance(const TTFont *f, double em, unsigned char ch);                      /* integer-rounded advance of a Latin-1 character */
 double ttf_kern(const TTFont *f, double em, unsigned char a, unsigned char b);
+int font_ppem_for_cell(const TTFont *f, int cell);                                     /* the ppem Windows gives a TrueType font asked for a cell of this many pixels */
 uint8_t *ttf_glyph(const TTFont *f, double em, unsigned char ch, int *w, int *h, int *left, int *top);   /* malloc'd coverage plane, or NULL (a space) */
 
 /* text on a plain RGB buffer in the stand-in face (the compositor's own labels) */

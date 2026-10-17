@@ -220,6 +220,9 @@ static void key_up(Pad *p, int slot, PadOut *out)
     emit(out, PA_KEYUP, 0, 0, p->key[slot].vk, p->key[slot].sc, -1, 0);
 }
 
+static int (*back_guard)(void);
+void pad_set_back_guard(int (*fn)(void)) { back_guard = fn; }
+
 static int step_index(const PadBind *b) { return b->dy < 0 ? 0 : b->dy > 0 ? 1 : b->dx < 0 ? 2 : 3; }
 
 void pad_set_nav(Pad *p, int on) { p->nav = on != 0; }
@@ -295,10 +298,16 @@ void pad_button(Pad *p, int btn, int down, PadOut *out)
             }
             break;
         case PB_KEY:
-            if (down)
+            if (btn == PAD_BACK && down && back_guard && back_guard()) {      /* a tap here would leave the game: the key goes when the button has been held long enough (pad_step) */
+                p->back.holding = 1;
+                p->back.t = 0;
+            } else if (down)
                 key_down(p, btn, b->vk, b->sc, b->ch, b->rep, out);
-            else
+            else {
+                if (btn == PAD_BACK)
+                    p->back.holding = 0;
                 key_up(p, btn, out);
+            }
             break;
         case PB_NAV: {
             int i = step_index(b);
@@ -382,6 +391,16 @@ void pad_step(Pad *p, int ms, PadOut *out)
 
     if (ms <= 0 || !p->active)
         return;
+    if (p->back.holding) {
+        p->back.t += ms;
+        if (p->back.t >= PAD_BACK_HOLD_MS) {
+            const PadBind *bb = bind_of(PAD_BACK);
+
+            p->back.holding = 0;
+            if (bb && ((p->down >> PAD_BACK) & 1))
+                key_down(p, PAD_BACK, bb->vk, bb->sc, bb->ch, bb->rep, out);
+        }
+    }
     if (p->dbl.phase) {
         p->dbl.t += ms;
         while (p->dbl.phase) {
@@ -469,6 +488,7 @@ void pad_release_all(Pad *p, PadOut *out)
 
     p->walking = 0;
     p->dbl.phase = 0;
+    p->back.holding = 0;
     left_set(p, 7, 0, out);
     right_set(p, 0, out);
     for (i = 0; i <= PAD_NBUTTONS; i++)

@@ -212,6 +212,14 @@ void lift_preempt(void)
     sched_give_up();
 }
 
+int sched_yield_if_low(int32_t min)
+{
+    if (lift_budget >= min)
+        return 0;
+    lift_preempt();
+    return 1;
+}
+
 static void *thread_main(void *p)
 {
     GThread *t = p;

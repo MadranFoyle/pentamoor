@@ -70,6 +70,16 @@ int main(int argc, char **argv)
     CHECK(polls == 1);                                                  /* the budget of 100 ran out once (then it is the scheduler's full one) */
     CHECK(lift_budget > 0);
 
+    /* pace.c's pass of the button table starts with a fresh budget, so the window's thread cannot run in the middle of it (docs/notes/journal-done.md): the baton is offered when
+     * fewer back-edges than asked for are left, and not otherwise */
+    lift_budget = 50;
+    sched_poll_hook = count_poll;
+    polls = 0;
+    CHECK(sched_yield_if_low(10) == 0 && polls == 0 && lift_budget == 50);
+    CHECK(sched_yield_if_low(100) == 1 && polls == 1 && lift_budget > 100);
+    CHECK(sched_yield_if_low(100) == 0 && polls == 1);
+    sched_poll_hook = NULL;
+
     /* a call out of lifted code: through lift_call to a host function, its result back in EAX, the arguments in order, EDX left as the host function leaves it */
     {
         uint32_t fn = port_host_function(ten_a_plus_b);

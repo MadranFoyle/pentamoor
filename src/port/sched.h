@@ -31,6 +31,9 @@ void sched_exit_current(uint32_t code);          /* ExitThread: does not return 
 void sched_block(int (*ready)(void *), void *ctx, double timeout);
 void sched_sleep(double seconds);
 void sched_give_up(void);
+/* Offer the baton now, and give the thread a full budget, if fewer than `min` back-edges are left of it: a place where the guest is about to run a stretch of code that must not be
+ * preempted in the middle (pace.c: a screen's pass of the button table). Returns 1 if the baton was offered. */
+int sched_yield_if_low(int32_t min);
 
 /* The clock the guest sees: real time since the program started. now_ms is what GetTickCount returns. */
 extern double port_clock_skew;

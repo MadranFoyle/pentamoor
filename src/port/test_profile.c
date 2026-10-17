@@ -124,6 +124,7 @@ static void test_v10_values(void)
     CHECK(m->textmenu.first == 0x676d50u && m->textmenu.count == 0x676d40u && m->textmenu.mask == 0x676d58u);
     CHECK(m->buycards.loop.lo == 0x509517u && m->buycards.loop.hi == 0x509fd4u && m->buycards.ids == 0x61e060u && m->buycards.count_ebp == -0xa8 && m->buycards.boxes_ebp == -0xa0);
     CHECK(m->clues.loop.lo == 0x48f523u && m->clues.loop.hi == 0x49094cu && m->clues.count_ebp == -0x12d8);
+    CHECK(m->title.loop.lo == 0x47a2e6u && m->title.loop.hi == 0x47a94cu);
     /* yesno.c, textfocus.c */
     CHECK(m->keys.wait == 0x48ac2fu && m->keys.pop == 0x4080b2u && m->keys.wait_loop_ret == 0x48ac3du);
     CHECK(m->keys.nsites == 3 && m->keys.sites[0] == 0x509e4au && m->keys.sites[1] == 0x4f156eu && m->keys.sites[2] == 0x45119du);

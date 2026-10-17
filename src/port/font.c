@@ -11,7 +11,7 @@
 struct TTFont {
     uint8_t *d;
     size_t len;
-    uint32_t glyf, loca, hmtx, cmap, kern, name, head, hhea, maxp;
+    uint32_t glyf, loca, hmtx, cmap, kern, name, head, hhea, maxp, os2;
     int upem, loca_long, nglyphs, nhmetrics, ascender, descender;
     uint32_t cmap4;                 /* offset of the format 4 subtable, or 0 */
     char family[64], style[32];
@@ -102,6 +102,7 @@ TTFont *ttf_load(const char *path)
     f->head = find_table(f, "head");
     f->hhea = find_table(f, "hhea");
     f->maxp = find_table(f, "maxp");
+    f->os2 = find_table(f, "OS/2");
     if (!f->glyf || !f->loca || !f->hmtx || !f->cmap || !f->head || !f->hhea || !f->maxp) {
         free(f->d);
         free(f);
@@ -140,6 +141,20 @@ void ttf_metrics(const TTFont *f, double em, int *ascent, int *descent)
 
     *ascent = (int)ceil(f->ascender * s - 1e-9);
     *descent = (int)ceil(-f->descender * s - 1e-9);
+}
+
+/* The cell of a hinted font at a whole ppem as Windows gives it (tmAscent and tmDescent): the ascent and the descent each rounded to a whole pixel (what the original's card text
+ * reported for MPZurich Cn BT at 8 ppem: 8 and 2, and tmInternalLeading, the cell less the em, 2). docs/notes/card-text-metrics.md. */
+void ttf_cell(const TTFont *f, double em, int *ascent, int *descent)
+{
+    *ascent = (int)(f->ascender * em / f->upem + 0.5);
+    *descent = (int)(-f->descender * em / f->upem + 0.5);
+}
+
+/* tmAveCharWidth: the OS/2 table's xAvgCharWidth at the em, to a whole pixel (3 for MPZurich Cn BT at 8 ppem: 778 of 2048); 0 when the font has none. */
+int ttf_avg_width(const TTFont *f, double em)
+{
+    return f->os2 ? (int)(s16(f, f->os2 + 2) * em / f->upem + 0.5) : 0;
 }
 
 /* tmAscent: the ascent rounded to a whole pixel, the line the text sits on (12 for Benguiat Bk BT at 13 pixels, where a ceiling would say 13). */
