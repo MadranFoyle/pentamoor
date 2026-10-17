@@ -44,8 +44,10 @@ Names are the position-based ones SDL uses (A is the bottom button of the diamon
 - **Last device wins.** A mouse motion or click (a touch is a mouse to SDL, `SDL_HINT_TOUCH_MOUSE_EVENTS` stays at its default) makes the mouse the active device, puts the pad's cursor where the mouse is (so
   the next stick push starts from there), lets go of whatever the pad held (a button, a key) and stops the stick from moving anything until it is moved again (a stick held while the mouse is used does not fight it).
   A controller unplugged, or the window losing focus, lets go of everything too.
-- **Full screen.** `PORT_FULLSCREEN=1` starts in a borderless full-screen window (SDL's "desktop" full screen: the picture is scaled with the shape kept, bars at the sides). There is no key for it. On a
-  Steam Deck (or inside Gamescope) it is the default (`PORT_FULLSCREEN=0` for a window), and the scale is a whole number where that loses little: `steamdeck.md`.
+- **Full screen.** `PORT_FULLSCREEN=1` starts in a borderless full-screen window (SDL's "desktop" full screen: the picture is scaled with the shape kept, bars at the sides), F11 and Alt+Enter toggle it on a keyboard, and
+  **both sticks pressed in (L3 + R3) held for a second** toggle it on a pad (`display.md`). Back + Start was not used for that on purpose: Back is Escape and Start is Enter, sent when each goes down, so pressing them in turn would cancel and then confirm
+  whatever the game asks ("Ready to Quit?" on the map). L3 is Space (stop, on the map) and R3 the fast-cursor modifier, so the combination sends one harmless Space. On a Steam Deck (or inside Gamescope) full screen is the default
+  (`PORT_FULLSCREEN=0` for a window), and the scale is a whole number where that loses little: `steamdeck.md`.
 - **Steam Input.** Steam hands a non-Steam game the Desktop layout (a keyboard and mouse, no game controller), so a Deck needs the Gamepad template for this file's pad to work: `steamdeck.md` has the steps,
   the layout file that ships, and `SDL_GAMECONTROLLERCONFIG` / `SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` (set on a Deck).
 - **Hot plug.** `SDL_INIT_GAMECONTROLLER`; SDL queues `SDL_CONTROLLERDEVICEADDED` for each controller present at start and for each plugged in later, each is opened, and `SDL_CONTROLLERDEVICEREMOVED`

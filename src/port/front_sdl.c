@@ -7,9 +7,11 @@
 #include <strings.h>
 #include <ctype.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <signal.h>
 #include <unistd.h>
 
+#include "display.h"
 #include "front.h"
 #include "pad.h"
 #include "plat.h"
@@ -17,6 +19,7 @@
 #include "gdi_int.h"
 #include "navwm.h"
 #include "padlog.h"
+#include "sched.h"
 #include "steamdeck.h"
 #include "textin.h"
 #include "wm.h"
@@ -98,6 +101,10 @@ typedef struct { Key k; int pending; int repeat; } Pending;
 static Pending pend;
 static uint8_t held[SDL_NUM_SCANCODES];            /* keys sent down and not yet up */
 static Key held_key[SDL_NUM_SCANCODES];
+static uint8_t phys[SDL_NUM_SCANCODES];            /* keys physically down, whether or not the game was told (the display's own shortcuts look at the modifiers) */
+static uint8_t swallowed[SDL_NUM_SCANCODES];       /* keys the display took (F11, Alt+Enter): their release is not the game's either */
+static uint8_t alt_def[SDL_NUM_SCANCODES];         /* an Alt that is down but has not been told to the game yet: Alt+Enter is the display's, and a game that treats any key as "continue" must not see the Alt of it */
+static uint8_t alt_eaten[SDL_NUM_SCANCODES];       /* an Alt that went into a display shortcut: its release is not the game's either */
 
 static void flush_pending(int ch)
 {
@@ -105,6 +112,32 @@ static void flush_pending(int ch)
         return;
     front_push_key(pend.k.vk, pend.k.sc, 1, ch, pend.repeat);
     pend.pending = 0;
+}
+
+/* tell the game about the Alts that were held back (another key, a click, or the Alt's own release needs them to have been down) */
+static void flush_alt(void)
+{
+    int sc;
+
+    for (sc = 0; sc < SDL_NUM_SCANCODES; sc++)
+        if (alt_def[sc]) {
+            alt_def[sc] = 0;
+            held[sc] = 1;
+            held_key[sc] = keymap[sc];
+            front_push_key(keymap[sc].vk, keymap[sc].sc, 1, -1, 0);
+        }
+}
+
+/* the Alts that were held back went into a display shortcut: the game never hears of them */
+static void eat_alt(void)
+{
+    int sc;
+
+    for (sc = 0; sc < SDL_NUM_SCANCODES; sc++)
+        if (alt_def[sc]) {
+            alt_def[sc] = 0;
+            alt_eaten[sc] = 1;
+        }
 }
 
 static int shift_held(void) { return held[SDL_SCANCODE_LSHIFT] || held[SDL_SCANCODE_RSHIFT]; }
@@ -173,6 +206,9 @@ static void release_all(void)
             front_push_key(held_key[i].vk, held_key[i].sc, 0, -1, 0);
             held[i] = 0;
         }
+    memset(alt_def, 0, sizeof(alt_def));
+    memset(alt_eaten, 0, sizeof(alt_eaten));
+    memset(phys, 0, sizeof(phys));
 }
 
 /* ---- game controllers ----------------------------------------------------------------------------------------------------------------------------------
@@ -576,24 +612,6 @@ static void key_event(SDL_Scancode sc, int down)
     SDL_PushEvent(&e);
 }
 
-/* A scripted mouse position is in screen pixels, but SDL turns every mouse event, pushed ones too, from window pixels to screen pixels (SDL_RenderSetLogicalSize): when the
- * window is not the screen's size (a window made to fit a small display, or PORT_WINDOW), a pushed position goes through the inverse first, so the game gets the number
- * the script gave (to within a pixel). */
-static void to_window(SDL_Renderer *ren, int *x, int *y)
-{
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-    int wx, wy, ww, wh;
-
-    if (ren && SDL_GetRendererOutputSize(ren, &ww, &wh) == 0 && (ww != SCREEN_W || wh != SCREEN_H)) {
-        SDL_RenderLogicalToWindow(ren, (float)*x, (float)*y, &wx, &wy);
-        *x = wx;
-        *y = wy;
-    }
-#else
-    (void)ren; (void)x; (void)y;
-#endif
-}
-
 /* A controller event from a script, as SDL itself would queue it (the instance id is one no device has: the handler does not look at it), so it takes the path of a real pad:
  *   pad axis lx|ly|rx|ry|lt|rt VALUE      -1..1 (the triggers 0..1)
  *   pad stick l|r X Y                     both axes of a stick
@@ -682,47 +700,115 @@ static void run_pad_step(const char *arg)
     }
 }
 
-static void run_step(const Step *s, SDL_Renderer *ren)
+/* The mouse events a script or the control pipe pushes carry this as `which`: their position is already a picture pixel (what the script said), so the loop does not map it
+ * from window coordinates. Real events (a mouse, a touch) are mapped by display_to_screen. */
+#define SCRIPT_MOUSE 0x5C12u
+static int mouse_x, mouse_y;                       /* the last pointer position the game was given, picture pixels */
+
+static void push_mouse_motion(int x, int y)
+{
+    SDL_Event e;
+
+    memset(&e, 0, sizeof(e));
+    e.type = SDL_MOUSEMOTION;
+    e.motion.windowID = script_window;
+    e.motion.which = SCRIPT_MOUSE;
+    e.motion.x = x;
+    e.motion.y = y;
+    SDL_PushEvent(&e);
+}
+
+static void push_mouse_button(int right, int down, int x, int y)
+{
+    SDL_Event e;
+
+    memset(&e, 0, sizeof(e));
+    e.type = down ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+    e.button.windowID = script_window;
+    e.button.which = SCRIPT_MOUSE;
+    e.button.button = right ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT;
+    e.button.state = down ? SDL_PRESSED : SDL_RELEASED;
+    e.button.x = x;
+    e.button.y = y;
+    SDL_PushEvent(&e);
+}
+
+static void display_print_view(const char *why);
+static void winshot(const char *path);
+
+static void run_step(const Step *s)
 {
     SDL_Event e;
     int x, y;
 
     memset(&e, 0, sizeof(e));
     if (!strcmp(s->cmd, "move") && sscanf(s->arg, "%d %d", &x, &y) == 2) {
-        to_window(ren, &x, &y);
-        e.type = SDL_MOUSEMOTION; e.motion.windowID = script_window; e.motion.x = x; e.motion.y = y;
-        SDL_PushEvent(&e);
+        push_mouse_motion(x, y);
     } else if (!strcmp(s->cmd, "down") || !strcmp(s->cmd, "up") || !strcmp(s->cmd, "rdown") || !strcmp(s->cmd, "rup")) {
         int x2 = 0, y2 = 0;
 
         if (sscanf(s->arg, "%d %d", &x2, &y2) == 2) {                 /* the position is given (or the last one stays) */
-            to_window(ren, &x2, &y2);
-            e.type = SDL_MOUSEMOTION; e.motion.windowID = script_window; e.motion.x = x2; e.motion.y = y2;
-            SDL_PushEvent(&e);
-            memset(&e, 0, sizeof(e));
+            push_mouse_motion(x2, y2);
+            x = x2;
+            y = y2;
+        } else {
+            x = mouse_x;
+            y = mouse_y;
         }
-        SDL_GetMouseState(&x, &y);
-        e.type = s->cmd[s->cmd[0] == 'r'] == 'd' ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
-        e.button.windowID = script_window;
-        e.button.button = s->cmd[0] == 'r' ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT;
-        e.button.x = x2 ? x2 : x; e.button.y = y2 ? y2 : y;
-        SDL_PushEvent(&e);
+        push_mouse_button(s->cmd[0] == 'r', s->cmd[s->cmd[0] == 'r'] == 'd', x, y);
     } else if (!strcmp(s->cmd, "click") && sscanf(s->arg, "%d %d", &x, &y) == 2) {       /* move, press, release */
-        to_window(ren, &x, &y);
-        e.type = SDL_MOUSEMOTION; e.motion.windowID = script_window; e.motion.x = x; e.motion.y = y;
-        SDL_PushEvent(&e);
-        memset(&e, 0, sizeof(e));
-        e.type = SDL_MOUSEBUTTONDOWN; e.button.windowID = script_window; e.button.button = SDL_BUTTON_LEFT; e.button.x = x; e.button.y = y;
-        SDL_PushEvent(&e);
-        e.type = SDL_MOUSEBUTTONUP;
-        SDL_PushEvent(&e);
-    } else if (!strcmp(s->cmd, "key")) {
-        SDL_Scancode sc = scancode_named(s->arg);
+        push_mouse_motion(x, y);
+        push_mouse_button(0, 1, x, y);
+        push_mouse_button(0, 0, x, y);
+    } else if (!strcmp(s->cmd, "key")) {                 /* key NAME, or with modifiers: key ctrl+f11, key alt+return, key shift+f11 */
+        SDL_Scancode mods[3];
+        int nm = 0, i;
+        char buf[sizeof(s->arg)], *tok = buf, *plus;
+        SDL_Scancode sc;
 
+        snprintf(buf, sizeof(buf), "%s", s->arg);
+        while (nm < 3 && (plus = strchr(tok, '+')) != NULL && plus[1]) {
+            *plus = 0;
+            sc = !strcasecmp(tok, "ctrl") ? SDL_SCANCODE_LCTRL : !strcasecmp(tok, "alt") ? SDL_SCANCODE_LALT : !strcasecmp(tok, "shift") ? SDL_SCANCODE_LSHIFT : SDL_SCANCODE_UNKNOWN;
+            if (sc != SDL_SCANCODE_UNKNOWN)
+                mods[nm++] = sc;
+            tok = plus + 1;
+        }
+        sc = scancode_named(tok);
         if (sc != SDL_SCANCODE_UNKNOWN) {
+            for (i = 0; i < nm; i++)
+                key_event(mods[i], 1);
             key_event(sc, 1);
             key_event(sc, 0);
+            for (i = nm - 1; i >= 0; i--)
+                key_event(mods[i], 0);
         }
+    } else if ((!strcmp(s->cmd, "wmove") || !strcmp(s->cmd, "wclick")) && sscanf(s->arg, "%d %d", &x, &y) == 2) {       /* a pointer position in WINDOW coordinates (points), as a real mouse gives it: the display's own mapping applies */
+        SDL_Event m;
+
+        memset(&m, 0, sizeof(m));
+        m.type = SDL_MOUSEMOTION;
+        m.motion.windowID = script_window;
+        m.motion.x = x;
+        m.motion.y = y;
+        SDL_PushEvent(&m);
+        if (s->cmd[1] == 'c') {
+            memset(&m, 0, sizeof(m));
+            m.type = SDL_MOUSEBUTTONDOWN;
+            m.button.windowID = script_window;
+            m.button.button = SDL_BUTTON_LEFT;
+            m.button.state = SDL_PRESSED;
+            m.button.x = x;
+            m.button.y = y;
+            SDL_PushEvent(&m);
+            m.type = SDL_MOUSEBUTTONUP;
+            m.button.state = SDL_RELEASED;
+            SDL_PushEvent(&m);
+        }
+    } else if (!strcmp(s->cmd, "winshot")) {
+        winshot(s->arg);
+    } else if (!strcmp(s->cmd, "view")) {              /* the window, the output and where the picture is, on stderr */
+        display_print_view("view");
     } else if (!strcmp(s->cmd, "text")) {
         const char *p;
 
@@ -822,7 +908,7 @@ static int control_fd = -1;
 static char control_buf[1024];
 static size_t control_len;
 
-static void poll_control(SDL_Renderer *ren)
+static void poll_control(void)
 {
     ssize_t n;
 
@@ -838,7 +924,7 @@ static void poll_control(SDL_Renderer *ren)
 
             *nl = 0;
             if (sscanf(control_buf, "%15s %511[^\n]", st.cmd, st.arg) >= 1)
-                run_step(&st, ren);
+                run_step(&st);
             memmove(control_buf, nl + 1, control_len - (size_t)(nl + 1 - control_buf) + 1);
             control_len -= (size_t)(nl + 1 - control_buf) + (size_t)0;
             control_len = strlen(control_buf);
@@ -897,97 +983,562 @@ static void *game_thread(void *p)
     return NULL;
 }
 
-/* The window's size: the screen's (SCREEN_W x SCREEN_H), made smaller, keeping the shape, when the display cannot hold it (1024x768 on a 1366x768 laptop). The picture is scaled
- * to the window and the mouse is mapped back (SDL_RenderSetLogicalSize), and the window can be resized by hand. PORT_WINDOW=WxH asks for a size. Runs with a script or a control pipe,
- * and SDL's dummy driver, keep the screen's size: their positions are in screen pixels (see to_window), and an unscaled window makes them exact. */
-static void choose_window(int *w, int *h)
-{
-    const char *env = getenv("PORT_WINDOW");
-    const char *drv = SDL_GetCurrentVideoDriver();
-    int ew = 0, eh = 0;
-    SDL_Rect r;
+/* ---- the window and the picture ------------------------------------------------------------------------------------------------------------------------
+ * display.h has the rules (pure, unit tested); this is the SDL half. The game's picture (SCREEN_W x SCREEN_H, RGB24) lives in a streaming texture and is drawn into the window's
+ * drawable with SDL_RenderCopy to a rectangle of our own choosing, so there is no SDL_RenderSetLogicalSize and the mapping of the mouse is ours too (display_to_screen):
+ *
+ *   - the drawable is measured in pixels (SDL_GetRendererOutputSize), the window in points (SDL_GetWindowSize); on a Retina Mac, or with a display scaling factor, a point is two
+ *     (or 1.25, 1.5...) pixels. Everything that decides a scale uses pixels. SDL_WINDOW_ALLOW_HIGHDPI is what gives a Retina window its full-resolution drawable;
+ *   - three scaling modes (fit, integer, stretch) and three filters (nearest, linear, sharp: the picture is first enlarged by a whole number with nearest neighbour into a render
+ *     target, then that is scaled linearly to its final size), changed at run time (Alt+Enter / F11, Ctrl+F11, Shift+F11, L3+R3 held) and kept in display.cfg in the overlay folder. */
+typedef struct {
+    SDL_Window *win;
+    SDL_Renderer *ren;
+    SDL_Texture *tex;                                   /* the game's picture */
+    SDL_Texture *pre;                                   /* the "sharp" filter's enlarged copy of it (a render target); NULL when not in use */
+    int pre_w, pre_h, pre_valid, pre_failed;
+    int upload, reupload;                               /* the texture must get the current frame (reupload: the device lost it) */
+    int max_tex;
+    DisplaySettings now, start;                         /* the settings in use, and those the run started with */
+    DisplayCfg file;                                    /* display.cfg as it was read */
+    int persist;                                        /* display.cfg is kept (not on SDL's dummy and offscreen drivers) */
+    char dir[1100];
+    char last_text[1024];                               /* what display.cfg held when last written */
+    int ow, oh, ww, wh;                                 /* the drawable in pixels, the window in points */
+    DispView view;
+    int geom_known, win_x, win_y, win_w, win_h;        /* the window's size and place when it was last a plain window (points): where leaving full screen goes back to */
+    int min_cap_w, min_cap_h;                           /* the window it started at: the minimum size never exceeds it */
+    int min_w, min_h;                                   /* the minimum size that was last set */
+    Uint32 save_at;                                     /* when display.cfg is to be written (0: not pending) */
+    Uint32 restore_until;                               /* after leaving full screen: the windowed size is put back until this tick */
+    Uint32 fs_t;                                        /* when full screen was last toggled by us: the window system may not have caught up for a moment */
+} Disp;
 
-    *w = SCREEN_W;
-    *h = SCREEN_H;
-    if (env && sscanf(env, "%dx%d", &ew, &eh) == 2 && ew >= 160 && eh >= 120 && ew <= 8192 && eh <= 8192) {
-        *w = ew;
-        *h = eh;
-    } else if (!(drv && !strcmp(drv, "dummy")) && !getenv("PORT_SCRIPT") && !getenv("PORT_CONTROL") && SDL_GetDisplayUsableBounds(0, &r) == 0)
-        window_size_for(SCREEN_W, SCREEN_H, r.w, r.h, w, h);
+static Disp D;
+
+static int is_fullscreen(void) { return (SDL_GetWindowFlags(D.win) & SDL_WINDOW_FULLSCREEN) != 0; }
+
+static int driver_is_virtual(void)
+{
+    const char *drv = SDL_GetCurrentVideoDriver();
+
+    return drv && (!strcmp(drv, "dummy") || !strcmp(drv, "offscreen"));
 }
 
-/* A full-screen window shows the screen scaled into the display, keeping its shape (steamdeck.h, view_scale): a whole-number scale where it loses little (the Deck's 1280x800 shows
- * 1024x768 at 1x with thin bars, every pixel square), a fractional one otherwise (smoothed, since uneven pixel doubling looks worse than a soft edge). The display is asked for its
- * desktop mode rather than the window's size, which a compositor may not have settled yet. The mouse and touch are mapped back through SDL_RenderSetLogicalSize either way. */
-static void full_screen_scale(SDL_Window *win, SDL_Renderer *ren)
+static void set_tex_filter(SDL_Texture *t, int linear)
 {
-    SDL_DisplayMode dm;
-    int idx = SDL_GetWindowDisplayIndex(win), integer = 0, vw = 0, vh = 0;
-    double s;
+#if SDL_VERSION_ATLEAST(2, 0, 12)
+    SDL_SetTextureScaleMode(t, linear ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
+#else
+    (void)t;
+    (void)linear;                                       /* an old SDL has the hint at creation only: nearest, and the enlarged copy linear */
+#endif
+}
 
-    if (idx < 0)
-        idx = 0;
-    if (SDL_GetDesktopDisplayMode(idx, &dm) != 0)
+/* the window, the drawable and where the picture goes in it, as of now */
+static void refresh_view(void)
+{
+    SDL_GetWindowSize(D.win, &D.ww, &D.wh);
+    if (SDL_GetRendererOutputSize(D.ren, &D.ow, &D.oh) != 0 || D.ow <= 0 || D.oh <= 0) {
+        D.ow = D.ww;
+        D.oh = D.wh;
+    }
+    display_layout(SCREEN_W, SCREEN_H, D.ow, D.oh, D.now.scale, &D.view);
+}
+
+static void display_print_view(const char *why)
+{
+    refresh_view();
+    fprintf(stderr, "display (%s): %s, window %dx%d points, drawable %dx%d pixels (%.2f per point), picture %dx%d at %d,%d (scale %.3f x %.3f%s), scale %s, filter %s\n", why,
+            is_fullscreen() ? "full screen" : "window", D.ww, D.wh, D.ow, D.oh, D.ww > 0 ? (double)D.ow / D.ww : 1.0, D.view.dst.w, D.view.dst.h, D.view.dst.x, D.view.dst.y,
+            D.view.sx, D.view.sy, D.view.whole ? ", whole numbers" : "", scale_name(D.now.scale), filter_name(D.now.filter));
+}
+
+/* ---- mouse units ----
+ * A mouse event's position is in window coordinates, which are points. Except that SDL's renderer turns the positions of the mouse events of its window into render pixels by itself once one is attached
+ * (SDL_RendererEventWatch; seen with SDL 2.32 here, with or without SDL_RenderSetLogicalSize): on a Retina window a click at the point 100 arrives as 200. Which units the events come in depends on
+ * the SDL (and its version, and which platform's window), so it is measured: a mouse event that is ours alone (`which` is CALIB_MOUSE) is pushed through the same path as the real ones with the position
+ * CALIB_AT, and the number that comes back says by what the events are multiplied (1 for points, the pixels per point when SDL has converted them). It is measured at the start and whenever the window's
+ * size or display changes (the factor is the display's). The window's size in the events' unit is then ww * scale: the drawable's own size when they are pixels, so display_to_screen works in either. */
+#define CALIB_MOUSE 0x5C13u
+#define CALIB_AT 100
+static double mouse_scale_motion = 1.0, mouse_scale_button = 1.0;     /* by what SDL multiplies the position of a motion event, of a button event */
+static Uint32 calib_t;
+
+static void calibrate_mouse(void)
+{
+    SDL_Event e;
+
+    memset(&e, 0, sizeof(e));
+    e.type = SDL_MOUSEMOTION;
+    e.motion.windowID = script_window;
+    e.motion.which = CALIB_MOUSE;
+    e.motion.x = e.motion.y = CALIB_AT;
+    SDL_PushEvent(&e);
+    memset(&e, 0, sizeof(e));
+    e.type = SDL_MOUSEBUTTONDOWN;
+    e.button.windowID = script_window;
+    e.button.which = CALIB_MOUSE;
+    e.button.button = SDL_BUTTON_X2;                    /* a button the game does not use */
+    e.button.state = SDL_PRESSED;
+    e.button.x = e.button.y = CALIB_AT;
+    SDL_PushEvent(&e);
+    e.type = SDL_MOUSEBUTTONUP;
+    e.button.state = SDL_RELEASED;
+    SDL_PushEvent(&e);
+    calib_t = SDL_GetTicks();
+}
+
+static void calibrate_soon(void)
+{
+    if (SDL_GetTicks() - calib_t > 300)
+        calibrate_mouse();
+}
+
+/* the measured factor, if it is a believable one */
+static void note_calibration(double *scale, int x)
+{
+    double f = x / (double)CALIB_AT;
+
+    if (f >= 0.25 && f <= 8.0)
+        *scale = f;
+}
+
+/* a mouse position as SDL delivered it to the picture's pixels. A script's (marked) position is a picture pixel already, but SDL may have multiplied it on the way: that is undone. A real one is mapped
+ * through the window's size in the events' unit. `button`: a button event (else motion). */
+static void map_mouse(Uint32 which, int button, int *x, int *y)
+{
+    double sc = button ? mouse_scale_button : mouse_scale_motion;
+
+    if (which == SCRIPT_MOUSE) {
+        *x = (int)(*x / sc + (*x >= 0 ? 0.5 : -0.5));
+        *y = (int)(*y / sc + (*y >= 0 ? 0.5 : -0.5));
+    } else {
+        refresh_view();
+        display_to_screen(&D.view, SCREEN_W, SCREEN_H, D.ow, D.oh, D.ww * sc, D.wh * sc, *x, *y, x, y);
+    }
+    mouse_x = *x;
+    mouse_y = *y;
+}
+
+static void ensure_pre(int w, int h)
+{
+    if (D.pre && D.pre_w == w && D.pre_h == h)
         return;
-    s = view_scale(SCREEN_W, SCREEN_H, dm.w, dm.h, &integer, &vw, &vh);
-    SDL_RenderSetIntegerScale(ren, integer ? SDL_TRUE : SDL_FALSE);
-    if (!integer)
-        SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");           /* read when the texture is made, which comes next */
-    fprintf(stderr, "full screen: %dx%d display, %dx%d screen, scale %.3f (%s), picture %dx%d\n", dm.w, dm.h, SCREEN_W, SCREEN_H, s,
-            integer ? "whole number" : "fractional, smoothed", vw, vh);
+    if (D.pre) {
+        SDL_DestroyTexture(D.pre);
+        D.pre = NULL;
+    }
+    D.pre_failed = 0;
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");           /* read when the texture is made (SDL older than 2.0.12 has no other way) */
+    D.pre = SDL_CreateTexture(D.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, w, h);
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
+    if (!D.pre) {
+        D.pre_failed = 1;
+        return;
+    }
+    set_tex_filter(D.pre, 1);
+    D.pre_w = w;
+    D.pre_h = h;
+    D.pre_valid = 0;
+}
+
+/* The picture into the drawable. nearest and linear are the texture drawn with that filter. sharp: where the picture is shown at a whole number of pixels per pixel (on each axis)
+ * it is nearest neighbour, which is exact; where it is not, it is first enlarged by the next whole number (ceil of the scale, at most 8x) with nearest neighbour into a render
+ * target and that is scaled linearly, down by less than one step, which blurs an edge by under a pixel; shown at less than 1x it is simply linear. */
+static void draw_picture(void)
+{
+    SDL_Rect dst = {D.view.dst.x, D.view.dst.y, D.view.dst.w, D.view.dst.h};
+    int sw = SCREEN_W, sh = SCREEN_H;
+    int exact = dst.w % sw == 0 && dst.h % sh == 0;
+    FilterMode f = D.now.filter;
+
+    if (f == FILTER_SHARP && !exact) {
+        int kx = display_prescale(sw, dst.w, 8, D.max_tex), ky = display_prescale(sh, dst.h, 8, D.max_tex);
+
+        if ((kx > 1 || ky > 1) && SDL_RenderTargetSupported(D.ren)) {
+            ensure_pre(sw * kx, sh * ky);
+            if (D.pre) {
+                if (!D.pre_valid) {
+                    set_tex_filter(D.tex, 0);
+                    SDL_SetRenderTarget(D.ren, D.pre);
+                    SDL_RenderCopy(D.ren, D.tex, NULL, NULL);
+                    SDL_SetRenderTarget(D.ren, NULL);
+                    D.pre_valid = 1;
+                }
+                SDL_RenderCopy(D.ren, D.pre, NULL, &dst);
+                return;
+            }
+        }
+        set_tex_filter(D.tex, 1);
+    } else
+        set_tex_filter(D.tex, f == FILTER_LINEAR);
+    SDL_RenderCopy(D.ren, D.tex, NULL, &dst);
+}
+
+/* the picture into the back buffer (not yet shown) */
+static void render_current(void)
+{
+    if (D.upload || D.reupload) {
+        SDL_UpdateTexture(D.tex, NULL, frame_view(shot_frame), SCREEN_W * 3);
+        D.upload = D.reupload = 0;
+        D.pre_valid = 0;
+    }
+    refresh_view();
+    SDL_SetRenderDrawColor(D.ren, 0, 0, 0, 255);
+    SDL_RenderClear(D.ren);
+    draw_picture();
+}
+
+static void present_now(void)
+{
+    render_current();
+    SDL_RenderPresent(D.ren);
+}
+
+/* `winshot FILE` (a test aid, like `shot`): what the window shows, at the size of its drawable in pixels (a Retina window's 2x too), as the renderer drew it: the picture, the bars, the filter. It is
+ * drawn again into the back buffer and read from there, so it works whether or not the window is on screen (PORT_HIDDEN=1). */
+static void winshot(const char *path)
+{
+    FILE *f = fopen(path, "wb");
+    Uint32 *px;
+    uint8_t *row;
+    int x, y;
+
+    if (!f)
+        return;
+    render_current();
+    px = malloc((size_t)D.ow * D.oh * 4);
+    row = malloc((size_t)D.ow * 3);
+    if (px && row && SDL_RenderReadPixels(D.ren, NULL, SDL_PIXELFORMAT_ARGB8888, px, D.ow * 4) == 0) {
+        fprintf(f, "P6\n%d %d\n255\n", D.ow, D.oh);
+        for (y = 0; y < D.oh; y++) {
+            for (x = 0; x < D.ow; x++) {
+                Uint32 p = px[(size_t)y * D.ow + x];
+
+                row[3 * x] = (uint8_t)(p >> 16);
+                row[3 * x + 1] = (uint8_t)(p >> 8);
+                row[3 * x + 2] = (uint8_t)p;
+            }
+            fwrite(row, 3, (size_t)D.ow, f);
+        }
+    } else
+        fprintf(stderr, "winshot: %s\n", SDL_GetError());
+    free(px);
+    free(row);
+    fclose(f);
+}
+
+/* the player can also leave or enter full screen without us (the green button on a Mac, a window manager's key): the state is what the window says, except just after our own change */
+static int sync_fullscreen(void)
+{
+    int was = D.now.fullscreen;
+
+    if (SDL_GetTicks() - D.fs_t >= 2000)
+        D.now.fullscreen = is_fullscreen();
+    return D.now.fullscreen != was;
+}
+
+/* ---- keeping display.cfg ---- */
+static void save_soon(void) { D.save_at = SDL_GetTicks() + 1000; if (!D.save_at) D.save_at = 1; }
+
+static void save_cfg(void)
+{
+    DisplayCfg out = D.file;
+    DisplaySettings s = D.now;
+    char text[1024];
+
+    D.save_at = 0;
+    if (!D.persist)
+        return;
+    sync_fullscreen();
+    s = D.now;
+    s.has_window = D.geom_known;
+    s.win_w = D.win_w;
+    s.win_h = D.win_h;
+    s.has_pos = D.geom_known && D.win_x != INT_MIN;
+    s.win_x = D.win_x;
+    s.win_y = D.win_y;
+    display_cfg_update(&out, &D.start, &s);
+    if (dcfg_format(&out, text, sizeof(text)) < 0 || !strcmp(text, D.last_text))
+        return;
+    if (dcfg_save(D.dir, &out))
+        snprintf(D.last_text, sizeof(D.last_text), "%s", text);
+    else
+        fprintf(stderr, "display: cannot write %s in %s (the settings are not kept)\n", DISPLAY_CFG_NAME, D.dir);
+}
+
+/* the minimum size follows the drawable's scale (a point may be one pixel or two) */
+static void update_min_size(void)
+{
+    int mw, mh;
+    double dpi;
+
+    if (driver_is_virtual())
+        return;
+    SDL_GetWindowSize(D.win, &D.ww, &D.wh);
+    if (SDL_GetRendererOutputSize(D.ren, &D.ow, &D.oh) != 0 || D.ww <= 0)
+        return;
+    dpi = (double)D.ow / D.ww;
+    display_min_window(SCREEN_W, SCREEN_H, dpi, D.min_cap_w, D.min_cap_h, &mw, &mh);
+    if (mw != D.min_w || mh != D.min_h) {                 /* only when it changed: setting it can make the window system send events */
+        D.min_w = mw;
+        D.min_h = mh;
+        SDL_SetWindowMinimumSize(D.win, mw, mh);
+    }
+}
+
+/* a window event moved or resized the window: note its size and place while it is a plain window */
+static void note_geometry(void)
+{
+    Uint32 fl = SDL_GetWindowFlags(D.win);
+    int x, y, w, h;
+
+    update_min_size();
+    if (sync_fullscreen())
+        save_soon();
+    if ((fl & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MINIMIZED | SDL_WINDOW_MAXIMIZED)) || SDL_GetTicks() < D.restore_until || driver_is_virtual())
+        return;
+    SDL_GetWindowSize(D.win, &w, &h);
+    SDL_GetWindowPosition(D.win, &x, &y);
+    if (w <= 0 || h <= 0)
+        return;
+    if (D.geom_known && w == D.win_w && h == D.win_h && x == D.win_x && y == D.win_y)
+        return;
+    D.geom_known = 1;
+    D.win_w = w;
+    D.win_h = h;
+    D.win_x = x;
+    D.win_y = y;
+    save_soon();
+}
+
+static void set_fullscreen(int on)
+{
+    if (on == is_fullscreen())
+        return;
+    if (on) {
+        note_geometry();                                  /* where to come back to */
+        SDL_SetWindowFullscreen(D.win, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    } else {
+        SDL_SetWindowFullscreen(D.win, 0);
+        if (D.geom_known) {                               /* SDL goes back to the size it remembers; a window system that is slow or forgetful is told again below */
+            SDL_SetWindowSize(D.win, D.win_w, D.win_h);
+            if (D.win_x != INT_MIN)
+                SDL_SetWindowPosition(D.win, D.win_x, D.win_y);
+            D.restore_until = SDL_GetTicks() + 1500;
+            if (!D.restore_until)
+                D.restore_until = 1;
+        }
+    }
+    D.now.fullscreen = on;
+    D.fs_t = SDL_GetTicks();
+    save_soon();
+}
+
+/* while a window is being put back after full screen, once its size event shows the wrong size, set it again */
+static void restore_step(void)
+{
+    static Uint32 last;
+    Uint32 now = SDL_GetTicks();
+    int w, h;
+
+    if (!D.restore_until)
+        return;
+    if (now >= D.restore_until) {
+        D.restore_until = 0;
+        note_geometry();
+        return;
+    }
+    if (is_fullscreen() || !D.geom_known || now - last < 100)
+        return;
+    last = now;
+    SDL_GetWindowSize(D.win, &w, &h);
+    if (w != D.win_w || h != D.win_h) {
+        SDL_SetWindowSize(D.win, D.win_w, D.win_h);
+        if (D.win_x != INT_MIN)
+            SDL_SetWindowPosition(D.win, D.win_x, D.win_y);
+    }
+}
+
+static void display_act(DispAction a)
+{
+    char text[96];
+
+    switch (a) {
+    case DA_FULLSCREEN:
+        set_fullscreen(!is_fullscreen());
+        break;
+    case DA_SCALE:
+        D.now.scale = scale_cycle(D.now.scale);
+        break;
+    case DA_FILTER:
+        D.now.filter = filter_cycle(D.now.filter);
+        break;
+    default:
+        return;
+    }
+    if (a != DA_FULLSCREEN) {
+        display_notice_text(D.now.scale, D.now.filter, text, sizeof(text));
+        display_notice(text, port_now_ms());
+        wm_dirty = 1;                                     /* the compositor draws it into the next frame */
+        save_soon();
+    }
+    D.pre_valid = 0;
+    display_print_view(a == DA_FULLSCREEN ? "full screen toggled" : a == DA_SCALE ? "scaling cycled" : "filter cycled");
+}
+
+/* ---- opening the window ---- */
+static int display_open(int deck)
+{
+    char warn[256];
+    const char *drv;
+    int virt, fs, hidden, w, h, uw = 0, uh = 0, pw, ph, idx, n, i;
+    SDL_Rect r;
+    SDL_RendererInfo info;
+    DispRect rects[8];
+    double dpi;
+    Uint32 flags;
+    int px = SDL_WINDOWPOS_CENTERED, py = SDL_WINDOWPOS_CENTERED;
+
+    snprintf(D.dir, sizeof(D.dir), "%s", paths_overlay_default());
+    dcfg_load(D.dir, &D.file);
+    display_resolve(&D.file, getenv("PORT_FULLSCREEN"), getenv("PORT_SCALE"), getenv("PORT_FILTER"), getenv("PORT_WINDOW"), deck, &D.now, warn, sizeof(warn));
+    if (warn[0])
+        fputs(warn, stderr);
+    D.start = D.now;
+    D.win_x = INT_MIN;
+    fs = D.now.fullscreen;
+    drv = SDL_GetCurrentVideoDriver();
+    virt = drv && (!strcmp(drv, "dummy") || !strcmp(drv, "offscreen"));
+    D.persist = !virt;
+    pw = D.now.has_window ? D.now.win_w : SCREEN_W;
+    ph = D.now.has_window ? D.now.win_h : SCREEN_H;
+    if (virt) {                                           /* no real window: its size is the picture's, so a run with a script is exact and the same everywhere */
+        pw = SCREEN_W;
+        ph = SCREEN_H;
+    }
+    hidden = getenv("PORT_HIDDEN") && !fs;                /* a test aid: the window is made, drawn to and read back (`winshot`) but never shown */
+    flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (fs ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_HIDDEN);
+    D.win = SDL_CreateWindow("Pentamoor", px, py, pw, ph, flags);
+    D.ren = D.win ? SDL_CreateRenderer(D.win, -1, SDL_RENDERER_PRESENTVSYNC) : NULL;
+    if (D.win && !D.ren)
+        D.ren = SDL_CreateRenderer(D.win, -1, SDL_RENDERER_SOFTWARE);
+    if (!D.ren)
+        return 0;
+    D.max_tex = SDL_GetRendererInfo(D.ren, &info) == 0 ? info.max_texture_width < info.max_texture_height ? info.max_texture_width : info.max_texture_height : 0;
+    D.tex = SDL_CreateTexture(D.ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, SCREEN_W, SCREEN_H);
+    if (!D.tex)
+        return 0;
+    if (!virt) {
+        /* the size and place: the player's last (display.cfg, PORT_WINDOW), else the largest whole-number multiple of the picture that fits 90% of what the display has free */
+        idx = SDL_GetWindowDisplayIndex(D.win);
+        if (idx < 0)
+            idx = 0;
+        if (SDL_GetDisplayUsableBounds(idx, &r) == 0 || SDL_GetDisplayBounds(idx, &r) == 0) {
+            uw = r.w;
+            uh = r.h;
+        }
+        n = SDL_GetNumVideoDisplays();
+        for (i = 0; i < 8 && i < n; i++) {
+            SDL_Rect b;
+
+            if (SDL_GetDisplayUsableBounds(i, &b) == 0 || SDL_GetDisplayBounds(i, &b) == 0)
+                rects[i] = (DispRect){b.x, b.y, b.w, b.h};
+            else
+                rects[i] = (DispRect){0, 0, 0, 0};
+        }
+        refresh_view();
+        dpi = D.ww > 0 ? (double)D.ow / D.ww : 1.0;
+        display_initial_window(SCREEN_W, SCREEN_H, uw, uh, dpi, &w, &h);
+        D.min_cap_w = w;
+        D.min_cap_h = h;
+        if (D.now.has_window) {
+            w = D.now.win_w;
+            h = D.now.win_h;
+            if (!D.now.win_env && uw > 0 && uh > 0) {      /* a size saved on a bigger display: no larger than this one */
+                if (w > uw)
+                    w = uw;
+                if (h > uh)
+                    h = uh;
+            }
+            if (w < D.min_cap_w)
+                D.min_cap_w = w;
+            if (h < D.min_cap_h)
+                D.min_cap_h = h;
+        }
+        {
+            int mw, mh;
+
+            display_min_window(SCREEN_W, SCREEN_H, dpi, D.min_cap_w, D.min_cap_h, &mw, &mh);
+            if (w < mw)
+                w = mw;
+            if (h < mh)
+                h = mh;
+            D.min_w = mw;
+            D.min_h = mh;
+            SDL_SetWindowMinimumSize(D.win, mw, mh);
+        }
+        SDL_SetWindowSize(D.win, w, h);
+        if (D.now.has_pos && display_pos_ok(D.now.win_x, D.now.win_y, w, h, rects, n < 8 ? n : 8, 64))
+            SDL_SetWindowPosition(D.win, D.now.win_x, D.now.win_y);
+        else if (!fs)
+            SDL_SetWindowPosition(D.win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+        D.geom_known = 1;
+        D.win_w = w;
+        D.win_h = h;
+        if (!fs) {
+            if (!hidden)
+                SDL_ShowWindow(D.win);
+            SDL_GetWindowPosition(D.win, &D.win_x, &D.win_y);
+        } else if (D.now.has_pos)
+            D.win_x = D.now.win_x, D.win_y = D.now.win_y;
+    } else if (!hidden)
+        SDL_ShowWindow(D.win);
+    D.upload = 1;
+    return 1;
 }
 
 int front_run(int (*game)(void *), void *arg)
 {
     Game g = {game, arg, 0};
     pthread_t th;
-    SDL_Window *win;
-    SDL_Renderer *ren;
-    SDL_Texture *tex;
     uint8_t *rgb;
     unsigned seen = 0;
-    int dirty = 0, win_w, win_h, deck, fullscreen;
+    int dirty = 1, deck, fullscreen;
     Uint32 t_start;
+    DispCombo combo = {0, 0, 0};
+    int pad_l3 = 0, pad_r3 = 0;
 
     if (getenv("PORT_HEADLESS"))                     /* automated runs (screenshots, tests) need no window */
         return game(arg);
     init_keys();
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");      /* SIGINT and SIGTERM are ours (below), not an SDL_QUIT */
+    SDL_SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2");     /* Windows: sharp on a scaled display instead of stretched by the system (SDL 2.24 and newer reads it; older ones ignore it) */
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "SDL_Init: %s (running without a window)\n", SDL_GetError());
         return game(arg);
     }
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
     SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
+    SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");           /* a full-screen game on one display must not minimize when another is clicked (or Steam's overlay, Gamescope's windows) */
     /* SDL's default (touch events make mouse events) is kept: a touch screen is a mouse to the game. Controllers: every one connected is opened (SDL queues an
      * SDL_CONTROLLERDEVICEADDED for each at start and for each plugged in later); SDL_GAMECONTROLLERCONFIG adds mappings as for any SDL program. */
     /* A Steam Deck (or Gamescope: Game mode) starts full screen, keeps hearing the pad while Steam's overlay has the focus, and shows the on-screen keyboard only for a text field.
      * Elsewhere nothing of this is on unless asked for (PORT_FULLSCREEN=1, PORT_TEXTINPUT=auto). */
     deck = deck_here();
-    fullscreen = fullscreen_wanted(getenv("PORT_FULLSCREEN"), deck);
     if (deck || getenv("PORT_PAD_BACKGROUND"))
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");     /* before the controller subsystem starts */
-    if (fullscreen)
-        SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");         /* Steam's overlay and Gamescope's own windows must not minimize the game */
     pad_on = !getenv("PORT_NOPAD");
     if (pad_on && SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0)
         fprintf(stderr, "controllers: %s (the pad does not work)\n", SDL_GetError());
-    choose_window(&win_w, &win_h);
-    win = SDL_CreateWindow("Magic: The Gathering", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h,
-                           SDL_WINDOW_RESIZABLE | (fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
-    ren = win ? SDL_CreateRenderer(win, -1, SDL_RENDERER_PRESENTVSYNC) : NULL;
-    if (win && !ren)
-        ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
-    if (ren && fullscreen)
-        full_screen_scale(win, ren);
-    tex = ren ? SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, SCREEN_W, SCREEN_H) : NULL;
-    if (!tex) {
+    if (!display_open(deck)) {
         fprintf(stderr, "SDL window: %s (running without a window)\n", SDL_GetError());
         return game(arg);
     }
+    fullscreen = D.now.fullscreen;
     windowed = 1;
     install_signal_handlers();
-    SDL_RenderSetLogicalSize(ren, SCREEN_W, SCREEN_H);       /* the mouse comes in screen pixels whatever the window's size */
     {
         const char *ti = getenv("PORT_TEXTINPUT");
 
@@ -1000,14 +1551,14 @@ int front_run(int (*game)(void *), void *arg)
         text_on = 1;
     }
     if (padlog_on())
-        log_start(win, deck, fullscreen);
+        log_start(D.win, deck, fullscreen);
     rgb = malloc((size_t)SCREEN_W * SCREEN_H * 3);
     shot_frame = rgb;
     memset(rgb, 0, (size_t)SCREEN_W * SCREEN_H * 3);
     view_buf = malloc((size_t)SCREEN_W * SCREEN_H * 3);
     pad_init(&pad, SCREEN_W, SCREEN_H);
     pad_t = SDL_GetTicks();
-    script_window = SDL_GetWindowID(win);
+    script_window = SDL_GetWindowID(D.win);
     open_audio();
     parse_script();
     if (getenv("PORT_CONTROL"))
@@ -1016,6 +1567,8 @@ int front_run(int (*game)(void *), void *arg)
 #else
         control_fd = open(getenv("PORT_CONTROL"), O_RDWR | O_NONBLOCK);
 #endif
+    calibrate_mouse();
+    display_print_view("start");
     pthread_create(&th, NULL, game_thread, &g);
     t_start = SDL_GetTicks();
 
@@ -1023,23 +1576,19 @@ int front_run(int (*game)(void *), void *arg)
         SDL_Event ev;
 
         if (signal_quit) {                           /* SIGINT / SIGTERM: end now, with what was written flushed */
+            save_cfg();
             fflush(NULL);
             exit(0);
         }
         while (next_step < nsteps && (SDL_GetTicks() - t_start) / 1000.0 >= steps[next_step].t) {
             if (front_take_frame(rgb, &seen))        /* a shot shows the newest frame */
-                SDL_UpdateTexture(tex, NULL, frame_view(rgb), SCREEN_W * 3);
-            SDL_RenderClear(ren);
-            SDL_RenderCopy(ren, tex, NULL, NULL);
-            dirty = 0;
-            run_step(&steps[next_step++], ren);
+                D.upload = dirty = 1;
+            run_step(&steps[next_step++]);
         }
         if (control_fd >= 0) {
             if (front_take_frame(rgb, &seen))
-                SDL_UpdateTexture(tex, NULL, frame_view(rgb), SCREEN_W * 3);
-            SDL_RenderClear(ren);
-            SDL_RenderCopy(ren, tex, NULL, NULL);
-            poll_control(ren);
+                D.upload = dirty = 1;
+            poll_control();
         }
         update_text_input();
         if (SDL_WaitEventTimeout(&ev, 8)) {
@@ -1050,21 +1599,36 @@ int front_run(int (*game)(void *), void *arg)
                 case SDL_QUIT:
                     front_push_quit();
                     break;
-                case SDL_MOUSEMOTION:
-                    pad_mouse(ev.motion.x, ev.motion.y);
-                    front_push_mouse(IN_MOVE, ev.motion.x, ev.motion.y);
+                case SDL_MOUSEMOTION: {
+                    int mx = ev.motion.x, my = ev.motion.y;
+
+                    if (ev.motion.which == CALIB_MOUSE) {
+                        note_calibration(&mouse_scale_motion, ev.motion.x);
+                        break;
+                    }
+                    map_mouse(ev.motion.which, 0, &mx, &my);
+                    pad_mouse(mx, my);
+                    front_push_mouse(IN_MOVE, mx, my);
                     break;
+                }
                 case SDL_CONTROLLERDEVICEADDED:
                     if (pad_on)
                         pad_open(ev.cdevice.which);
                     break;
                 case SDL_CONTROLLERDEVICEREMOVED:
+                    pad_l3 = pad_r3 = 0;
                     if (pad_on)
                         pad_close(ev.cdevice.which);
                     break;
                 case SDL_CONTROLLERAXISMOTION:
                 case SDL_CONTROLLERBUTTONDOWN:
                 case SDL_CONTROLLERBUTTONUP:
+                    if (ev.type != SDL_CONTROLLERAXISMOTION) {              /* the two sticks pressed in together for a second: full screen on or off (display.h) */
+                        if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSTICK)
+                            pad_l3 = ev.type == SDL_CONTROLLERBUTTONDOWN;
+                        else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSTICK)
+                            pad_r3 = ev.type == SDL_CONTROLLERBUTTONDOWN;
+                    }
                     if (pad_on)
                         pad_event(&ev);
                     break;
@@ -1073,30 +1637,103 @@ int front_run(int (*game)(void *), void *arg)
                         front_push_mouse(IN_WHEEL, 0, ev.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -ev.wheel.y : ev.wheel.y);
                     break;
                 case SDL_MOUSEBUTTONDOWN:
-                case SDL_MOUSEBUTTONUP:
-                    pad_mouse(ev.button.x, ev.button.y);
+                case SDL_MOUSEBUTTONUP: {
+                    int mx = ev.button.x, my = ev.button.y;
+
+                    if (ev.button.which == CALIB_MOUSE) {
+                        if (ev.type == SDL_MOUSEBUTTONDOWN)
+                            note_calibration(&mouse_scale_button, ev.button.x);
+                        break;
+                    }
+                    map_mouse(ev.button.which, 1, &mx, &my);
+                    if (ev.type == SDL_MOUSEBUTTONDOWN)
+                        flush_alt();                 /* Alt+click is the game's */
+                    pad_mouse(mx, my);
                     if (ev.button.button == SDL_BUTTON_LEFT || ev.button.button == SDL_BUTTON_RIGHT) {
                         int down = ev.type == SDL_MOUSEBUTTONDOWN, left = ev.button.button == SDL_BUTTON_LEFT;
 
-                        front_push_mouse(left ? (down ? IN_DOWN : IN_UP) : (down ? IN_RDOWN : IN_RUP), ev.button.x, ev.button.y);
+                        front_push_mouse(left ? (down ? IN_DOWN : IN_UP) : (down ? IN_RDOWN : IN_RUP), mx, my);
                     }
                     break;
+                }
                 case SDL_WINDOWEVENT:
-                    if (ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {       /* keys let go while elsewhere would stay down */
+                    switch (ev.window.event) {
+                    case SDL_WINDOWEVENT_FOCUS_LOST:       /* keys let go while elsewhere would stay down */
                         flush_pending(-1);
                         release_all();
                         pad_release();           /* so is what the pad held */
+                        pad_l3 = pad_r3 = 0;
+                        break;
+                    case SDL_WINDOWEVENT_SIZE_CHANGED:
+                    case SDL_WINDOWEVENT_RESIZED:
+                    case SDL_WINDOWEVENT_MOVED:
+                    case SDL_WINDOWEVENT_DISPLAY_CHANGED:
+                        note_geometry();
+                        if (ev.window.event != SDL_WINDOWEVENT_MOVED || SDL_GetTicks() - calib_t > 2000)
+                            calibrate_soon();                  /* the factor is the display's: measure again when the window changes size or display */
+                        dirty = 1;
+                        break;
+                    case SDL_WINDOWEVENT_EXPOSED:
+                    case SDL_WINDOWEVENT_SHOWN:
+                    case SDL_WINDOWEVENT_RESTORED:
+                    case SDL_WINDOWEVENT_MAXIMIZED:
+                        dirty = 1;
+                        break;
+                    default:
+                        break;
                     }
+                    break;
+                case SDL_RENDER_TARGETS_RESET:
+                case SDL_RENDER_DEVICE_RESET:
+                    D.pre_valid = 0;
+                    D.reupload = dirty = 1;
                     break;
                 case SDL_KEYDOWN:
                 case SDL_KEYUP: {
                     int sc = ev.key.keysym.scancode;
                     Key k = sc < SDL_NUM_SCANCODES ? keymap[sc] : (Key){0, 0};
 
-                    if (!k.vk)
+                    if (sc <= 0 || sc >= SDL_NUM_SCANCODES)
                         break;
                     if (ev.type == SDL_KEYDOWN) {
+                        DispKey dk = sc == SDL_SCANCODE_F11 ? DK_F11 : (sc == SDL_SCANCODE_RETURN || sc == SDL_SCANCODE_KP_ENTER) ? DK_RETURN : DK_OTHER;
+                        DispAction da = dk == DK_OTHER ? DA_NONE : display_key_action(dk, phys[SDL_SCANCODE_LALT] || phys[SDL_SCANCODE_RALT],
+                                                                                      phys[SDL_SCANCODE_LCTRL] || phys[SDL_SCANCODE_RCTRL],
+                                                                                      phys[SDL_SCANCODE_LSHIFT] || phys[SDL_SCANCODE_RSHIFT]);
+
+                        phys[sc] = 1;
+                        if (da != DA_NONE) {                                /* the display's key: not the game's, and neither is its release; an Alt that was held back stays back */
+                            if (!ev.key.repeat)
+                                display_act(da);
+                            swallowed[sc] = 1;
+                            eat_alt();
+                            break;
+                        }
+                    } else {
+                        phys[sc] = 0;
+                        if (swallowed[sc]) {
+                            swallowed[sc] = 0;
+                            break;
+                        }
+                    }
+                    if (!k.vk)
+                        break;
+                    if (sc == SDL_SCANCODE_LALT || sc == SDL_SCANCODE_RALT) {   /* Alt is held back until another key or a click needs it: Alt+Enter is ours, a lone tap is the game's */
+                        if (ev.type == SDL_KEYDOWN) {
+                            if (!ev.key.repeat)
+                                alt_def[sc] = 1;
+                            break;
+                        }
+                        if (alt_def[sc]) {
+                            flush_alt();
+                        } else if (alt_eaten[sc]) {
+                            alt_eaten[sc] = 0;
+                            break;
+                        }
+                    }
+                    if (ev.type == SDL_KEYDOWN) {
                         flush_pending(-1);
+                        flush_alt();
                         held[sc] = 1;
                         held_key[sc] = k;
                         if (fixed_char(k.vk) >= 0 || k.vk < 0x10 || (k.vk >= 0x10 && k.vk <= 0x14) || (k.vk >= 0x21 && k.vk <= 0x2E) || (k.vk >= 0x70 && k.vk <= 0x7B))
@@ -1121,22 +1758,25 @@ int front_run(int (*game)(void *), void *arg)
             } while (SDL_PollEvent(&ev));
             flush_pending(-1);                       /* a key whose text did not follow in the batch types nothing */
         }
+        if (display_combo_step(&combo, pad_l3, pad_r3, SDL_GetTicks()))
+            display_act(DA_FULLSCREEN);
+        restore_step();
+        if (D.save_at && (Sint32)(SDL_GetTicks() - D.save_at) >= 0)
+            save_cfg();
         pad_tick();
         if (pad_on)
             pad_nav_answers();
         if (front_take_frame(rgb, &seen))
-            dirty = 1;
+            D.upload = dirty = 1;
         if (pad_view_changed())
-            dirty = 1;
+            D.upload = dirty = 1;
         if (dirty) {
-            SDL_UpdateTexture(tex, NULL, frame_view(rgb), SCREEN_W * 3);
-            SDL_RenderClear(ren);
-            SDL_RenderCopy(ren, tex, NULL, NULL);
-            SDL_RenderPresent(ren);
+            present_now();
             dirty = 0;
         }
     }
     pthread_join(th, NULL);
+    save_cfg();
     if (audio_dev) {
         sound_set_device(0);
         SDL_CloseAudioDevice(audio_dev);
@@ -1148,9 +1788,11 @@ int front_run(int (*game)(void *), void *arg)
             SDL_GameControllerClose(pads[i]);
     free(rgb);
     free(view_buf);
-    SDL_DestroyTexture(tex);
-    SDL_DestroyRenderer(ren);
-    SDL_DestroyWindow(win);
+    if (D.pre)
+        SDL_DestroyTexture(D.pre);
+    SDL_DestroyTexture(D.tex);
+    SDL_DestroyRenderer(D.ren);
+    SDL_DestroyWindow(D.win);
     SDL_Quit();
     return g.code;
 }

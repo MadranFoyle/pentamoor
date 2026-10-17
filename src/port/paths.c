@@ -20,6 +20,15 @@ char guest_cwd[260] = "C:\\Magic";
 
 #define MAX_PARTS 64
 
+/* The overlay folder the run will use: $PORT_OVERLAY, else port_overlay beside the working folder. Known before paths_init (the window half of the front end starts first and keeps
+ * display.cfg there). */
+const char *paths_overlay_default(void)
+{
+    const char *e = getenv("PORT_OVERLAY");
+
+    return e && *e ? e : "port_overlay";
+}
+
 void paths_init(const char *root, const char *overlay)
 {
     snprintf(game_root, sizeof(game_root), "%s", root);

@@ -5,8 +5,10 @@
 #include <string.h>
 #include <strings.h>
 
+#include "display.h"
 #include "gdi_int.h"
 #include "movie.h"
+#include "sched.h"
 #include "yesno.h"
 
 void ui_dialog(uint8_t *rgb, int sw, int sh, Window *d, uint32_t pressed, void (*paint_child)(void *ctx, Window *child, int ox, int oy), void *ctx);
@@ -268,6 +270,21 @@ static void draw_yesno_hint(Scene *s)
     text(s, x + 12, y + 4, msg, 14, ink);
 }
 
+/* The one-line message of a display setting that was just changed ("Scaling: integer, filter: sharp", display.h), over the top of the screen for a moment. */
+static void draw_display_notice(Scene *s)
+{
+    static const uint8_t ink[3] = {240, 240, 240}, back[3] = {20, 20, 20}, edge[3] = {200, 180, 100};
+    char msg[96];
+    int w, x;
+
+    if (!display_notice_get(port_now_ms(), msg, sizeof(msg)))
+        return;
+    w = text_extent(msg, 14) + 24;
+    x = (SCREEN_W - w) / 2;
+    rect(s, x, 10, x + w, 34, back, edge);
+    text(s, x + 12, 14, msg, 14, ink);
+}
+
 void compose_screen(uint8_t *rgb)
 {
     Scene s = {rgb};
@@ -320,6 +337,7 @@ void compose_screen(uint8_t *rgb)
         draw_held_hint(&s);
     if (yesno_waiting())
         draw_yesno_hint(&s);
+    draw_display_notice(&s);
 }
 
 int compose_write_ppm(const char *path)

@@ -13,23 +13,20 @@ size alone changes them. All three programs run at the default.
 
 ## The window
 
-The SDL window is made at the screen's size, but not larger than the display holds: `window_size_for` (`front.c`, tested in `test_wm.c`) takes the display's usable area less 16 x 56
-pixels (the frame, the title bar and a margin) and scales the window down, keeping 4:3, when 1024x768 does not fit (a 1366x768 laptop gets about 880x660; a 1440x900 MacBook and anything
-larger gets 1024x768 as it is). The window can be resized by hand either way. The picture is scaled with `SDL_RenderSetLogicalSize`, which also turns the mouse position from window pixels
-back into screen pixels, so a click lands where it is drawn at any window size (checked with `PORT_WINDOW=700x525` on the 1024x768 screen: the whole way from the title screen to the
-map, walking and a village, with scripted clicks given in screen pixels). `PORT_WINDOW=WxH` asks for a window size by hand. A run driven by `PORT_CONTROL` or `PORT_SCRIPT`, or on SDL's dummy
-driver, keeps the screen's size.
+Since the display work ([display.md](display.md)) the window starts as the largest whole-number multiple of the screen that fits 90% of the display's usable area (`display_initial_window`: 1024x768 on a 1366x768 laptop's
+874x655 free area does not fit even once, so it is 874x655 with the shape kept; 1440x900 and 1920x1080 displays get 1024x768, 4K 2048x1536), or the size `display.cfg` remembers, and is resizable down to the picture's own size. The picture is scaled
+into it by `display_layout` (not `SDL_RenderSetLogicalSize` any more) and the mouse is mapped back by `display_to_screen`, so a click lands where it is drawn at any window size, on a Retina display too (`PORT_WINDOW=700x525` on the 1024x768
+screen was how it was first checked, with scripted clicks given in screen pixels). `PORT_WINDOW=WxH` asks for a window size by hand. A run on SDL's dummy driver keeps the screen's size; scripted mouse positions are screen pixels whatever the window is.
 
-**Full screen** (`PORT_FULLSCREEN=1`, and by default on a Steam Deck or in Gamescope: `steamdeck.md`) is SDL's desktop full screen: the display's own size, the picture scaled with its 4:3 shape kept and bars on the
-free sides. `view_scale` (`steamdeck.c`, unit tested in `test_steamdeck.c`) picks the scale: a whole number (1x, 2x) when it uses at least 90% of the best fractional scale, so that every pixel stays square (the
-Deck's 1280x800 shows 1024x768 at 1x with bars of 128 px at the sides and 16 above and below; 1.04x would double an uneven one pixel in 24), else the fractional one with SDL's linear filter (a 1080p television: 1.41x,
-1440x1080). `SDL_RenderSetIntegerScale` follows the choice, and the logical size maps the mouse back through the bars. Looked at with the real X11 driver on a virtual 1280x800 and 1920x1080 display and a real
-(XTest) pointer: the picture where `view_scale` says, a click on the drawn "Start New Game" arrives at 528,493 in both.
+**Full screen** (F11, Alt+Enter, `PORT_FULLSCREEN=1`, and by default on a Steam Deck or in Gamescope: `steamdeck.md`) is SDL's desktop full screen: the display's own size, the picture scaled with its 4:3 shape kept and bars on the
+free sides. `display_fit` (`display.c`, formerly `view_scale` in `steamdeck.c`) picks the scale for `fit`: a whole number (1x, 2x) when it uses at least 90% of the best fractional scale, so that every pixel stays square (the
+Deck's 1280x800 shows 1024x768 at 1x with bars of 128 px at the sides and 16 above and below; 1.04x would double an uneven one pixel in 24), else the fractional one (a 1080p television: 1.41x, 1440x1080). Looked at with the real X11 driver on a virtual 1280x800 and 1920x1080 display
+and a real (XTest) pointer: the picture where the layout says, a click on the drawn "Start New Game" arrives at 528,493 in both (the same check, for many more setups, is `tools/display/xe2e.py`).
 
 Two things that were wrong at a window size other than the screen's, and are fixed (`front_sdl.c`):
 
-- **Scripted mouse positions were off.** SDL maps every mouse event, a pushed one too, from window pixels to screen pixels, so `click 450 500` in a window of 700x525 arrived as some other
-  point. A scripted position goes through the inverse mapping first now (`to_window`), so it is the screen pixel the script gave (to within a pixel when the window is smaller than the screen).
+- **Scripted mouse positions were off.** SDL's logical-size mapping turned every mouse event, a pushed one too, from window pixels to screen pixels, so `click 450 500` in a window of 700x525 arrived as some other
+  point. A scripted position is marked and given to the game as it is now (the display work), so it is the screen pixel the script gave, whatever the window.
 - **`shot` wrote garbage in a window of another size.** It read the renderer back, which gives window pixels, into a buffer sized for the screen: the picture came out as a small copy of the
   screen drawn over a second, broken one. It writes the latest frame itself now (the screen's size whatever the window).
 

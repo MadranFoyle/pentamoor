@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "display.h"
 #include "front.h"
 #include "gdi.h"
 #include "gdi_int.h"
@@ -344,6 +345,35 @@ static void test_see_through_child(void)
     screen_w = sw; screen_h = sh;
 }
 
+/* The one-line message of a changed display setting (display.h, compose.c): drawn over the top of the screen for DISPLAY_NOTICE_MS, in the frame the game composed (so `shot` has it), then gone. */
+static void test_display_notice(void)
+{
+    int sw = screen_w, sh = screen_h, W = 1024, H = 768, x, y, found = 0, found_later = 0;
+    uint8_t *rgb = malloc((size_t)W * H * 3), *rgb2 = malloc((size_t)W * H * 3);
+    static const uint8_t edge[3] = {200, 180, 100};
+
+    screen_w = W; screen_h = H;
+    compose_screen(rgb);
+    display_notice("Scaling: integer, filter: sharp", port_now_ms());
+    compose_screen(rgb2);
+    for (y = 0; y < 60; y++)
+        for (x = 0; x < W; x++)
+            if (!memcmp(rgb2 + 3 * ((size_t)y * W + x), edge, 3) && memcmp(rgb + 3 * ((size_t)y * W + x), edge, 3))
+                found++;
+    CHECK(found > 100);                                           /* a box with an outline in the colour of the pad's hint, near the top */
+    CHECK(memcmp(rgb, rgb2, (size_t)W * H * 3) != 0);
+    CHECK(!memcmp(rgb + 3 * ((size_t)100 * W + 100), rgb2 + 3 * ((size_t)100 * W + 100), 3));        /* and nothing else changed */
+    display_notice("old", port_now_ms() - DISPLAY_NOTICE_MS - 5);                               /* one that has run its time */
+    compose_screen(rgb2);
+    for (y = 0; y < 60; y++)
+        for (x = 0; x < W; x++)
+            found_later += !memcmp(rgb2 + 3 * ((size_t)y * W + x), edge, 3) && memcmp(rgb + 3 * ((size_t)y * W + x), edge, 3);
+    CHECK(found_later == 0);
+    free(rgb);
+    free(rgb2);
+    screen_w = sw; screen_h = sh;
+}
+
 static void test_timers(void)
 {
     uint32_t top = create("TestClass", 0, 0, 0, 100, 100, 0, 0), msg = scratch(28);
@@ -587,23 +617,11 @@ static void test_front(void)
     free(rgb);
 }
 
-/* The SDL window for a screen of the program's size: the screen itself when the display holds it, else smaller with the same shape (the mouse is mapped back by SDL's logical size). */
+/* The screen sizes the program accepts (screen_set); the window that holds them is display.c's (test_display.c). */
 static void test_window_fit(void)
 {
-    int w, h, sw = screen_w, sh = screen_h;
+    int sw = screen_w, sh = screen_h;
 
-    window_size_for(1024, 768, 2560, 1440, &w, &h);               /* a big display: the screen's size */
-    CHECK(w == 1024 && h == 768);
-    window_size_for(1024, 768, 1440, 877, &w, &h);                /* a 13" MacBook (1440x900 less the menu bar and Dock): 768 <= 877 - 56, fits as it is */
-    CHECK(w == 1024 && h == 768);
-    window_size_for(1024, 768, 1366, 728, &w, &h);                /* a 1366x768 laptop less a taskbar: 672 high at most, so smaller, 4:3 */
-    CHECK(h <= 728 - 56 && w <= 1366 - 16 && w * 3 - h * 4 < 4 && h * 4 - w * 3 < 4);
-    window_size_for(640, 480, 1366, 728, &w, &h);                 /* the original's size fits there */
-    CHECK(w == 640 && h == 480);
-    window_size_for(1024, 768, 800, 600, &w, &h);                 /* a tiny display: 4:3 of what is left, not below a quarter */
-    CHECK(w <= 784 && h <= 544 && w >= 256 && h >= 192);
-    window_size_for(1024, 768, 0, 0, &w, &h);                     /* the display is not known: the screen's size */
-    CHECK(w == 1024 && h == 768);
     screen_set(1024, 768);                                        /* the sizes the game has layouts for are accepted, odd ones are not */
     CHECK(screen_w == 1024 && screen_h == 768);
     screen_set(800, 600);
@@ -2026,6 +2044,7 @@ int main(void)
     test_queue_and_dispatch();
     test_erase_before_paint();
     test_see_through_child();
+    test_display_notice();
     test_timers();
     test_cross_thread_send();
     test_thread_stacks();
