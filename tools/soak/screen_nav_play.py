@@ -11,7 +11,7 @@ name) with the D-pad and A, then, on the map, put at a place by `poke` (the loca
   encounter    the "Will you... Duel / Pay" text menu of the first encounter, if there is one: down, A pays (gold goes down)
   castle       a castle's gate (a text menu of two lines): up and down move between them, A on the first leaves it
   village      the buttons (hover checked at every one), A on "Buy 10 food" (once: 15 gold, +10 food), "Buy Cards": the cards and Done as targets, a card bought with A, A (the Y/N question: A is Y)
-  worldmap     the four buttons of the world map, A on Done
+  worldmap     the four buttons of the world map, A on City Info: the city list (cities poked into it): Done and the scroll arrows, A on an arrow scrolls; A on Done
   clues        the clue list: the twelve rows, Done and the arrows; A on a row opens its page, Done comes back
   stats        Wiz Stats: the table's buttons and the owned world magics; the Journal opened and left with its Done eight times (each press must count)
   deck         F1 opens the deck builder: its cards' strips and buttons are targets; A on Exit leaves
@@ -342,11 +342,50 @@ def worldmap(s):
     s.shot("worldmap")
     check(mode == "screen" and len(tl) == 4, "the world map: Plain Map, Info Map, City Info and Done are targets (%d)" % len(tl))
     s.hover_check(tl, "the world map")
+    city_info(s)
     n = s.dpad_to(lambda tl: max(tl, key=lambda t: t.x0) if tl else None)
     check(n is not None, "right along the row to Done (%s presses)" % n)
     s.press_a(3)
     mode, tl = s.wait_nav(is_screen(9), 8)
     check(len(tl) == 9, "Done is back at the village")
+
+
+def known_cities(s):
+    """Mark every place that is not a village as known (bit 1 of its flags, 0x67be00 + 100 * i): the city list shows them, and has more than a page of them to scroll."""
+    loc = s.mem(LOCATIONS, 25 * 128)
+    n = 0
+    for i in range(128):
+        if loc[25 * i] not in (1, 0, -1):
+            s.g.poke(LOCATIONS + 0x10 + 100 * i, loc[25 * i + 4] | 2)
+            n += 1
+    return n
+
+
+def city_info(s):
+    """The world map's City Info button is the city list (the same screen as F3: the loop at 0x490d7b). Its rows are not clickable (the loop has no test for them, only the keys PageUp, Up, Down, PageDown
+    and the table's Done and four scroll arrows, greyed while there is nothing to scroll to); with cities in it, the D-pad reaches the arrows and A scrolls (docs/notes/controller-screens.md)."""
+    n_known = known_cities(s)
+    n = s.dpad_to(lambda tl: sorted(tl, key=lambda t: t.x0)[2] if len(tl) == 4 else None)
+    check(n is not None, "the D-pad reaches City Info (%s presses; %d places known)" % (n, n_known))
+    s.press_a(4)
+    mode, tl = s.wait_nav(lambda m, t: m == "screen" and len(t) >= 3 and any(x.x1 < 0.1 * s.w for x in t), 8)
+    s.shot("citylist")
+    arrows = sorted([t for t in tl if t.x1 < 0.1 * s.w], key=lambda t: t.y0)
+    done = [t for t in tl if t.x0 > 0.7 * s.w and t.y1 < 0.15 * s.h]
+    check(len(done) == 1 and len(arrows) == 2, "the city list: Done and the two down arrows are targets, the up arrows are greyed at the top (%d targets: %d arrows, %d Done)" % (len(tl), len(arrows), len(done)))
+    s.hover_check(tl, "the city list")
+    if len(arrows) != 2 or len(done) != 1:
+        return
+    n = s.dpad_to(lambda tl: sorted([t for t in tl if t.x1 < 0.1 * s.w], key=lambda t: t.y0)[0] if tl else None)
+    check(n is not None, "the D-pad reaches the scroll arrow (%s presses)" % n)
+    s.press_a(2)
+    mode, tl2 = s.wait_nav(lambda m, t: m == "screen" and len([x for x in t if x.x1 < 0.1 * s.w]) >= 3, 6)
+    check(len([t for t in tl2 if t.x1 < 0.1 * s.w]) >= 3, "A on it scrolled the list: the up arrows are targets now (%d arrows)" % len([t for t in tl2 if t.x1 < 0.1 * s.w]))
+    n = s.dpad_to(lambda tl: [t for t in tl if t.x0 > 0.7 * s.w and t.y1 < 0.15 * s.h][0] if tl else None)
+    check(n is not None, "the D-pad reaches Done (%s presses)" % n)
+    s.press_a(3)
+    mode, tl3 = s.wait_nav(lambda m, t: m == "screen" and len(t) == 4, 8)
+    check(len(tl3) == 4, "Done is back at the world map (%d targets)" % len(tl3))
 
 
 def clues(s):

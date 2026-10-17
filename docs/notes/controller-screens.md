@@ -80,13 +80,13 @@ Seen = reached in the running game at 1024x768 with the D-pad (`screen_nav_play.
 | Village | 0x507c86 | table: Buy Cards, Edit deck/Sell cards, Begin a Quest, Buy 10 food, Leave (272 x 148 boxes), and the map's left column | **yes** (seen) |
 | Cards for Sale | 0x509517 | table: Done; the four cards (locals). Before the cards the "card seller suggests ..." hint waits for a click (no targets: A is the click) | **yes** (seen; buying: A on a card, A) |
 | Edit deck / See deck | DECKDLL.DLL | **windows**: a window for every card (strips), push buttons; the filter bar and the picture row are one window each | **cards and buttons** (seen): `deck` mode. Not the filter icons and the pictures row (below) |
-| World map | 0x4c24b3 | table: Plain Map, Info Map, City Info, Done; the map itself is a click on a place | **buttons yes** (seen) |
+| World map | 0x4c24b3 | table: Plain Map, Info Map, City Info, Done; the map itself is a click on a place | **buttons yes** (seen). City Info is the city list below (result 3 of the loop calls `0x490d7b(1)`); the map's own "click on a place" exists only with the cheat flag `[0x67b9a4]` |
 | Clues | 0x48f523 | table: Done, two arrows (greyed when there is nothing to scroll); 12 rows | **yes** (seen) |
 | A clue's page | 0x492ddf | table: Done | **yes** (seen) |
 | Wiz Stats, Journal | 0x421b32 | table: Wiz Stats, Journal, Done, a scroll bar, the castle emblems, the world magics owned (the others greyed) | **yes** (seen) |
-| City list (F3) | 0x490d7b | table: Done, scroll arrows (greyed while the list is empty); the rows have no records | **yes** (seen: Done) |
+| City list (F3, and the world map's City Info) | 0x490d7b | table: Done and four scroll arrows (greyed while there is nothing to scroll to: all four when the list is empty, the two up ones at the top of a longer one). **The rows are not clickable**: the loop has no test for them, only the table's result and the keys PageUp, Up, Down, PageDown, and nine rows to a page | **yes** (seen with 38 places: Done and the two down arrows, A on an arrow scrolls and the up arrows come on; `screen_nav_play.py`, step `worldmap`) |
 | Save and load | 0x4207a8 | table: 10 slots, the whole width of the list; the three buttons on top | **yes** (seen: the ten slots) |
-| Amulet trade | 0x49716e | table | table is read; not reached |
+| "Which card do you seek?" (the card trade screen, `tradscrn.pic`; the old name "amulet trade" was a guess) | 0x49716e | table: Done (when the caller passes the flag that uses the table: `[ebp + 0x18]`). The two lists of kinds (six rows each) and the list of card names are tested by the loop itself, in 640-unit formulas (below) | **Done only**; reached with `call 0x40eeb4 0 -1` from the control pipe (the card trade's own callers are the village's flows at 0x509fd4, 0x40e220 and 0x40e731, not played): `pad nav` listed Done (272,5)-(370,33) at 640x480 |
 | Castles, dungeons: the maze | 0x40b4e8 / 0x4a2ef0 | the party walks by the arrow keys or the pointer's direction | **arrow keys, deliberately**; the rule card panel is Escape |
 | Castles, dungeons: events | 0x4a2ef0 and text menus | "Will you take this card", quiz answers: text menus | text menu: yes (not reached) |
 | Victory: take three cards | 0x49239e | text menu "Will you take this card...\n Yes\n No" and the cards | menu yes; the cards not |
@@ -100,7 +100,12 @@ Seen = reached in the running game at 1024x768 with the D-pad (`screen_nav_play.
   The stick points there; the cards and buttons are D-pad targets.
 - **The map's own buttons** (left column, amulets): the map's loop is excluded from `screen` mode on purpose, since the D-pad walks. The game's menu on B reaches the same things (deck, map, cities, clues, stats,
   wizard's stats) by the D-pad; the amulets (their spell menus) are for the stick. They are table records and could be given a modifier (say the left trigger held); that is a question of feel, so it is left.
-- Screens not reached: the amulet trade (`0x49716e`) and the world map's "City Info" mode: their tables are read the same way; not seen. A city list with cities in it (its rows may be more records or tested by the loop, as the clue rows are) was not looked at.
+- **The card trade screen's lists** (`0x49716e`): after the table's pass the loop tests a click itself with `W * n / 320` and `W * n / 640` (`0x4c3ba3`, `0x4c3bc4`, W the screen's width): a click outside the box
+  (x 246..396, y 102..326 in 640 units, both scaled by W / 640) closes it, one in the upper part picks a kind in the left or the right list (six rows each, `[0x52b730]` and `[0x52b734]`), one lower down picks a name from the list
+  (`[0x52b738]`, the row from `(y - [ebp - 8]) / [ebp - 4]` plus the page). The rows' places are locals of the loop that were not read, so only Done is a D-pad target; the lists are for the stick.
+  The screen itself was reached only with `call`, not through a game flow.
+- **The city list's rows** are not a thing to reach (nothing in the game reacts to a click on them).
+- Previously "not reached": the world map's City Info mode is the city list (above): reached and done.
 - The maze of a castle or dungeon, and the world map's click on a place (a free pointer).
 
 ## Not verified, needs a real controller
