@@ -39,8 +39,10 @@ typedef struct Bitmap {
     uint8_t *mono;           /* 1-bpp DDB: 0 / 1 per pixel */
 } Bitmap;
 
-typedef struct Brush { int solid; uint8_t rgb[3]; uint32_t pattern; /* a bitmap handle, or 0 */ } Brush;
-typedef struct Pen { int solid; uint8_t rgb[3]; int width; } Pen;
+/* A brush or pen made from a PALETTEINDEX colour (flag byte 1) keeps the index (cref, rel = 1) and means the entry of the palette of the DC it is drawn with: rgb is that entry as of the
+ * last place it was resolved (creation: the system palette; SelectObject, SelectPalette and FillRect: the DC's). docs/notes/deck-footer-colours.md. */
+typedef struct Brush { int solid; uint8_t rgb[3]; uint32_t pattern; /* a bitmap handle, or 0 */ uint32_t cref; int rel; } Brush;
+typedef struct Pen { int solid; uint8_t rgb[3]; int width; uint32_t cref; int rel; } Pen;
 typedef struct Font { char face[40]; int size, weight, italic, height; } Font;
 typedef struct Region { int l, t, r, b; } Region;
 
@@ -83,6 +85,9 @@ int nearest_index(const uint8_t rgb[3]);
 void quantize(const uint8_t *rgb, int count, uint8_t *out);
 uint32_t colorref_rgb(const DC *dc, uint32_t c, uint8_t out[3]);
 int color_index(const DC *dc, uint32_t c);
+void brush_color(const DC *dc, const Brush *b, uint8_t out[3]);     /* a solid brush's colour on this DC (a palette-relative one through the DC's palette) */
+void pen_color(const DC *dc, const Pen *p, uint8_t out[3]);
+void dc_resolve_tools(DC *dc);                                      /* the DC's selected pen and brush, again, after its palette changed */
 
 /* surfaces */
 Surface *surface_new(int w, int h);

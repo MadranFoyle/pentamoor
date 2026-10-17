@@ -420,6 +420,27 @@ def journal_rounds(s, rounds):
     check(not bad, "the Journal opens and its Done leaves it, %d times in a row, each with one A%s" % (rounds, (" (" + bad[0] + ")") if bad else ""))
 
 
+def footer_colours(s, buttons):
+    """The footer's bars are grey (palette entry 134 of the DLL's palette), not black: a brush made from a palette index takes the entry of the palette of the DC it is drawn with (docs/notes/deck-footer-colours.md).
+    Looks at a pixel just inside the left edge of each button, away from its label."""
+    try:
+        from PIL import Image
+    except ImportError:
+        print("NOTE  no PIL: the footer's colours are not checked", flush=True)
+        return
+    path = os.path.join(s.a.workdir, s.res, "footer.png")
+    s.wait(3)                                          # the builder's windows are there before they are all painted
+    if not s.g.shot(path):
+        return
+    im = Image.open(path).convert("RGB")
+    dark = []
+    for t in buttons:
+        r, g, b = im.getpixel((min(im.width - 1, t.x0 + 6), (t.y0 + t.y1) // 2))
+        if max(r, g, b) < 80:
+            dark.append((t.label, (r, g, b)))
+    check(not dark, "the deck builder's footer bars are grey, not black%s" % ((" (dark: %s)" % dark[:2]) if dark else ""))
+
+
 def deck(s):
     mode, tl = s.nav()
     if mode == "screen":                               # still in the village: leave by its last button, then F1 on the map
@@ -433,6 +454,7 @@ def deck(s):
     check(mode == "deck" and len(cards) >= 10 and len(buttons) == 5, "the deck builder: %d cards (strips) and %d buttons (Stats, three decks, Exit) are targets" % (len(cards), len(buttons)))
     tw = s.w
     check(all(t.x1 <= tw and t.y1 <= s.h for t in tl), "all of them on the screen")
+    footer_colours(s, buttons)
     n = s.dpad_to(lambda tl: [t for t in tl if t.kind == K_CARD][0] if tl else None)
     check(n is not None, "the D-pad reaches the first card (%s presses)" % n)
     ups = 0

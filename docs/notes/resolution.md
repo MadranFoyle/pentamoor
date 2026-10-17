@@ -61,8 +61,8 @@ Nothing printed "is not implemented" on stderr at any size, and nothing crashed.
   at the time. `overworld.md` found the same at 1024x768.
 - **The Journal's map is small and centred** at 800x600 and 1024x768 (it is drawn at the size the game draws it for 640x480), and the labels overlap each other ("Windlass Forge" under the
   entry line). The code picks the positions; not compared with the original.
-- **The deck builder's labels ("Stats (36 cards)", "* Deck1 *", "Exit")** inside the game are dark grey on black at all three sizes, 640x480 too; in the standalone `DECK.EXE` they are
-  readable on grey bars. Not looked into.
+- **The deck builder's labels ("Stats (36 cards)", "* Deck1 *", "Exit")** inside the game were dark grey on black at all three sizes, 640x480 too; in the standalone `DECK.EXE` they are
+  readable on grey bars. **Fixed** (`deck-footer-colours.md`): a brush or pen made from a palette index must take the entry of the palette of the DC it is drawn with, not of the system palette when it was made.
 - **The Journal's Done button did not always answer a scripted click** (the screen's loop at 0x40b4e8; it showed in the first try and then stayed on the Journal in the next, with
   `click`, with `move` + `click` and with `down`/`up` alike). It is the same at 640x480 with the build from before this change, so it is not the size; `castle-dungeon-stats.md` had
   it working at 640x480 and 800x600 with a plain `click`. **Found and fixed** (`journal-done.md`): the Journal's loop reads the button a second time after the table's pass and turns a press that came

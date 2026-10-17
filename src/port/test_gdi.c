@@ -242,6 +242,38 @@ static void test_palettes(void)
     CHECK(nearest_index((uint8_t[]){0, 250, 5}) == 2);                      /* the nearest entry of the current system palette */
 }
 
+/* A brush or pen made from a PALETTEINDEX colour means the entry of the palette of the DC it is drawn with, not of whatever the system palette held when it was made (the deck builder's
+ * footer: its bar was black, its text dark grey on it, because the brush made at start-up took index 134 from the game's palette; docs/notes/deck-footer-colours.md). */
+static void test_palette_relative_tools(void)
+{
+    uint32_t pa = scratch(4 + 4 * 3), pb = scratch(4 + 4 * 3), ha, hb, hdc, br, pen, rc = scratch(16);
+    Window *win = window_with_surface(16, 16);
+
+    WR16(pa, 0x300); WR16(pa + 2, 3);
+    WR32(pa + 4, RGB(0, 0, 0)); WR32(pa + 8, RGB(200, 100, 50)); WR32(pa + 12, RGB(1, 2, 3));
+    WR16(pb, 0x300); WR16(pb + 2, 3);
+    WR32(pb + 4, RGB(0, 0, 0)); WR32(pb + 8, RGB(11, 22, 33)); WR32(pb + 12, RGB(44, 55, 66));
+    ha = API("CreatePalette", pa);
+    hb = API("CreatePalette", pb);
+    hdc = API("GetDC", win->hwnd);
+    br = API("CreateSolidBrush", 0x01000001u);                       /* made before either palette is on the DC: entry 1 */
+    pen = API("CreatePen", 0, 1, 0x01000002u);                       /* entry 2 */
+    API("SelectPalette", hdc, hb, 0);
+    WR32(rc, 2); WR32(rc + 4, 2); WR32(rc + 8, 6); WR32(rc + 12, 5);
+    API("FillRect", hdc, rc, br);
+    CHECK(API("GetPixel", hdc, 3, 3) == RGB(11, 22, 33));            /* FillRect names the brush: the DC's palette, entry 1 */
+    API("SelectPalette", hdc, ha, 0);
+    API("FillRect", hdc, rc, br);
+    CHECK(API("GetPixel", hdc, 3, 3) == RGB(200, 100, 50));
+    API("SelectObject", hdc, br);
+    API("SelectObject", hdc, pen);
+    API("Rectangle", hdc, 8, 8, 14, 14);
+    CHECK(API("GetPixel", hdc, 8, 8) == RGB(1, 2, 3) && API("GetPixel", hdc, 10, 10) == RGB(200, 100, 50));   /* the pen's entry 2, the brush's entry 1 of palette a */
+    API("SelectPalette", hdc, hb, 0);                                /* the palette changes after the tools are selected: they follow it */
+    API("Rectangle", hdc, 8, 8, 14, 14);
+    CHECK(API("GetPixel", hdc, 8, 8) == RGB(44, 55, 66) && API("GetPixel", hdc, 10, 10) == RGB(11, 22, 33));
+}
+
 static void test_text(void)
 {
     Window *win = window_with_surface(200, 40);
@@ -305,6 +337,7 @@ int main(void)
     test_state();
     test_mono_bitmap_and_clip();
     test_palettes();
+    test_palette_relative_tools();
     test_text();
     test_small_text_coverage();
     printf("%d checks, %d failed\n", checks, failures);

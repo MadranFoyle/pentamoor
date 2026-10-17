@@ -559,7 +559,7 @@ static uint32_t FillRect(const uint32_t *a)
     if (a[2] < 32 && !br)
         have = 1;                                              /* COLOR_xxx + 1 system brush indices */
     else if (br && br->solid) {
-        memcpy(color, br->rgb, 3);
+        brush_color(dc, br, color);
         have = 1;
     }
     if (dc && have)
@@ -577,7 +577,7 @@ static uint32_t FrameRect(const uint32_t *a)
     if (!dc)
         return 1;
     if (br && br->solid)
-        memcpy(color, br->rgb, 3);
+        brush_color(dc, br, color);
     fill_rect_logical(dc, l, t, r, t + 1, color);
     fill_rect_logical(dc, l, b - 1, r, b, color);
     fill_rect_logical(dc, l, t, l + 1, b, color);
