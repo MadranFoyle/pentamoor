@@ -33,8 +33,13 @@ EXTRA_STDCALL = {
     "SetRectEmpty": 1, "GetUpdateRect": 3, "GetUpdateRgn": 3, "EqualRect": 2, "ChangeDisplaySettingsA": 2, "RegisterWindowMessageA": 1, "IsDialogMessageA": 2,
     "GetWindowTextLengthA": 1, "IsCharAlphaNumericA": 1, "CreateDialogParamA": 5, "ShowScrollBar": 3, "GetCursor": 0, "CharLowerA": 1, "CharUpperA": 1, "RectInRegion": 2,
     "ExtTextOutA": 8, "GetFileTitleA": 3, "RegOpenKeyA": 3, "RegCreateKeyA": 3, "mciSendCommandA": 4, "mciGetErrorStringA": 3, "GetCurrentThreadId": 0, "SetLastError": 1,
+    # only in ManaLink 3.0 (Duels of the Planeswalkers) magic.exe and its libraries (tools/research/sotaimports.py lists them)
+    "CreateMutexA": 3, "ReleaseMutex": 1, "FindNextFileA": 2, "SetFileAttributesA": 2, "ExcludeClipRect": 5, "GetFileVersionInfoSizeA": 2, "GetFileVersionInfoA": 4,
+    "VerQueryValueA": 4, "CreateEventA": 4, "SetEvent": 1, "ResetEvent": 1, "DisableThreadLibraryCalls": 1, "GetFullPathNameA": 4, "IsBadCodePtr": 1, "RaiseException": 4,
+    "TerminateThread": 2, "SetUnhandledExceptionFilter": 1,
 }
-EXTRA_CDECL = {"longjmp": 2, "_setjmp3": 2, "qsort": 4, "strcoll": 2, "_beginthreadex": 6, "_spawnl": sigs.VARIADIC_WORDS, "_findfirst": 2, "_findnext": 2, "_findclose": 1}
+EXTRA_CDECL = {"longjmp": 2, "_setjmp3": 2, "qsort": 4, "strcoll": 2, "_beginthreadex": 6, "_spawnl": sigs.VARIADIC_WORDS, "_findfirst": 2, "_findnext": 2, "_findclose": 1,
+               "_beginthread": 3, "_endthread": 0, "_tzset": 0, "localtime": 1, "strftime": 4, "fputc": 2}
 
 
 def export_signatures(dlls):

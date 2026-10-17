@@ -72,6 +72,9 @@ jobs:
       - name: Release-check tests (what is in an archive, what looks like decompiler output)
         run: python -m pytest tools/release
 
+      - name: Research-reader tests (the patch, cabinet, cards.dat and overlay readers, on files made up by the tests)
+        run: python -m pytest tools/research
+
       - name: Steam Deck tools tests (the Steam shortcut writer, the installer's windows and progress, the controller layout)
         run: python -m pytest tools/steamdeck
 

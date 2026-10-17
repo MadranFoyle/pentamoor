@@ -1,50 +1,63 @@
-# Spells of the Ancients (2.0 and 2.15) against the 1.0 the port is built from
+# Spells of the Ancients (2.0, 2.15) and ManaLink 3.0 against the 1.0 the port is built from
 
-What it would take to run *Magic: The Gathering "Spells of the Ancients"* (SotA, the 1997 expansion that replaced most of the programs) in Pentamoor, measured on the real files. Everything here is from the machine code and
-the files of the two discs and the patch; nothing was decompiled, and no game file, generated C or screenshot is in the repository. The numbers come from `tools/research/` (the last section), which anyone with the files can rerun.
-**2.15 is the target** (it is the last version, `sotav215.exe` applies to 2.0 directly and holds whole files); 2.0 is kept as a second row where it matters.
+What it would take to run *Magic: The Gathering "Spells of the Ancients"* (SotA, the 1997 expansion that replaced most of the programs) in Pentamoor, measured on the real files, and what the last official build, the *ManaLink 3.0* add-on (January 1998:
+the programs of *Duels of the Planeswalkers*), adds to it. Everything here is from the machine code and
+the files of the two discs, the 2.15 patch and the ManaLink installer; nothing was decompiled, and no game file, generated C or screenshot is in the repository. The numbers come from `tools/research/` (the last section), which anyone with the files can rerun.
+**2.15 is the target** (it is the last version that has `shandalar.exe`; `sotav215.exe` applies to 2.0 directly and holds six whole files); 2.0 is kept as a second row where it matters; ManaLink 3.0 is a section of its own near the end ("ManaLink 3.0").
+
+*Revision.* The first version of this note was written with a copy of the 2.15 patch that was cut short (its `deckdll.dll` was incomplete and `cards.dat` was missing, and nobody noticed: the reader listed the four whole entries and said nothing of the rest). A complete patch has been
+found; this version corrects what that got wrong: the patch has **six** entries, not five (the sixth is `cards.dat`), so **2.15 does change the data** (the readme's change list says nothing of it), the deck library 2.15 runs with is a recompile of 2.0's and not 2.0's own file, and the reader now says when an archive is not whole.
 
 ## Summary
 
 - **The programs changed enough that nothing keyed to a 1.0 address survives**, but the lifter did not care: shandalar.exe (the successor of MAGIC.EXE) and magic.exe (a new "Magic Shell" that also carries the duel) lift to C with the lifter as it is,
-  after a wrapper that replaces the 1.0 constants (2,050 of 2,058 and 1,747 of 1,756 functions; the rest are the picture decompressor, one or two compiler helpers and two functions with a `rol` instruction), and their five libraries lift completely.
-  With a 290-line patch of experimental changes to a copy of the runtime (kept in `tools/research`, not applied) **shandalar.exe 2.15 runs to the title screen and into a new game's colour choice, headless, pixel-checked by eye only**; magic.exe creates its window and then stays black (not solved).
+  after a wrapper that replaces the 1.0 constants (2,050 of 2,058 and 1,747 of 1,756 functions; the rest are the picture decompressor, one or two compiler helpers and two functions with a `rol` instruction), and their libraries, the **complete 2.15 ones**, lift too (with `rol` support, which the
+  lifter lacks, all of them lift: the one `rol` function of the deck library *is* on the deck builder's start-up path). With a scratch copy of the runtime with a few hundred lines of experimental changes (the old patch, re-made for the build profiles: a row per file, and the same Win32 additions)
+  **shandalar.exe 2.15 runs to the title screen and into a new game's colour choice, and the 2.15 deck builder (the real 2.15 `deckdll.dll`) comes up and draws cards**, headless, checked by eye only; after the colour the game starts a *third program*, `FaceMaker.exe`, and waits for it (a process model the
+  port does not have); magic.exe (the shell) still creates its window and stays black. The 2.15 registry check is as it was.
 - **Every address the port hard-codes is different**: 0 of 54 hooked 1.0 addresses are where they were, 11 are the same code at a new address, 19 are the same function with changed code (a human has to look), 2 were not found. 2.0 and 2.15 differ from
   each other at 50 of the same 54, so a per-version table of addresses is needed, and only one SotA version should be supported.
-- The 1.0 start of the program for a plain run (`LIFT_PROGRAM` = `MAGIC`) stops at the first picture: the picture decompressor lives at another address, which `lzw.c` does not know.
-- Real changes in the engine, not only moved code: the master card record grew from 0x34 to 0x48 bytes (463 to 622 cards), the duel's card slot from 288 to 300 bytes and 81 to 101 slots a player (so `src/native/engine.h`'s strides are wrong for SotA), shandalar.exe 2.15 reads two values of
-  Windows' own registry key at start and quits without them, the game starts two programs that find each other by window class (a process model the port does not have), and the installer is an InstallShield 5 cabinet that needs the original CD.
-- Rough size of the work: 40 to 60 hours of agent work for shandalar.exe alone with no hook features, 90 to 140 for the whole thing (shell, controller and screen hooks, installer, CI). Details and risks at the end.
+- A SotA build is refused today, as it should be: the runtime has build profiles now (`src/port/profile.c`), and a file whose SHA-256 is in no row stops with exit status 3 (`PORT_UNKNOWN_BUILD=1` runs on with every hook off: here it ends within a moment, as the programs import the C runtime as `msvcrt.dll`, a name the unmodified runtime does not know). Tried on the complete 2.15 shandalar.exe and on ManaLink's magic.exe: both exit with status 3.
+- Real changes in the engine, not only moved code: the master card record grew from 0x34 to 0x48 bytes (463 to 622 cards), the duel's card slot from 288 to 300 bytes and 81 to 101 slots a player (so `src/native/engine.h`'s strides are wrong for SotA), shandalar.exe 2.15 (and its magic.exe) read two values of
+  Windows' own registry key at start and quit without them, the game starts other programs that find each other by window class (a process model the port does not have), and the installer is an InstallShield 5 cabinet that needs the original CD.
+- **2.15 changes the data too**: the patch carries a new `cards.dat` (339,984 bytes against 2.0's 330,587): the rules text of 109 cards and the flavour text of 8 changed, two cards were renamed, and 2.15 puts back a per-card sound-file reference in 909 records that 2.0 had emptied. The readme does not list any of it.
+- **ManaLink 3.0 is the Duels of the Planeswalkers build of the programs**, not a networking add-on only: its `magic.exe` is linked on 1998-01-14 (the day the game came out), its own version resource says "Duels of the Planeswalker", 6.3b, and its readme says version 3.0 is the Duels of the Planeswalkers standalone version. It brings a larger `magic.exe` (1,948 functions
+  against 1,756, a master card table of **722 cards against 622**, and a *different duel layout*: 151 slots a player, 45,300 bytes, against 101 and 30,300), a recompiled deck library, a new online client (`Manalink.exe`, `gcconn.dll`: Winsock and DirectPlay, for a service that is gone) and `ManalinkInterface.dll`, which `magic.exe` calls
+  (16 exports, 13 used). **It has no `shandalar.exe`**: it is installed over a SotA install and the Shandalar program stays 2.15's. Details in "ManaLink 3.0".
+- **Recommended target: 2.15** (shandalar.exe, magic.exe, DECK.EXE and the 2.15 libraries: one coherent, complete, checked set). ManaLink 3.0's `magic.exe` and libraries are a second layer worth doing later, as one more profile, not as the first target.
+- Rough size of the work: 36 to 55 hours of agent work for shandalar.exe alone with no hook features, 85 to 130 for the whole 2.15 thing (shell, controller and screen hooks, installer, CI), 15 to 25 more for ManaLink 3.0's programs. Details and risks at the end.
 
 ## What there is
 
 | | |
 |---|---|
 | `MTG v2.00.iso` | the disc label "MTG v2", `Setup/DATA.TAG`: *Spells of the Ancients*, version 2.0, "September 8, 1997: UK Release Build". An **expansion**: its installer (`setup.ins`, compiled InstallShield script) asks for the original CD (`CheckOriginalCD`, `MSG_INSERTORIGINALCD`; `CdTools.dll` is the check), copies the old decks to `Old Decks` and `Old Playdeck`, reads the registry key `SOFTWARE\MicroProse\Magic: The Gathering` (value `1.0` under it), and installs into `C:\Magic` over the existing game |
-| `sotav215.exe` (2.15 patch) | a WinZip self-extractor with five entries; **the copy in `sources/` is cut short**: 1,048,331 bytes, and the last entry (`deckdll.dll`, 265,216 bytes expanded, 89,728 packed) has only 19,716 bytes of its data (60,661 bytes inflate, then it ends). The other four are whole: `shandalar.exe` (1,740,288 B, 1997-10-31), `magic.exe` (1,530,368 B, 1997-10-20), `FaceData.txt`, `Readme.txt` (37,224 B). `tools/research/sotapatch.py` reads it (the stub contains false `PK` signatures, so `zipfile` cannot) and checks every entry's CRC. A complete copy is needed for 2.15's `deckdll.dll`; the experiments below used 2.0's, which is why the deck builder was not tried |
-| 2.15 install | 2.0's Program folder with the four files replaced: `sources/installed_sota_215` (git-ignored) |
+| `SOTAV215.EXE` (2.15 patch) | a WinZip self-extractor, 1,207,571 bytes, **six entries, all whole, every CRC-32 right**: `shandalar.exe` (1,740,288 B, 1997-10-31), `readme.txt` (37,224 B, 1997-11-07), `magic.exe` (1,530,368 B, 1997-10-20), `FaceData.txt` (208 B), `deckdll.dll` (265,216 B, 1997-10-20) and `cards.dat` (339,984 B, 1997-10-14). The programs are whole files, not deltas. `tools/research/sotapatch.py` reads it (the stub contains false `PK` signatures, so `zipfile` cannot), checks every entry's CRC-32 and the archive's own end record, and extracts to a folder (hashes under "Hashes"). A second copy, `sotav215.exe` (1,048,331 B), **is cut short**: its last entry (`deckdll.dll`, 89,728 packed bytes) has only 19,716 of them and `cards.dat` is not there at all; the reader reports that copy as `TRUNCATED` with no end record and extracts nothing from it (the first version of this note used it, and so missed `cards.dat` and 2.15's deck library) |
+| 2.15 install | 2.0's Program folder with the six files replaced (`Readme.txt` is the patch's `readme.txt`, `CARDS.DAT` the patch's `cards.dat`, by file name ignoring case): `sources/installed_sota_215` (git-ignored). 332 files |
+| `ml_sota_us.zip` | the **ManaLink 3.0** installer for the US Spells of the Ancients (see its section): `data1.cab`, `_user1.cab`, `_sys1.cab` and the InstallShield files; extracted to `sources/installed_manalink` (Program files as the cabinet names them) and, over the 2.15 install, `sources/installed_manalink_over215` |
 
 The 2.15 readme's change list ("Changes from version 2.0"), in short: cards of the expansion are now sold in Shandalar's towns; and a dozen card fixes in the duel engine (Black Vise and The Rack no longer deal double damage; Zombie Master-like cards stop working while they
 are only in the spell chain; Kismet lets you target either player; Howling Mine, Soul Net and other artifacts with a continuous effect switch off when tapped; Black Lotus can no longer be answered with fast effects; City of Brass does not lose its point of damage;
 Contract from Below lets you order the discards; Fastbond works with several in play and with lands that arrive another way than from the hand; Nevinyral's Disk does not tap when the activation is cancelled; Argothian Pixies and Treefolk are not immune to some
-direct damage; Disenchanting an Animate Artifact keeps the creature state of an artifact creature; Farmstead sees Gloom's extra cost; Serendib Djinn flies). Nothing in the list is about the installer, the screens or the Windows side.
+direct damage; Disenchanting an Animate Artifact keeps the creature state of an artifact creature; Farmstead sees Gloom's extra cost; Serendib Djinn flies). Nothing in the list is about the installer, the screens, the Windows side or the data files (but `cards.dat` and `deckdll.dll` are in the patch: "2.15 against 2.0", below).
 **2.15 is not a binary patch of 2.0**: 2.0 to 2.15 leaves 1,405 of magic.exe's 1,756 functions and 1,595 of shandalar.exe's 2,058 byte-identical (relocations masked), but the rest are mostly re-compiled code (the same operation with its operands swapped,
 instructions in another order), so a function's being "changed" says little about the change.
 
 ## The installer's format
 
-`Setup/data1.cab`, `_sys1.cab` and `_user1.cab` are InstallShield 5 cabinets (signature `ISc(`, version word 0x01005100). `tools/research/iscab.py` lists and extracts them (also straight out of the `.iso`, with `tools/install/iso9660.py`):
+`Setup/data1.cab`, `_sys1.cab` and `_user1.cab` are InstallShield 5 cabinets (signature `ISc(`, version word 0x01005100; ManaLink 3.0's have 0x01000004 and a different layout of the compressed data, below). `tools/research/iscab.py` lists and extracts them (also straight out of the `.iso`, with `tools/install/iso9660.py`):
 
 - header: the descriptor's offset (0x200) and size; the descriptor holds the file table's offset, size, and the numbers of directories and files; the table is one `u32` offset per directory then per file, relative to the table; a directory is a NUL-terminated
   name (`Program\CardArt`); a file descriptor is 0x2a bytes: name, directory, flags (4 compressed, 2 "obfuscated", 1 split, 8 unused slot), expanded and packed sizes, DOS attributes, date and time, and the offset of the data.
-- data: a run of chunks, each a `u16` length and that many bytes of raw deflate, inflated one at a time. (The "obfuscated" flag is set on every file of `data1.cab` but the bytes are plain deflate.) There is no separate `data1.hdr`.
+- data, version 0x01005100: a run of chunks, each a `u16` length and that many bytes of raw deflate, inflated one at a time. (The "obfuscated" flag is set on every file of `data1.cab` but the bytes are plain deflate.) There is no separate `data1.hdr`.
+- data, version 0x01000004 (ManaLink 3.0's cabinets, made with the earlier InstallShield 5): the same header and file table, but a compressed file is **one raw deflate stream**: no chunk lengths, and no "obfuscated" flag (reading it with the chunk reader fails on the first chunk's "length", which is the stream's first two bytes). `iscab.py` picks the layout from the version and falls back on the other when the size does not come out; read against the 2.0 disc it still gives 335 entries and 70,587,570 bytes.
 - `data1.cab`: 17 directories (`Program` and its art, deck, sound, video and tutorial subfolders), **335 entries, 70,587,570 bytes expanded, 55,435,910 packed**; they extract to 332 files in `Program` plus three at the top (`Readme.txt` and two `.url`s). `_sys1.cab`: 4 files (two DLLs, an
   ini, an exe, 495,478 bytes). `_user1.cab`: 23 files (20 bitmaps, a text, a `.jbf`, a `.shl`; 3,993,895 bytes). The installer itself (`SETUP.EXE`, `_INST32I.EX_`, `setup.ins` 67,768 bytes) is a compiled script: not read further.
 - The disc also carries what the game reads from the CD, as 1.0's does: `Sound` (31 WAV), `StatWin` (68 AVI), `DuelSounds` (the shell's voice clips), and `Tutorial` (the Director projector `TUTORIAL.EXE`, 1.4 MB, with 13 chapter files, which 1.0's install has too, and 13 wizard videos of 1 to 35 MB), the autoplay program and
   its intro movies, and a copy of DirectX.
 
 **What an installer for it has to do**: take two discs (the 1.0 disc first, then this one; Pentamoor's installer today takes one), install 1.0 as it does now, then extract the cabinet over it (`Program` of the new folder replaces files of the old: 93 files exist in both and differ, 11 are the same, 228 are new, and 976
-of 1.0's stay, among them every sprite and most pictures: SotA **needs the 1.0 art**), apply the patch (four files here; five when the patch is whole), take the CD files from the 2.0 disc as well (22 WAV), and fingerprint the programs. The registry values the original installer wrote
+of 1.0's stay, among them every sprite and most pictures: SotA **needs the 1.0 art**), apply the patch (six files: `sotapatch.py` extracts them over the Program folder, which the case-insensitive file system turns into replacements of `CARDS.DAT` and `Readme.txt`), take the CD files from the 2.0 disc as well (22 WAV), and fingerprint the programs. The registry values the original installer wrote
 have to be made up (see "What breaks").
 
 ## The folder
@@ -75,6 +88,37 @@ and three new libraries: `cardartlib.dll` (card art: Load/Draw/Destroy of big an
 The programs start each other: magic.exe runs `WinExec("<dir>\Shandalar.exe /MTGshell")` for "Shandalar", and `CreateProcessA` (four sites; the strings name `Tutorial.exe`, `WinHelp.exe`, `Write.exe` and `FaceMaker.exe`); shandalar.exe runs `WinExec("<dir>\Magic.exe /start3,1")` to go back to the
 shell, `_spawnl` (one site; it names `FaceMaker.exe` too), and `WinExec("Write c:/...")` to open Write on a debugging dump. Both look for the other's window. **The port runs one program per process** (`pentamoor-run -m MODULE PROGRAM.EXE`).
 
+## 2.15 against 2.0: the six files of the patch
+
+| file | 2.0 | 2.15 | what changed |
+|---|---|---|---|
+| `shandalar.exe` | 1,739,264 B, linked 1997-09-02 | 1,740,288 B, 1997-10-31 | 1,595 of 2,058 functions byte-identical, 343 at 0.9 to 1.0, 90 at 0.7 to 0.9 (the card fixes; and the start-up's registry check, which the first version of this note found in 2.15 and not in 2.0) |
+| `magic.exe` | 1,529,856 B, 1997-09-03; version 6.2 | 1,530,368 B, 1997-10-20; 6.2.1 | 1,405 of 1,756 identical, 281 at 0.9 to 1.0; 2.15's also makes the registry calls |
+| `deckdll.dll` | 264,192 B, 1997-09-03; version 6.0 | 265,216 B, 1997-10-20; **6.3** | the real 2.15 file, compared for the first time: 370 functions each, 327 byte-identical, 29 at 0.9 to 1.0, 12 at 0.7 to 0.9, 1 at 0.5 to 0.7, 1 below; none added or removed |
+| `cards.dat` | 330,587 B | 339,984 B | below |
+| `FaceData.txt`, `readme.txt` | | 208 B; 37,224 B | the portrait list; the readme of "2.15, 7 November 1997" |
+
+**`CARDS.DAT`** (`tools/research/sotacards.py`; no card text is printed, only counts and at most three names). The file is, little-endian: a `u32` count (999), a `u32` size of the string pool, 999 records of 152 bytes (38 `u32`: the card's id, four references into the pool for the full name, the short name, the rules text and the flavour text, and numbers: type
+and colour flags, cost, power and toughness, ...; up to four more (columns 19 to 22) are names of per-card sound files such as `NNNN.wvl` (the first in 909 records of 2.15's file, the others in a handful)), then the pool; **the file's size is exactly 8 + 999 x 152 + the pool in all four builds**. It is **not the master card table**: that is an array in the program (0x34 bytes a record in 1.0, 0x48 in SotA, with the code pointer of the card's rules at +0x10, and a name inline),
+463, 622 and 722 records long. `cards.dat` supplies the texts and descriptive numbers of all the cards the file names (928 or 929), implemented or not.
+
+| build | bytes | pool | slots | names |
+|---|---|---|---|---|
+| 1.0 | 325,187 | 173,331 | 999 | 928 different card names, and 71 slots named "Blank" |
+| 2.0 | 330,587 | 178,731 | 999 | 929 card names, 70 slots named "None" |
+| 2.15 | 339,984 | 188,128 | 999 | the same 929, 70 "None" |
+| ManaLink 3.0 | 340,009 | 188,153 | 999 | the same 929, 70 "None" |
+
+| from -> to | names added / removed | cards with another rules text | flavour text | short name | numeric fields | sound-file references |
+|---|---|---|---|---|---|---|
+| 1.0 -> 2.0 | 4 / 4 (spelling fixes: "Abu Jafar" to "Abu Ja'far", "Argivian Archaeoligist" to "Archaeologist"; "Blank" to "Data Card") | 277 | 145 | 2 | 28 | 1.0 has one in 889 records, 2.0 **in none** |
+| 2.0 -> 2.15 | 2 / 2 ("The Drowned" to "Drowned"; "Ring of Maruf" to "Ring of Ma'rûf") | 109 | 8 | 6 | 5 | **909 records again have one** (the 2.0 file had emptied them) |
+| 2.15 -> ManaLink 3.0 | 0 / 0 | 13 | 29 | 2 | 2 | 0 |
+
+(No card moved to another id: a renamed card stays in its slot.) So **2.15's data change is mostly text** (109 cards' rules text: far more than the dozen card fixes the readme lists, so most are typographic) **and the return of the per-card sound references**; what the game does with the `.wvl` names was not followed (no `.wvl` file is in any of the installs, so they come from a disc folder or are unused).
+**ManaLink's `cards.dat` is 2.15's with 40 cards' text touched**, and **the 80 (really 100) new cards are not in it as news**: the 929 names are the same in 2.0, 2.15 and ManaLink (1.0's differ in a handful of spellings), and the cards ManaLink's table adds (checked by name on a few, e.g. "Crimson Kobolds", "Mountain Yeti", "Goblin Hero") already have their text in **1.0's** file. The data for Legends and The Dark was there from the start;
+what is new in 3.0 is the code in the program's master table (722 records, 103 with a name 2.15's table lacks) and the deck builder's two set buttons.
+
 ## Function-level comparison
 
 Method (`tools/research/sotacmp.py`): the functions of each program are found with `tools/lift/fnscan.py`; each is reduced to its bytes with every base relocation zeroed and every call or jump to outside the function zeroed ("identical": the same code at another place), and to a stream of
@@ -98,6 +142,18 @@ function, the new one has the same string in 97% of the "identical" pairs, 94% o
 | MAGVID.DLL 1.0 -> 2.0 | 367 | 237 | 197 | 3 | 15 | 8 | 0 | 0 | 144 | 14 |
 | MAGSND.DLL 1.0 -> 2.0 | 131 | 71 | 47 | 5 | 5 | 4 | 0 | 0 | 70 | 10 |
 | DECK.EXE 1.0 -> 2.0 | 182 | 16 | 4 | 0 | 1 | 0 | 0 | 0 | 177 | 11 |
+| deckdll.dll 2.0 -> 2.15 (the real 2.15 file) | 370 | 370 | 327 | 0 | 29 | 12 | 1 | 1 | 0 | 0 |
+| magic.exe 2.15 -> ManaLink 3.0 | 1756 | 1948 | 791 | 6 | 119 | 257 | 322 | 216 | 45 | 237 |
+| magic.exe 2.0 -> ManaLink 3.0 | 1756 | 1948 | 783 | 6 | 115 | 264 | 316 | 229 | 43 | 235 |
+| DUEL.EXE 1.0 -> magic.exe ManaLink 3.0 | 1837 | 1948 | 433 | 6 | 101 | 186 | 199 | 332 | 580 | 691 |
+| MAGIC.EXE 1.0 -> magic.exe ManaLink 3.0 (cross) | 1956 | 1948 | 333 | 12 | 86 | 170 | 197 | 339 | 819 | 811 |
+| shandalar.exe 2.15 -> magic.exe ManaLink 3.0 (cross) | 2058 | 1948 | 577 | 27 | 145 | 263 | 326 | 246 | 474 | 364 |
+| deckdll.dll 2.15 -> ManaLink 3.0 | 370 | 672 | 322 | 5 | 29 | 13 | 1 | 0 | 0 | 302 |
+| deckdll.dll 2.0 -> ManaLink 3.0 | 370 | 672 | 308 | 5 | 39 | 15 | 2 | 1 | 0 | 302 |
+| DECKDLL.DLL 1.0 -> deckdll.dll ManaLink 3.0 | 684 | 672 | 463 | 0 | 46 | 63 | 34 | 20 | 58 | 46 |
+| cardartlib.dll 2.15 (= 2.0) -> ManaLink 3.0 | 326 | 326 | 316 | 0 | 4 | 6 | 0 | 0 | 0 | 0 |
+| drawcardlib.dll 2.15 (= 2.0) -> ManaLink 3.0 | 359 | 359 | 345 | 0 | 8 | 6 | 0 | 0 | 0 | 0 |
+| CdTools.dll 2.15 (= 2.0) -> ManaLink 3.0 | 171 | 172 | 171 | 0 | 0 | 0 | 0 | 0 | 0 | 1 |
 
 
 | comparison | old reachable | new reachable | old only (reachable) | new only (reachable) | bytes of old functions: identical | all | share identical |
@@ -115,6 +171,18 @@ function, the new one has the same string in 97% of the "identical" pairs, 94% o
 | MAGVID.DLL 1.0 -> 2.0 | 306 | 186 | 142 | 13 | 25418 | 38303 | 66% |
 | MAGSND.DLL 1.0 -> 2.0 | 125 | 70 | 66 | 10 | 13509 | 20341 | 66% |
 | DECK.EXE 1.0 -> 2.0 | 125 | 11 | 122 | 8 | 23 | 42745 | 0% |
+| deckdll.dll 2.0 -> 2.15 (the real 2.15 file) | 284 | 282 | 0 | 0 | 122892 | 185756 | 66% |
+| magic.exe 2.15 -> ManaLink 3.0 | 1555 | 1727 | 39 | 220 | 211527 | 1277033 | 17% |
+| magic.exe 2.0 -> ManaLink 3.0 | 1551 | 1727 | 34 | 219 | 210875 | 1276195 | 17% |
+| DUEL.EXE 1.0 -> magic.exe ManaLink 3.0 | 1473 | 1727 | 396 | 660 | 61633 | 971687 | 6% |
+| MAGIC.EXE 1.0 -> magic.exe ManaLink 3.0 (cross) | 1624 | 1727 | 599 | 721 | 45093 | 1123655 | 4% |
+| shandalar.exe 2.15 -> magic.exe ManaLink 3.0 (cross) | 1868 | 1727 | 435 | 305 | 121809 | 1442629 | 8% |
+| deckdll.dll 2.15 -> ManaLink 3.0 | 282 | 543 | 0 | 281 | 120674 | 186431 | 65% |
+| deckdll.dll 2.0 -> ManaLink 3.0 | 284 | 543 | 0 | 281 | 102840 | 185756 | 55% |
+| DECKDLL.DLL 1.0 -> deckdll.dll ManaLink 3.0 | 556 | 543 | 49 | 30 | 39555 | 197496 | 20% |
+| cardartlib.dll 2.15 -> ManaLink 3.0 | 301 | 301 | 0 | 0 | 99302 | 104854 | 95% |
+| drawcardlib.dll 2.15 -> ManaLink 3.0 | 327 | 321 | 0 | 0 | 109225 | 121414 | 90% |
+| CdTools.dll 2.15 -> ManaLink 3.0 | 162 | 163 | 0 | 1 | 51213 | 51213 | 100% |
 
 What the tables say:
 
@@ -123,8 +191,12 @@ What the tables say:
   `SLOT_STRIDE 0x120` in `src/native/engine.h`) and the compiler's replacement for the multiplication is `x*9*9*9<<5` and `x*9<<5`; in 2.0 and 2.15 it is `x*63*8+x<<2 *3 *5` and `x<<2 *5 *3 *5`: **30300 and 300**, i.e. 101 slots of 300 bytes. The hand-written engine
   (`src/native`, `layout.c`) is therefore unusable for SotA without new constants and new field offsets.
 - **magic.exe is not a DUEL.EXE**: it is a program of its own that carries a copy of the duel code: 1,258 of DUEL.EXE's 1,837 functions (69%) have a counterpart in it, 1,200 in shandalar.exe, and the same duel code is in both (1.0's MAGIC.EXE also carried it).
-- **The DLLs**: STATWIN, MAGVID and MAGSND are mostly the same code (60 to 66% of the bytes identical; the exports are the same 3, 20 and 27 names, so the host-made MAGSND and MAGVID of the port still fit by name). DECKDLL changed more (20% of the bytes), and DECK.EXE is a different, tiny program.
-- **2.0 to 2.15** moved nothing big: one program per row, 2 functions of shandalar.exe appear and 2 go.
+- **The DLLs**: STATWIN, MAGVID and MAGSND are mostly the same code (60 to 66% of the bytes identical; the exports are the same 3, 20 and 27 names, so the host-made MAGSND and MAGVID of the port still fit by name). DECKDLL changed more (20% of the bytes), and DECK.EXE is a different, tiny program (linked 1997-03-21 and the same file in 2.0 and 2.15: it starts the deck builder that `deckdll.dll` holds).
+- **2.0 to 2.15** moved nothing big: one program per row, 2 functions of shandalar.exe appear and 2 go. **The deck library is the same**: with the real 2.15 `deckdll.dll`, 370 functions against 370, 327 byte-identical, 29 at 0.9 to 1.0, 12 at 0.7 to 0.9, none added or removed (a recompile with small changes: its version resource says 6.3 where 2.0's says 6.0).
+- **ManaLink 3.0's `magic.exe` is a bigger step than 2.0 to 2.15**: of 2.15's 1,756 functions 791 are byte-identical (45%; 80% from 2.0 to 2.15), 45 have no counterpart, and 237 of its 1,948 are new (the multiplayer module); only 17% of the old bytes are identical against 57% for 2.0 to 2.15. The reason is probably the layout of the duel (below: the table of strides) rather than the new code,
+  since every function that indexes a player's slots has another constant. Its libraries are close to 2.15's: `cardartlib.dll` 316 of 326 functions identical (95% of the bytes), `drawcardlib.dll` 345 of 359 (90%), `CdTools.dll` identical but for one new function and export (`CheckDoPCD`); the deck library is not (next bullet).
+- **ManaLink's `deckdll.dll` is a different build of the library**: 355,840 bytes, 672 functions against 370, **a debug-configuration link** (its debug directory names `D:\NEWMAGIC\DeckBuilder\Debug\deckdll.pdb`; no other build here has one), unoptimised and with no dead code removed: 626 of its 672 functions have a counterpart in 1.0's `DECKDLL.DLL` (463 byte-identical to 1.0's) and 370 have one in 2.15's (322 identical);
+  298 functions exist in it and in 1.0's and not in 2.15's (small ones: 13,869 bytes). The exports are 2.15's six, and the host interface (the ten names it asks its program for: `CardIDFromType`, `CardTypeFromID`, `CardInDeck`, `SetCardInDeck`, `SellPrice`, `deck`, `Gold`, `Scards`, `szDeckName`, `_currentDeck`) is the same ten as 2.15's library asks.
 
 ## The 54 addresses the port hard-codes
 
@@ -219,21 +291,25 @@ nothing in `src/native` carries over without being redone, and the engine's reco
 
 **Findings that the wrapper had to work around** (each is a few lines in the lifter or in a profile):
 
-- the master card table: 622 records of **0x48** bytes (1.0: 463 of 0x34); the code pointer is where the first run of code pointers starts: `0x568bdc` in shandalar.exe 2.15 (master `0x568bcc` with the handler at +0x10), `0x54800c` in magic.exe (`0x547ffc`). It is found by looking for the run, not read from a known address;
+- the master card table: 622 records of **0x48** bytes (1.0: 463 of 0x34); the code pointer is where the first run of code pointers starts: `0x568bdc` in shandalar.exe 2.15 (master `0x568bcc` with the handler at +0x10), `0x54800c` in magic.exe (`0x547ffc`). It is found by looking for the run, not read from a known address (`tools/research/sotamaster.py` does it: the longest run of records `stride` bytes apart whose +0x10 field points into the code; 622 records and 528 distinct handlers in both 2.15 programs);
   the dispatch is `call [eax+eax*8+X]` (four sites in shandalar.exe), not 1.0's `call [eax*4+X]`, and `gen_handlers.py` refuses a function that makes an indirect call in another form (none was refused here: `--no-handlers`, which is what the port uses, does not need the table, only the scan does);
 - 47 Windows and C runtime calls the lifter has no signature for (all of them new: `sotaimports.py` lists them), and every export of the three new libraries, which are `cdecl` (found from their `ret`): `signature()` only knows the C calling convention for the C runtime; with those added, no function is refused for a missing signature;
-- one unsupported instruction (`rol`: 2 functions of each program, one of them in the deck library, in no hot path as far as the scan can tell) and the picture decompressor (5 functions, handled by hand as in 1.0, see below);
+- one unsupported instruction (`rol`: 2 functions of each program and one in the deck library, which the first version of this note said was in no hot path: **it is on the deck builder's start-up path**, found only once the real 2.15 library could be run) and the picture decompressor (5 functions, handled by hand as in 1.0, see below);
 - `chkstk` and `allshl` helpers are recognised as before. Register-argument functions: none new.
 
-**Result (2.15; 2.0 is the same to the function):**
+**Result (the complete 2.15, with its own six files; 2.0 is the same to the function; ManaLink 3.0 in its section):**
 
 | program | functions found | lifted | not lifted |
 |---|---|---|---|
-| shandalar.exe | 2,058 | 2,050 | 8: the decompressor (5), `chkstk` (inline), 2 with `rol` (one dead code) |
+| shandalar.exe | 2,058 | 2,050 | 8: the decompressor (5), `chkstk` (inline), 2 with `rol` (one dead code, one reached from nothing the scan finds) |
 | magic.exe | 1,756 | 1,747 | 9: the decompressor (5), `chkstk` and `allshl` (inline), 2 with `rol` |
-| STATWIN, deckdll, cardartlib, drawcardlib, CdTools | 125, 203, 295, 280, 150 | all but one (`rol` in deckdll) | |
+| DECK.EXE (the stub) | 27 | 27 | 0 |
+| deckdll.dll (the real 2.15 file) | 203 | 202 | 1: `rol` (**it is called when the deck builder starts**: the run stops there with "a call to 0x3200e1aa, which is neither a lifted function nor an import") |
+| cardartlib, drawcardlib, CdTools | 295, 280, 150 | all | 0 |
 
-(`docs/PHASE_C.md` gives 97% for 1.0's MAGIC.EXE, counted at an earlier state of the scan; here it is 99.6%.) The generated C is 52 MB for shandalar.exe and 45 MB for magic.exe, as large as 1.0's, and each module builds with the port's own flags in under a minute.
+With `rol` and `ror` added to the lifter (a dozen lines for 8, 16 and 32 bits, a scratch change not in this PR) the deck library lifts completely (204 functions) and the deck builder runs. (`docs/PHASE_C.md` gives 97% for 1.0's MAGIC.EXE, counted at an earlier state of the scan; here it is 99.6%.) The generated C is 55 MB for shandalar.exe and 49 MB for magic.exe, as large as 1.0's, and each module builds with the port's own flags in
+under a minute. A new lift of a build needs: `liftsota.py --name NAME --exe PROGRAM --master ADDR --stride 0x48 --code-hi ADDR --libs <the libraries> --out DIR` (the master table's address is what `sotamaster.py` prints) and then `liftsota.py dll <the libraries> --dll LIB --base 0x32000000 ...` for each library (bases 0x32000000 deckdll, 0x34000000 cardartlib, 0x36000000
+drawcardlib, 0x38000000 CdTools) and `--finish`; for the DECK.EXE stub `liftsota.py dll <libraries> --main --dll DECK.EXE`.
 
 **Imports.** shandalar.exe imports 339 functions and magic.exe 315; 23 and 29 of them are not imported by any 1.0 program. The port's tables lack **21 (shandalar.exe) and 27 (magic.exe)** of those (42 over both programs and the three new libraries; EqualRect and SetRectEmpty, new, are there already), and the lifter has no signature for 47:
 
@@ -244,25 +320,115 @@ nothing in `src/native` carries over without being redone, and the engine's reco
 - **The C runtime's name**: the port finds an import by the library's name as written, and its tables say `msvcrtd.dll`; SotA's programs import `msvcrt.dll`, so 77 more calls of shandalar.exe (the C runtime's: 101 are not found as written, 24 after the alias) are "not implemented" until the name is treated as an alias (a one-line change in `pe.c`; it is in the experimental patch).
 - The libraries MAGSND.DLL and MAGVID.DLL have the same exports as 1.0's, so the host-made ones still fit.
 
-**Running it** (a scratch copy of `src/port` with `tools/research/sota-runtime-experiment.patch` applied: it adds the calls above as small implementations, the msvcrt alias, the decompressor's state for each copy of it, and an environment switch to rename the module's program; the modules were built with the port's Makefile from the generated C. `SDL_VIDEODRIVER=dummy`, 640x480, no hooks because the module's name is not `MAGIC`):
+**Running it** (a scratch copy of the repository, not committed: `src/port` with the old `tools/research/sota-runtime-experiment.patch` re-made for the build profiles. The patch no longer applies to `lzw.c`, `modules.c` and `port.h`, which the profile refactor rewrote, but its other five files do (`crt.c`, `gdi_text.c`,
+`kernel32.c`, `pe.c`, `user32.c`); what the profiles replace is now **a row in `profile.c` for each file** (its SHA-256, `.program` = the module's name, `.base` for a library, and `.lzw` = the picture decompressor's state that `sotalzw.py` prints: `block` = 1.0's block + the printed delta), and `lzw.c` gets a second library slot
+(drawcardlib.dll has a copy of the decompressor, deckdll.dll another). No hooks: the rows hold nothing else. The folder run is **1.0's install with the 2.15 files over it** (`sotaoverlay.py`: SotA needs 1.0's art; without it the first run stops at "File fonts.cv could not be opened"); the modules were made with the port's Makefile from the lifted C; `SDL_VIDEODRIVER=dummy`;
+the pictures were looked at by eye and are not kept):
 
-- **shandalar.exe, 2.0 and 2.15: the title screen draws** (the 640x480 title as in 1.0, by eye), and a click on "Start New Game" brings up "Select Your Color" correctly. Choosing a colour goes to the new-game name screen, which **draws garbage**: noise instead of the picture in the middle, and a garbage name; the middle is where the new portrait
-  (`FaceArt`, `PlayFace`, `FaceMaker`: all new in 2.0) goes, probably drawn by the new libraries: not investigated.
-- 2.0 asks `GetDiskFreeSpaceA` for the swap file's room and shows the game's own "Low Memory/Swap File Space Warning" until it returns believable numbers.
-- **2.15 quits at once without a registry answer**: its start-up (the function that `WinMain` calls first, at `0x4e68b9`) opens `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion` and reads two values of it that Windows itself keeps (the system's first-install time and its product id), builds a short machine string from them, and returns "failure" if either is missing, on which the program ends
-  with status 0. 2.0 has no such code. With two made-up values the program goes on. (What the string is used for was not followed: it may stamp saves or serve as a licence check.)
-- **magic.exe, the shell, stays black**: it loads all its text tables, registers its window class, creates the window and about forty buttons and labels, loads a picture into an off-screen bitmap, and then sits in its message loop (1,780 passes in 15 s) without ever calling `ShowWindow` or `UpdateWindow`; its layout is for 800x600 (rectangles to x = 800) and 800x600 and 640x480 give the same black. Not solved. It makes no CD
-  call, and its three registry reads fail as in 1.0 (defaults); the next step is to find what it waits for in the message loop (a timer or a posted message are the candidates).
-- Not tried: a duel, the deck builder (needs 2.15's complete `deckdll.dll`), the overworld, a save, sound, and everything that needs a second program.
+- **shandalar.exe 2.15: the title screen draws** (640x480, as 1.0's), a click on "Start New Game" brings up "Select Your Color" correctly. **Choosing a colour calls `_spawnl(_P_WAIT, FaceMaker.exe, ...)`** (from `0x53a88e`: the new portrait editor of 2.0 runs here, and the game waits for it); with the call stubbed the window goes black.
+  The earlier note's "name screen that draws garbage" was not seen again: it was probably what the game drew while its helper program had not run. So starting a new game needs a **third program**, `FaceMaker.exe` (76,288 bytes, linked 1997-09-02, the same file in 2.0 and 2.15), run and waited for: the process model below, and one more thing to lift.
+- **The 2.15 registry check is as it was**: the start-up of shandalar.exe opens `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion` (two `RegOpenKeyA` calls) and, with no answer, the program ends with status 0 (the same with the real 2.15 files and the real 2.15 `deckdll.dll`; 2.0 has no such code); magic.exe 2.15 makes the same two calls. The experiment answers with two made-up values to go on. What the machine string
+  is used for is still not followed.
+- **The deck builder works with the real 2.15 library**: `DECK.EXE` (the stub) with the 2.15 libraries lifted shows "Deck Maker" (800x600): the card art, the card in full, the filters and the first row of the card list. Needs the `rol` support above. The host interface the library asks its program for by name (ten names) is the same as before.
+- **magic.exe 2.15, the shell, stays black** (800x600, with the 2.15 libraries): the window class is registered, the window (about forty buttons and labels) is created and **is** shown now (`WM_SHOWWINDOW`, `WM_ACTIVATE`, `WM_SIZE` arrive; the first note said `ShowWindow` was never called), the window is visible and invalid with a client area, and its message loop runs about 25 passes a second on timer messages; no CD
+  call, and the same two registry calls. Changing the port's message order so that a pending `WM_PAINT` comes before `WM_TIMER` (as in Windows) changed nothing. The picture it waits for is not found: not solved.
+- Not tried: a duel, the overworld, a save, sound, `FaceMaker.exe`, the sealed deck and gauntlet pages, and everything that needs a second program.
+- **Unknown builds are refused**: the unmodified runtime (built from this tree) run on the 2.15 module and on ManaLink's gets "shandalar.exe is build e4e46718c451..., which this version does not support (supported: v1.0 ...)", and exits with status 3; `PORT_UNKNOWN_BUILD=1` goes on with every hook off (and ends within a moment: the `msvcrt.dll` imports are not found without the alias).
 
 **The process model.** The port has no `CreateProcess`: `WinExec`, `CreateProcessA` and `_spawnl` are not implemented, and the runtime is one program per process with one module. The shell start-up (magic.exe first, then Shandalar, back and forth) needs: a launcher that picks the module by the program's file name; the three calls
 implemented as "start another `pentamoor-run` for that program with the same overlay, folder and display settings, and either wait (a `_P_WAIT` mode) or hand over"; `FindWindowA` across processes, or better a rule in the launcher that makes the second start a restore of the first; the display and the audio device handed over (the original
 runs two windows of two processes on one screen; here one SDL window cannot be shared, so the second program has to take over the first's window or the first has to exit). The simplest working model: the first program exits after starting the second and the second's exit starts the shell again.
 Saves are shared through the overlay already. Both programs write the same registry-like settings (`DuelOptions`, `GauntletOptions`, `SealedDeckOptions`, `ScreenNames`, under `Software\MicroProse\Magic: The Gathering`), which the port ignores today (writes go nowhere, reads fail and the defaults are used): the shell's page settings would not persist.
 
+## ManaLink 3.0 (Duels of the Planeswalkers)
+
+**What it is.** `ml_sota_us.zip` is the installer of the official MicroProse add-on *Magic: The Gathering "Manalink"*, version 3.0 for the US *Spells of the Ancients* (`DATA.TAG`: Company MicroProse Software, Application `Magic: The Gathering"Manalink"`, Version 3.0, "Misc=JAN 6, 1997" [sic]; the files are dated January 1998). It is an InstallShield 5 installer
+(`SETUP.EXE` 59,904 B, the compiled script `setup.ins` 56,294 B, `data1.cab` 4,591,805 B with **69 files, 9,162,642 bytes expanded**, `_user1.cab` with one file (`value.shl`, 958 B), `_sys1.cab` with the four InstallShield helper files (492,170 B)). The cabinets are `ISc(` version 0x01000004, which `iscab.py` could not read until it learned the
+single-stream layout (see "The installer's format").
+
+**Where the files go** (strings of `setup.ins`; the script is compiled and was not read further): like 2.0's installer it reads `HKLM\SOFTWARE\MicroProse\Magic: The Gathering\1.0`, value `Path2` (where the game is), then requires `Program\menusx1.txt` there (a file that exists from SotA 2.0 on and not in 1.0's install: the add-on **refuses a plain 1.0**, with an error text that says the game must be installed first), and copies the cabinet's `Program\` tree over that folder. No CD check and no backup of old decks (none of 2.0's script strings for those, `CheckOriginalCD`, `CheckSotaCD`, `Old Decks`, is in this one); a program-folder entry "ManaLink" for `Program\Manalink.exe` (the string ` RUNFROMSHELL` is next to it)
+and an uninstaller. On a 2.15 install: of the 69 files **14 replace a file** (`magic.exe`, `deckdll.dll`, `cardartlib.dll`, `drawcardlib.dll`, `CdTools.dll`, `CARDS.DAT`, `Legacy.csv`, `MENUS.TXT`, `UIStrings.txt`, `Readme.txt`, four of `ShellArt`), 1 is identical (`CardArt\ManaStripes.pic`) and **54 are new**; `sources/installed_manalink_over215` is that result
+(`sotaoverlay.py`, which replaces ignoring case as Windows does). The 2.15 `shandalar.exe`, `DECK.EXE`, `STATWIN.DLL`, `FaceMaker.exe`, the card art catalogues, the decks and the sprites are not touched.
+
+**What is in it** (`sources/installed_manalink`):
+
+| group | files |
+|---|---|
+| programs | `magic.exe` 1,700,864 B (2.15's: 1,530,368); `deckdll.dll` 355,840 (265,216); `cardartlib.dll` 139,264 and `drawcardlib.dll` 178,176 (same sizes as 2.15's, different bytes); `CdTools.dll` 75,264 (74,752; a sixth export, `CheckDoPCD`, next to `CheckOriginalCD` and `CheckSotaCD`); **`Manalink.exe`** 304,640 (the online client), **`ManalinkInterface.dll`** 46,080, **`gcconn.dll`** 188,416 |
+| data | `cards.dat` 340,009 (2.15's: 339,984), `Legacy.csv`, `Names.dat` (16,726 B of nearly nothing: it packs to 211), `menus.txt`, `UIStrings.txt`, `MP_UIStrings.txt` (the multiplayer strings), `PromptsX2.txt`, `tengame.ini` (the TEN service's installer path), `TT0127M_.TTF`, `manalink.txt` (the client's messages), `Credits.txt`, `readme.txt` (71,983 B) |
+| art and sound | `ManaLink\Default` (20 bitmaps and 9 badge bitmaps: the client's windows), `ManaLink\Sounds` (9 WAV), `DBArt\legends.pic` and `dark.pic` (the deck builder's set buttons for **Legends** and **The Dark**; 2.15 has `antiquit.pic` and `arabnite.pic`), `shellart` (6: credits and shell screens, 16-bit bitmaps and `.pic`), `ScreenNames` (two files), `CardArt\ManaStripes.pic` |
+| not in it | `shandalar.exe`, `DECK.EXE`, `STATWIN.DLL`, `MAGSND.DLL`, `MAGVID.DLL`, `FaceMaker.exe`, any card-art catalogue (`MedArt.cat`, `SmallArt.cat`), any deck (its readme says the Duels of the Planeswalkers installer adds new decks to the playdeck folder: this add-on does not) |
+
+**Is its `magic.exe` the Duels of the Planeswalkers build?** The file says so itself, so it can be answered without the DotP disc (which was not looked at): 
+
+1. its version resource: product name "Magic: The Gathering  Duels of the Planeswalker", file version **6.3b**, internal name `exp2` (2.0's magic.exe says `exp1`, 6.2; 2.15's 6.2.1); the source paths of its objects are `D:\Newmagic\multiplayer\...` (SotA's are `D:\Newmagic\sources\...`);
+2. its link time is **1998-01-14 14:28:44 UTC**; the libraries were linked between 14:21 and 14:23 the same day, `Manalink.exe` at 14:30 and `ManalinkInterface.dll` at 14:29 (the cabinet's own file times are 09:21 to 09:30 on 1998-01-14: the same moments in US Eastern time). *Duels of the Planeswalkers* was released on 1998-01-14 (Wikipedia, as given);
+3. its `readme.txt` is dated 14 January 1998 and its FAQ says that version 3.0 is the latest version, that it is the Duels of the Planeswalkers standalone version with the original game's features, a multiplayer module and 80 new cards; it also speaks of the Duels of the Planeswalkers CD and the `Ten` folder on it;
+4. the features: a master card table of **722 cards against 622** (below), the deck builder's `legends.pic` and `dark.pic` (the two sets the 80 new cards come from), `CheckDoPCD` in the CD library, the multiplayer pages and `MultiOptions` in the shell.
+
+What this does **not** show is that the retail DotP disc's `magic.exe` is byte-for-byte this file: the add-on is how SotA owners got the same version, so the two should be the same build, but only the disc (or the DotP patch executable, which is out of scope here) could say. The hash is below.
+
+**What changed in `magic.exe`** (strings and imports against 2.15's): new shell pages `SHELLPAGE_MULTIDUEL`, `SHELLPAGE_ENTERSCREENNAME` and `SHELLPAGE_BLANK`, a window class `fam_WindowClass`, the registry key `Software\MicroProse\Magic: The Gathering\MultiOptions`, screen-name files (`ScreenNames\%s.scn`, `ActiveName.dat`), opponent pictures
+(`Manalink\Opponent.pic`, `me.pic`), a credits page (`Credits.txt`, `WINBK_Credits.pic`), a version check of the opponent's program through `version.dll` (`GetFileVersionInfoA`, `VerQueryValueA`: `FamInterface_SetDuelVersion`), and it **starts `manalink.exe RUNFROMSHELL`**. It imports 13 of `ManalinkInterface.dll`'s 16 exports (`FamInterface_IsHost`, `HasOpponent`,
+`SendPacket`, `ReceivePacket`, `SendFile`, `PostDuelResult`, `SetDuelState`, `Taunt`, `Flush`, `EndSession`, `IsNetworkTEN`, `SetDuelVersion`, `UpdateScreenName`), so the multiplayer is a small, clean interface that a host-made library could answer with "no network, no opponent". `Manalink.exe` is the online client: **Winsock and DirectPlay** (`wsock32.dll`: 20 calls;
+`dplayx.dll` by ordinal; 221 imports, 44 of them in no 2.15 program), `gcconn.dll` (46 exports, `Gc*_new/_del`: the connection to the TEN service, linker 5.00) and the shared window class `MAGICGAME_MagicShellClass` to find the shell. The TEN service the client names (`TEN\setup.exe`) is gone, so none of this can be tested online and none of it is needed for a single-player port.
+
+**The duel layout changed** (found with `sotastride.py`, which follows the compiler's multiplication sequences; a "site" is one sequence):
+
+| program | master record | duel slot | slots a player | cards in the master table |
+|---|---|---|---|---|
+| 1.0 `MAGIC.EXE`, `DUEL.EXE` | 0x34 | 288 (DUEL.EXE: 6,520 sites in 647 functions) | 81 = 23,328 (6,503 in 644) | 463 (383 distinct handlers) |
+| 2.0 and 2.15 `shandalar.exe` | 0x48 | 300 (8,242 in 748) | 101 = 30,300 (8,176 in 739) | 622 (528) |
+| 2.0 and 2.15 `magic.exe` | 0x48 | 300 (8,199 in 744) | 101 = 30,300 (8,138 in 735) | 622 (528) |
+| **ManaLink 3.0 `magic.exe`** | 0x48 | 300 (8,786 in 839) | **151 = 45,300** (8,713 in 825; 45,600, 152 slots, in 56 sites in 31 functions) | **722 (608)** |
+
+The master record size and the slot size are the same as 2.15's, so the per-card code and the slot's fields are likely the same; the **number of slots a player has grew by half and the table by 100 cards** (103 of the 722 records have a name 2.15's table lacks, from record 548 on; the first 548 are the same names in the same order). Every function that indexes a player's slots is therefore
+a different function, which is most of why only 45% of 2.15's functions are byte-identical. For a lifted program this does not matter (the lifter works on the machine code); for the hand-written engine (`src/native`) it would be a third set of strides.
+
+**Does ManaLink's `magic.exe` still work with 2.15's `shandalar.exe`?** It was designed to, and what could be checked agrees; nothing could be *run* together (the port has no process model yet, and the Windows 98 oracle VM was not used for this):
+- the installer ships no `shandalar.exe` and requires a SotA install, so the supported combination is exactly "ManaLink's magic.exe and libraries with SotA's shandalar.exe";
+- the way each starts the other is unchanged: the function in `magic.exe` that builds `<dir>\Shandalar.exe /MTGshell` is **byte-identical** (score 1.00) to 2.15's, and `shandalar.exe` still builds `\Magic.exe /start3,1` (it is 2.15's own file); both still find the shell by the class `MAGICGAME_MagicShellClass` and the title "Magic Shell"; the shell's start-up function, which handles `/start`, changed
+  (0.51: it grew the `manalink.exe RUNFROMSHELL` start);
+- the registry root and the keys they share (`DuelOptions`, `GauntletOptions`, `GauntletEx1Options`, `SealedDeckOptions`, `SoloOptions`, `ScreenNames`) are the same strings; `MultiOptions` is new and only ManaLink's programs read it;
+- the interface between a program and the deck library (the ten names the library asks the program for) is unchanged, and the library's six exports are the same, so 2.15's `shandalar.exe` can load ManaLink's `deckdll.dll`, which is what the installer arranges; the master record size (0x48) and the duel slot (300) are unchanged.
+What differs and could break a mixed install: the **slot count** (a duel state saved by one program is not the other's: the gauntlet saves a duel in progress; whether a saved duel crosses is unknown) and the **card count** (a deck made with the 100 new cards, which `shandalar.exe`'s table of 622 does not have, may not load there: unknown).
+What was run: `DECK.EXE` (2.15's stub) with ManaLink's libraries, lifted and run in the port, shows the same deck builder, with a longer card list (its seventh card is "Ali from Cairo" where 2.15's is "Amrou Kithkin"), so the library's start-up and drawing work with the 2.15 stub.
+
+**Lifting and running ManaLink's programs** (`liftsota.py` as for 2.15, with 23 more signatures it lacked (`liftsota.py` has them): `CreateMutexA`, `CreateEventA`, `FindNextFileA`, `GetFileVersionInfoA`, `ExcludeClipRect`, `_beginthread`, `strftime`, `localtime` and the like):
+
+| program | functions found | lifted | not lifted |
+|---|---|---|---|
+| magic.exe | 1,948 | 1,939 | 9: the decompressor (5), `chkstk` and `allshl` (inline), 2 with `rol` |
+| deckdll.dll | 672 (found by the scan; the lift reaches 1,010) | 1,008, 1,010 with `rol` support | 2 with `rol` |
+| cardartlib, drawcardlib, CdTools | 295, 280, 151 | all | 0 |
+| ManalinkInterface.dll | 108 | 106 | 2: a jump table with no bound check in front of it (`0x3a001f70`) and a one-operand `imul` (`0x3a006620`) |
+
+Imports: `magic.exe` imports 331 functions (25 from the game's own libraries); **43** are not in the port's tables even with the msvcrt alias (29 for 2.15's magic.exe); the 15 new against every 2.15 program are `CreateMutexA`, `ReleaseMutex`, `FindNextFileA`, `SetFileAttributesA`, `ExcludeClipRect`, `GetFileVersionInfoSizeA`, `GetFileVersionInfoA`, `VerQueryValueA`, and the C runtime's `_beginthread`, `_endthread`,
+`_tzset`, `localtime`, `strftime`, `fputc`, `_ftol`. With a scratch runtime (rows in `profile.c`, the 2.15 experiment's calls, and mutexes and events answered with a handle) the module loads, maps `ManalinkInterface.dll` at 0x3a000000 and its four sibling libraries, and **stops inside `ManalinkInterface.dll`** at the unlifted jump-table function (before that its start-up asks `CreateMutexA`
+and `DisableThreadLibraryCalls`). The shell was therefore not reached; with `ManalinkInterface.dll` provided by the host (16 functions that answer "no network"), or the two instructions supported, the next obstacle would be the black shell window that 2.15's magic.exe also shows.
+
+**Which build line is the best single target for a SotA port?**
+
+| | 2.0 | 2.15 | 2.15 + ManaLink 3.0 |
+|---|---|---|---|
+| programs | shandalar.exe 6.1 (1997-09-02), magic.exe 6.2 | shandalar.exe 6.1 (1997-10-31), magic.exe 6.2.1 | 2.15's shandalar.exe; magic.exe 6.3b (1998-01-14) |
+| is every file at hand and whole | yes (the disc) | yes (disc + the complete patch) | yes (+ the add-on) |
+| card fixes of the readme | no | yes | yes |
+| cards in the programs' master tables | 622 | 622 | 622 in Shandalar's program, **722 in the shell's** |
+| duel layout | 101 slots | 101 | 101 in shandalar.exe, **151 in magic.exe** |
+| libraries | 2.0's | 2.15's (the deck library recompiled) | ManaLink's (a debug build of the deck library, `CheckDoPCD`) |
+| unusual to support | -- | the registry check, FaceMaker | the same, plus `ManalinkInterface.dll`, 14 more Win32 calls, Legends and The Dark art that is not in the add-on |
+| what a port needs for a first result | | profile rows, 21+27 Win32 calls, the process model, `rol` | all of 2.15's, then 15 to 25 hours more |
+
+**Recommendation: target 2.15.** It is the last build with `shandalar.exe` in any file at hand, it is complete and consistent (programs and libraries from one patch level: every function counted above is from one coherent set), it fixes 2.0's card bugs, and everything measured so far was measured on it. ManaLink 3.0 changes what the *shell* and the *libraries* are; it
+adds 100 cards (to the shell's duels, gauntlet and deck builder, not to Shandalar, whose program, unless the DotP disc's own `shandalar.exe` is a newer one, still has 622), a new duel layout, and a network client the port cannot use. A port that wants the "last official version" can add ManaLink's `magic.exe` and libraries as a **second set of profile rows** on top of the 2.15 install, exactly as the
+installer layers them, at a cost listed in the effort table; but doing it first would mean two different duel layouts in one install and a host-made `ManalinkInterface.dll` before the first screen is up. Two things would change this recommendation: a *Duels of the Planeswalkers* `shandalar.exe` with 722 cards and 151 slots (then a "3.0" line would be coherent and the better target), and a failure of 2.15's shell page that the ManaLink shell does not share (not known: neither paints).
+
 ## What a build profile would have to hold
 
 One record per supported version, chosen by the SHA-256 of the programs (as `tools/install/install.py` already fingerprints 1.0's), which tells `liftrun`, the module build and the runtime what they cannot guess:
+
+(**The mechanism now exists**: `src/port/profile.c` and `tools/lift/builds.py` hold a row per file found by its SHA-256, the lifter writes the id into the module and the runtime refuses an unknown build; what is missing for SotA is the content of the rows. The experiment above filled in only the `.lzw` part for twelve files and nothing else; what a complete row needs is the list below.)
 
 - **Lifter**: the programs and libraries of the version, the base each library is lifted at, the master card table (address of the first code pointer, record size, field offset), the code range, the variadic functions of any statically linked runtime (none in SotA), the native entries (or none), the extra import signatures
   (the 47 calls and the libraries' cdecl exports, ideally read from the executables), the unsupported-instruction list (`rol`), and the register-argument functions.
@@ -281,30 +447,36 @@ the profile says `verified: false`.
 - **Features** (from the readme and the strings): a sealed-deck tournament (`SHELLPAGE_SEALEDDECK`, deck editing in Shandalar and sealed share the deck builder, with the new "Move By Color" and shift-double-click for several copies), a gauntlet that saves the duel in progress with its progress,
   a single-duel page, the tutorial is 1.0's (a Director projector: **not a candidate**, a different project), movable floating windows in the duel (the ante, the mulligan, both hands, the situation bar: a new window kind, `navwm.c`'s targets would need to follow them), minimisable spell chain and combat windows, the new
   portraits, `Exp1Art` (89 files: the expansion's card art in towns), 159 more cards (622 against 463), old decks backed up on install.
+- **Data in 2.15 and ManaLink**: see "2.15 against 2.0" (`cards.dat`: texts and the sound-file references; the same 929 names in 2.0, 2.15 and ManaLink) and the ManaLink section (`cards.dat` the same but for 40 cards; 100 more cards only in the program's table; `Legends` and `The Dark` buttons in the deck builder).
 - **Data**: the card art is in `cardartlib` and `drawcardlib` now, which draw from `CardArt` and `Exp1Art` themselves (1.0 drew its cards in the program); `.pic` files changed (14 differ, 102 new) in ways the picture reader handled (the decompressor is the same code); `.spr` sprites are 1.0's.
 - **The resolution switch**: the shell lays itself out for 800x600; shandalar.exe has 1.0's three layouts (the three screen-size globals at `0x57a7d0` and `0x57a7d4` for 2.15), so `PORT_RES` keeps working for it; magic.exe's screen size is not found (its uses of the 1.0 address did not align).
-- **CD checks**: the CdTools library (`CheckOriginalCD`, `CheckSotaCD`, `IsCDDrive`, called by the installer's script and by the programs) asks the drive type and the volume label; the port answers "fixed disk" to `GetDriveTypeA` and has no `GetVolumeInformationA`, so a check that wants the disc would fail. Whether the programs refuse to run without it was not reached.
+- **CD checks**: the CdTools library (`CheckOriginalCD`, `CheckSotaCD`, `IsCDDrive`, and in ManaLink 3.0's copy `CheckDoPCD`, called by the installer's script and by the programs) asks the drive type and the volume label; the port answers "fixed disk" to `GetDriveTypeA` and has no `GetVolumeInformationA`, so a check that wants the disc would fail. Whether the programs refuse to run without it was not reached.
 
 ## Effort (hours of agent work, rough)
 
-| item | hours |
-|---|---|
-| Profile mechanism: fingerprint, a profile per version, the runtime reads it instead of constants (`pe.c`, `lzw.c` for three copies, `main.c`), hooks installed only for a verified profile, lifter wrappers folded into `gen_handlers.py` and `liftrun.py` | 8 to 12 |
-| Lifter: the 47 signatures (best read from the executables), `rol`, reading the master table by its pattern, the libraries' cdecl exports, the second program and five libraries in `liftrun`, `manifest.py`, module build and release layout for two programs | 6 to 10 |
-| Win32 and C runtime additions for shandalar.exe (the 21 calls it lacks, 27 for magic.exe; TLS; the update-region calls; registry values for 2.15's start-up; `qsort`, `strcoll`, `_beginthreadex`, `setjmp`/`longjmp` (the lifter has to model `setjmp`: not trivial)) | 8 to 14 |
-| Installer: second disc, cabinet and patch (the readers exist), merge over 1.0, fingerprints, music and video copy, the invented registry values; tests | 6 to 10 |
-| Process model: the three spawn calls, launcher by program, hand-over of the window, saves and settings shared | 8 to 14 |
-| The shell page (magic.exe black screen), the portrait/name screen noise, the CD checks | 8 to 20 (unknown: both are things the port has not met) |
-| Porting the hooks (pace, screens, yes/no, name box, controller navigation) to 2.15: read the 19 changed sites against 1.0's, re-verify all 54, find the sell site, adapt `navwm.c` to the movable windows and the shell's pages | 10 to 16 |
-| Tests, a soak on both programs, CI (a SotA job cannot use the discs: only the profile logic, the cabinet reader on a made-up cabinet, and the patch reader on a made-up archive) | 8 to 12 |
-| **Shandalar alone, without the screen hooks (title, new game, overworld, duels with the mouse)** | **about 40 to 60** |
-| **Everything above** | **about 90 to 140** |
-| Not counted: the tutorial; the hand-written engine for SotA (new strides and offsets, and the functions with no counterpart); a clean-C pass over the changed parts | 40 and more |
+The first column is the estimate of the first version of this note, the second what the work found since (the profile mechanism has been built; the lifter wrapper and the runtime experiment exist as scratch work; ManaLink 3.0 is new). 2.15 is the target; ManaLink 3.0 is a separate block.
+
+| item | before | now |
+|---|---|---|
+| Profile mechanism: fingerprint, a profile per version, the runtime reads it instead of constants, hooks only for a verified profile | 8 to 12 | **done**; the rows for 2.15 (a dozen files with `.lzw`, ids, bases) 2 to 3 |
+| Lifter: the 47 signatures (best read from the executables), `rol`, reading the master table by its pattern, the libraries' cdecl exports, the second program and the libraries in `liftrun`, `manifest.py`, module build and release layout for two programs | 6 to 10 | 5 to 9: the signatures and the master-table finder exist (`liftsota.py`, `sotamaster.py`) and `rol`/`ror` is a dozen lines (lifter test needed); the DECK.EXE stub, the libraries' bases and the module build for three programs are known |
+| Win32 and C runtime additions for shandalar.exe (the 21 calls it lacks, 27 for magic.exe; TLS; the update-region calls; registry values for 2.15's start-up; `qsort`, `strcoll`, `_beginthreadex`, `setjmp`/`longjmp` (the lifter has to model `setjmp`: not trivial)) | 8 to 14 | 6 to 10: the experiment has working versions of most (TLS, `GetVersionExA`, the registry pair, `ExtTextOutA`, the msvcrt alias); real ones need tests, and the registry values need a rule |
+| Installer: second disc, cabinet and patch (the readers exist), merge over 1.0, fingerprints, music and video copy, the invented registry values; tests | 6 to 10 | 6 to 10: the readers now catch a cut-short patch and read both cabinet layouts, and `sotaoverlay.py` is the merge; the installer's three sources (the 1.0 disc, the 2.0 cabinet, the six patch files) are all known |
+| Process model: the three spawn calls, launcher by program, hand-over of the window, saves and settings shared | 8 to 14 | 8 to 14, **plus 4 to 8 for `FaceMaker.exe`**: Start New Game runs it (`_spawnl(_P_WAIT, ...)`) and waits, so it is a fourth program to lift and a second window to hand over |
+| The shell page (magic.exe black screen), the CD checks | 8 to 20 | 8 to 20: still black; `WM_PAINT` order is not it; the "garbage name screen" of the first note is replaced by the FaceMaker item above |
+| Porting the hooks (pace, screens, yes/no, name box, controller navigation) to 2.15: read the 19 changed sites against 1.0's, re-verify all 54, find the sell site, adapt `navwm.c` to the movable windows and the shell's pages | 10 to 16 | 10 to 16 (not touched here) |
+| Tests, a soak on both programs, CI (a SotA job cannot use the discs: only the profile logic, the cabinet reader on a made-up cabinet, and the patch reader on a made-up archive) | 8 to 12 | 6 to 10: the cabinet and patch readers, `cards.dat` reader and overlay have tests on made-up files (`tools/research/test_research.py`, in CI) |
+| **Shandalar alone, without the screen hooks (title, new game, overworld, duels with the mouse)** | about 40 to 60 | **about 36 to 55** (title, colour choice and deck builder are shown to work; FaceMaker is the new unknown) |
+| **Everything above for 2.15** | about 90 to 140 | **about 85 to 130** |
+| **ManaLink 3.0 on top of 2.15**: profile rows and bases for 6 files (1 to 2); `ManalinkInterface.dll` provided by the host as 16 "no network" functions (3 to 5), or the two unsupported instructions lifted (2 to 4); the 14 more Win32 and C calls (3 to 5); the shell's new pages (multi-duel, screen names, credits) and `MultiOptions` (3 to 6); installer: a second, optional, add-on cabinet in the other layout and the overlay (2 to 3); the 722-card table and 151-slot duel need nothing in the lifted code | -- | **about 15 to 25** (the shell's black screen is shared with 2.15 and counted there) |
+| Not counted: the tutorial; the hand-written engine for SotA (new strides and offsets, and the functions with no counterpart: now **three** layouts, 1.0's, SotA's and ManaLink's); a clean-C pass over the changed parts | 40 and more | 40 and more |
 
 ## Risks
 
-- **One build only.** The patch copy is truncated, so 2.15's `deckdll.dll` is missing; everything above that touched it used 2.0's, which is a file the real 2.15 programs would not be run with (the deck builder, which both programs open, is untested). Get a whole `sotav215.exe` before relying on 2.15, and check the three programs' hashes against the community's known-good ones.
-- **Two versions never meet**: 2.0 and 2.15 are two profiles (50 of 54 addresses differ). Support one.
+- **One build only, now with the whole of it at hand.** The first version of this note rested on a cut-short patch and a 2.0 deck library; the complete 2.15 set is checked here (six entries, every CRC-32, hashes above), but it is **one copy**: check the three program hashes against the community's known-good ones before relying on them, and note that the ManaLink add-on's `magic.exe` is not
+  known to be byte-identical to the retail Duels of the Planeswalkers disc's (only the add-on was looked at).
+- **Two versions never meet**: 2.0 and 2.15 are two profiles (50 of 54 addresses differ). Support one. ManaLink 3.0 is a third set of rows for `magic.exe` and the libraries, on top of 2.15 (it brings no `shandalar.exe`).
+- **A mixed install has two duel layouts**: with ManaLink over 2.15 the Shandalar program has 101 slots a player and 622 cards, the shell 151 and 722; nothing here shows what happens to a deck or a saved duel that crosses from one to the other.
 - **The matching is not proof**: 19 of the 54 sites are "changed" and two of them are below 0.5. Each needs to be read in both versions and, ideally, checked by running (the oracle VM, `docs/ORACLE_VM.md`: a Windows 98 image with the SotA install would be the way to check 2.15's behaviour, and the VM's disc needs the 2.0 media).
 - **Legal and installer**: SotA needs the 1.0 install under it (so two discs are needed from the user), and the installer's checks of the original CD must be reproduced as "the first disc was given", not as a disc check in the game. The registry check in 2.15 reads Windows' own values; inventing them must not look like a bypass of anything else.
   Nothing in this work distributes game files or generated code.
@@ -313,28 +485,84 @@ the profile says `verified: false`.
 - **The engine**: the hand-written native engine and its differential tests (`tools/difftest`) have 1.0's strides and offsets; the new ones are known for two arrays only. The lifted program runs without them, so this is only a risk for the long-term plan (docs/ROADMAP.md).
 - **The lifter's output is large** and each version is two more 50 MB sources to compile locally (a minute each here, more on a slow machine), and an installer that builds both 1.0 and SotA modules takes twice as long.
 
+## Hashes
+
+SHA-256 of what the numbers above were measured on (hashes are facts about files; no file is in the repository). The program rows are the build ids of `tools/lift/builds.py` and `src/port/profile.c`.
+
+| archive | bytes | SHA-256 |
+|---|---|---|
+| `SOTAV215.EXE` (the whole 2.15 patch) | 1,207,571 | `a428e981d1e920c05081a1c57f4eba0b4b75e9cda52f050cad3e33bc456b9c89` |
+| `sotav215.exe` (the copy cut short) | 1,048,331 | `c0eef9b8f12b8a500dffa716500c6b82dcf9e4f9f1c57faeacecdee02903318c` |
+| `ml_sota_us.zip` | 5,247,436 | `14dfc87facbde757ffbe74819d60f721fe731af6f7371c38da11616527624223` |
+| ManaLink `data1.cab` | 4,591,805 | `4f94d5d7004c9810c06c658dcc892a9fd8e41e2bb62a18cc691e92adda976037` |
+| ManaLink `_user1.cab` | 44,444 | `1b778ed778aeb06cfdd73787fb4d773273f0572b7215ad6dc6bddd256057aaba` |
+| ManaLink `_sys1.cab` | 205,135 | `675470b6d0548a231e7c25bd78f3e42edc4c078dc4e2df6028c98c1ac04734cf` |
+| ManaLink `setup.ins` | 56,294 | `eee51f0e87f1052e39986fde4576061ddcc9092ebc03e38dc1c28faae474cc36` |
+
+| file | 2.0 | 2.15 | ManaLink 3.0 |
+|---|---|---|---|
+| shandalar.exe | `3d05f67f0971982602434fa91727b031044aabb627dbd04efd76ac072d175e8b` (1,739,264 B) | `e4e46718c451974756b66e7666ac0bf1cc9ebdbc5897eb04a87b8ea2a02353e7` (1,740,288 B) | -- |
+| magic.exe | `a7c5e1cd74f88d779c4028dce551a926d7f6cd2728afb9be394728860409145d` (1,529,856 B) | `e948affc1c1fe74c4a9709350d6c184b8cb01548e57a70b5751a479fa3d2bf65` (1,530,368 B) | `db44ce9b6bfd2530f4c92558cfa484bf8305a77a7844f72679eb708a7e209d5a` (1,700,864 B) |
+| deckdll.dll | `f5bc43ba59de9ed3e5847757fa234d2ff25e056fce0a6848f573ba4a51a996cc` (264,192 B) | `ce741d1f5547c143fd8494bbe09c26e918b892a3d9fc3c3761babb3c8268a667` (265,216 B) | `3b4623f412dfa5db31c88ce0b698acf857261e2b75ef35150383dafaa6b881a2` (355,840 B) |
+| cardartlib.dll | `689be4a86ca843e76057172543cfa3516d8ccbc2efb1699e7c7935b6dc3ead11` (139,264 B) | same as 2.0 | `fada9019ac4879ff606352194c3926e24f79d67dbf7e705c74b0e95fbfbd611a` (139,264 B) |
+| drawcardlib.dll | `c7747313d59b6fa48ec56b479dce9ed5d90f8a95fc47e93990c4369bbd2fa1f8` (178,176 B) | same as 2.0 | `c87d7ac3b8bf46a36a030ce33a0bea09e67205919a432b985479c73b9181dff3` (178,176 B) |
+| CdTools.dll | `0d0c2bfa87de02499f1f73f21f34824b1c2572f3e6ae0b5dca7ca343ddf1b77d` (74,752 B) | same as 2.0 | `883602c7d6405fda468cd0eb46313c36b13f9d8bdd5d555e86ca1e479ebf91bc` (75,264 B) |
+| cards.dat | `f573b37260e33f26a6c13b33f6aa9045efc6e2d9ebe02d560b3d8596fb125908` (330,587 B) | `d7126faf7f17ef84b6ea2e9779bc8b79449c8190c2a4710a5af5c147b95c41a1` (339,984 B) | `19934360d2de798d91f0bb3b3fd5c37dffcd6c232f770c2b971b3acdee6f5e14` (340,009 B) |
+| readme (Program) | `319b41e9edf6a826ebeb75f4b979960df5a13fcfba9734de5a1cbc621425f6a4` (35,749 B) | `44e6c8e72a7521759d2a1c7274c6cd4a327a75b8d69db3fdc23f764d26f10b32` (37,224 B) | `8b4aae9145c1fddd737fb0d5704987fc7846ae157be4ebfe365d94aa458b4c8b` (71,983 B) |
+| DECK.EXE | `c7ec116aecdcde9ab976cc97cba81482fc4219278f8042edf667456ede3dd8ef` (16,424 B) | same as 2.0 | -- |
+| STATWIN.DLL | `c1ca59496afa786f22fcd97b94052b937910a613f9321399b4ef4dd5dec76940` (55,808 B) | same as 2.0 | -- |
+| MAGSND.DLL | `213b7dc2e1d0eed131d38485cba8004c1d7760f8ff0a94486b86bba5f3aeba9e` (25,088 B) | same as 2.0 | -- |
+| MAGVID.DLL | `b686bd43bb7f9ba040fc7416d8d74e59e27c3b5b1bbccd76bfc16c5505bcf90a` (45,056 B) | same as 2.0 | -- |
+| FaceMaker.exe | `b4f3d19614dcd825da846d097baa3cd9badc0c9852492bc27a8ba62c1741a493` (76,288 B) | same as 2.0 | -- |
+| FaceData.txt | `eb3c55f48861a8fef6ca556e2b199e39e41fed6269fb94a3c8690e771cde04fa` (378 B) | `3b362d357efc0aba6d29e88e4b750078aa11cf5ee838c34c989322266dc4600f` (208 B) | -- |
+| Manalink.exe | -- | -- | `7dbc75c975c3819e2367f6b09d27d56f2738d874f7f5c8d128aeb59261bb531c` (304,640 B) |
+| ManalinkInterface.dll | -- | -- | `117a42fe57fbf426f9ed204af0ca661bb5cefc16a013b10f9108788a585c5774` (46,080 B) |
+| gcconn.dll | -- | -- | `da1ba49826424c6139b7830754a2a59905cbcd9fd3fc116155d7b53f1608ee6f` (188,416 B) |
+
+
 ## The research tools
 
 All in `tools/research/`, each documented at the top, none holding game data (they print counts and addresses); they need `pefile` and `capstone` and use `tools/lift`.
 
 | script | what |
 |---|---|
-| `iscab.py` | lists and extracts an InstallShield 5 cabinet, from a file or from a disc image |
-| `sotapatch.py` | lists and extracts the files of a WinZip self-extractor (the 2.15 patch), checking each entry's CRC |
+| `iscab.py` | lists and extracts an InstallShield 5 cabinet, from a file or from a disc image; both layouts of compressed data (the 2.0 disc's chunks, ManaLink 3.0's single stream) |
+| `sotapatch.py` | lists, **verifies** and extracts the files of a WinZip self-extractor (the 2.15 patch): CRC-32 and SHA-256 of every entry, `TRUNCATED` / `CORRUPT` for an entry that is cut short or damaged, the archive's end record checked, exit status 1 and nothing written for an archive that is not whole (`--partial`, `--check`); extracts over a game folder keeping the names there |
+| `sotaoverlay.py` | copies one extracted install over another as Windows does (names compared ignoring case; `--only Program`); counts replaced, identical and added |
+| `sotapeinfo.py` | build identity of programs and libraries: link time, versions, sections, imports, the debug directory and its PDB path, the version resource, the source paths in the strings; `--table` for hashes |
+| `sotacmptable.py` | the rows of the two comparison tables above for any pairs of builds, as Markdown |
+| `sotamaster.py` | finds the master card table in a program and counts its records |
+| `sotacards.py` | the structure of `CARDS.DAT` and the differences between builds, as counts |
+| `sotastride.py` | which structure sizes a program multiplies by (the duel slot and the slots a player), from the compiler's multiplication sequences |
+| `sotastrings.py` | strings one build has that another lacks, only the technical kinds (command-line switches, registry paths, window classes, file names, source paths) |
+| `test_research.py` | tests of the readers on archives, cabinets and files made up in the test (no game file): `python3 -m pytest tools/research` |
 | `sotatree.py` | compares two installed folders (counts by folder and extension; `--list-new` lists names) |
 | `sotacmp.py` | matches the functions of two builds of a program and reports the counts; `--json`, `--map` |
 | `sotahooks.py` | finds the addresses `src/port` is keyed to in another build, with the old and new call sites of the hooked functions |
 | `sotalayout.py` | the same for `src/native/layout.c` |
-| `sotaimports.py` | imports of a build against the port's tables and the lifter's signatures |
+| `sotaimports.py` | imports of a build against the port's tables and the lifter's signatures | (run it with `--libs` naming the game's own libraries)
 | `sotalzw.py` | the picture decompressor's state in another build |
 | `liftsota.py` | runs the lifter on another build, with its constants replaced (`liftsota.py dll ...` for the libraries) |
-| `sota-runtime-experiment.patch` | the scratch changes to `src/port` that got the title screen up (not applied; it changes 1.0's behaviour only by adding the msvcrt alias and new calls); apply it to a copy to reproduce the runs |
+| `sota-runtime-experiment.patch` | the scratch changes to `src/port` of the first version of the experiment. **It no longer applies** to `lzw.c`, `modules.c` and `port.h` (the profile refactor rewrote them: replace its decompressor hunks by a `.lzw` row per file in `profile.c`, as described under "Running it"); its `crt.c`, `gdi_text.c`, `kernel32.c`, `pe.c` and `user32.c` hunks still apply with `git apply --include=...` |
 
-Reproduce, with `sources/installed_sota_215` made by copying `sources/installed_sota` and running `sotapatch.py` on the patch into its `Program` folder:
+Reproduce (the paths are the ones this note uses; `sources/` is git-ignored):
 
 ```bash
+# the 2.15 install: 2.0's Program folder with the six files of the whole patch over it (a cut-short patch is refused: exit status 1, nothing written)
+cp -R sources/installed_sota sources/installed_sota_215          # or: sotaoverlay.py for a fresh copy
+python3 tools/research/sotapatch.py sources/Magic_The_Gathering_ISO/SOTAV215.EXE sources/installed_sota_215/Program
+# ManaLink 3.0: the cabinet, and the install it makes over 2.15
+python3 tools/research/iscab.py sources/Magic_The_Gathering_ISO/ml_sota_us/data1.cab sources/installed_manalink
+python3 tools/research/sotaoverlay.py sources/installed_sota_215 sources/installed_manalink sources/installed_manalink_over215 --only Program
+# comparisons
+python3 tools/research/sotacmptable.py "magic.exe 2.15 -> ManaLink 3.0=sources/installed_sota_215/Program/magic.exe:sources/installed_manalink/Program/magic.exe"
 python3 tools/research/sotacmp.py sources/installed/Magic/Program/MAGIC.EXE sources/installed_sota_215/Program/shandalar.exe --json /tmp/m.json
 python3 tools/research/sotahooks.py sources/installed/Magic/Program/MAGIC.EXE sources/installed_sota_215/Program/shandalar.exe
+python3 tools/research/sotapeinfo.py sources/installed_manalink/Program/magic.exe
+python3 tools/research/sotacards.py 2.0=sources/installed_sota/Program/CARDS.DAT 2.15=sources/installed_sota_215/Program/CARDS.DAT ML=sources/installed_manalink/Program/cards.dat
+python3 tools/research/sotamaster.py sources/installed_manalink/Program/magic.exe
+python3 tools/research/sotastride.py sources/installed_manalink/Program/magic.exe --want 288,300,23328,30300,45300
+# lifting
 python3 tools/research/liftsota.py --name sota215_shandalar --exe sources/installed_sota_215/Program/shandalar.exe --master 0x568bcc --stride 0x48 --code-hi 0x562000 \
-    --libs <the four libraries, comma-separated> --out sources/generated_sota/lift215_shandalar
+    --libs <the four libraries, comma-separated> --out sources/generated_sota/v215_shandalar
 ```
