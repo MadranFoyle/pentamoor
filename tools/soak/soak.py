@@ -221,8 +221,14 @@ class Soak:
             b = buttons[0]
             g.click(*b.center)
             return "dialog '%s': %s -> %s" % (d.title or d.cls, texts[:80], b.title)
-        g.key("return")
-        return "dialog '%s': %s -> Return" % (d.title or d.cls, texts[:80])
+        # no button at all ("Sorcerer won", "You won!" and the two next draws): a click closes the page, Return does not (docs/notes/duel-won-black-screen.md); it was Return
+        # here, so each such page cost a 60 s STUCK and a restart of the game
+        self.stats["dialog_clicks"] += 1
+        if self.stats["dialog_clicks"] % 4 == 0:
+            g.key("return")
+            return "dialog '%s': %s -> Return" % (d.title or d.cls, texts[:80])
+        g.click(self.w // 2, self.h // 2)
+        return "dialog '%s': %s -> click" % (d.title or d.cls, texts[:80])
 
     # ---- the menu -----------------------------------------------------------------------------------------------------
     def concede(self):
