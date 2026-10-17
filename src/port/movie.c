@@ -204,6 +204,9 @@ static const char *ffmpeg_path(void)
     if (done)
         return known;
     done = 1;
+#ifdef PLAT_IOS
+    return NULL;                    /* an iOS app cannot run ffmpeg (nor any program): the clips that need it are skipped, as with PORT_FFMPEG=none */
+#endif
     if ((path = getenv("PORT_FFMPEG")) != NULL) {            /* PORT_FFMPEG=/path/to/ffmpeg names it; PORT_FFMPEG=none plays as if there were none (for testing) */
         if (!strcmp(path, "none") || !path[0])
             return NULL;

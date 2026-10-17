@@ -136,3 +136,13 @@ void pace_install(void)
     port_override(profile->pace.tick_fn, read_and_clear_ticks, 0, 0);
     port_prehook(profile->buttons.pass, pace_ui_pass);
 }
+
+/* Is the overworld's loop running (it has made a frame in the last third of a second)? The touch screen holds the left button with a finger there (the party walks while it is held) and
+ * waits to tell a tap from a long press everywhere else (front_sdl.c, touch.h). Called from the window's thread; `last` is a double the game's thread writes once a frame: a stale read only
+ * gives the answer of the frame before. */
+int pace_map_active(void)
+{
+    double l = last;
+
+    return l > 0 && port_now() - l < 0.35;
+}

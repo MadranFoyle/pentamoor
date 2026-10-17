@@ -45,7 +45,14 @@ int plat_same_file(const char *a, const char *b)
 }
 
 int plat_is_executable(const char *path) { return access(path, X_OK) == 0; }
+#ifdef PLAT_IOS
+/* An iOS app cannot start another program (system() is not in its SDK, popen() fails in its sandbox). The only user is the ffmpeg pipe, which movie.c does not try there. */
+FILE *plat_popen_read(const char *cmd) { (void)cmd; return NULL; }
+int plat_pclose(FILE *f) { return f ? pclose(f) : -1; }
+int plat_system(const char *cmd) { (void)cmd; return -1; }
+#else
 FILE *plat_popen_read(const char *cmd) { return popen(cmd, "r"); }
 int plat_pclose(FILE *f) { return pclose(f); }
 int plat_system(const char *cmd) { return system(cmd); }
+#endif
 #endif
