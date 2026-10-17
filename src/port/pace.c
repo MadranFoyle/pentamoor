@@ -140,6 +140,16 @@ static uint32_t pace_idle_snapshot(const uint32_t *a)
     return 0;
 }
 
+/* The same for the game's "wait for a key" (a (Y/N) question, a message that waits for any key): its loop polls the key queue with nothing between the polls; the poll is entered from
+ * keys.wait_loop_ret. */
+static uint32_t pace_idle_poll(const uint32_t *a)
+{
+    (void)a;
+    if (RD32(port_sp) == profile->keys.wait_loop_ret)
+        sched_sleep(profile->pace.idle_ms / 1000.0);
+    return 0;
+}
+
 void pace_install(void)
 {
     const char *ms = getenv("PORT_FRAME_MS");
@@ -154,6 +164,8 @@ void pace_install(void)
     port_prehook(profile->buttons.pass, pace_ui_pass);
     if (profile->pace.idle_ms && profile->pace.idle_fn)
         port_prehook(profile->pace.idle_fn, pace_idle_snapshot);
+    if (profile->pace.idle_ms && profile->keys.pop && profile->keys.wait_loop_ret)
+        port_prehook(profile->keys.pop, pace_idle_poll);
 }
 
 /* Is the overworld's loop running (it has made a frame in the last third of a second)? The touch screen holds the left button with a finger there (the party walks while it is held) and
