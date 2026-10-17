@@ -135,6 +135,15 @@ class Soak:
         except Exception as e:  # noqa: BLE001
             return "thread dump failed: %s" % e
 
+    def engine_state(self):
+        """MAGIC.EXE 1.0's duel state worth having in a STUCK event (docs/notes/draw-phase-stuck.md): the two lives, the "game is over" flag 0x6a285c, the "ask again" flag 0x6ff380, the phase 0x6ff558."""
+        g = self.game
+        out = {"lives": g.peek(0x6a4a00, 2)}
+        for name, addr in (("over_flag", 0x6a285c), ("ask_again", 0x6ff380), ("phase", 0x6ff558), ("chain", 0x6a3f78)):
+            v = g.peek(addr, 1)
+            out[name] = v[0] if v else None
+        return out
+
     def proc_threads(self):
         """Linux: every thread of the game process (state, user and system ticks, what it waits in) twice, 2 s apart."""
         pid, lines = self.game.pid, []
@@ -439,7 +448,7 @@ class Soak:
                 return "over"                        # the board is gone
             if stalled > a.stall_s:
                 self.ev("STUCK", "no change for %.0f s: bar=%r dialogs=%s last action %r" % (stalled, s[0], [d[0] for d in s[2]], last_kind),
-                        cpu=self.cpu_seconds(), lives=None if self.standalone() else self.game.peek(0x6a4a00, 2), shot=self.shot("stuck"), dump=self.thread_dump("stuck"))
+                        cpu=self.cpu_seconds(), engine=None if self.standalone() else self.engine_state(), shot=self.shot("stuck"), dump=self.thread_dump("stuck"))
                 self.stats["stuck"] += 1
                 if not self.concede():
                     return "restart"
