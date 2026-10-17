@@ -276,15 +276,27 @@ const char *proc_args(void)
     return e ? e : "";
 }
 
+/* argv[0] of the C runtime: where the program is, as its file is named (the folder is the guest's: the game's folder is C:\\Magic\\Program), and the arguments. */
+void proc_program_path(char *out, size_t cap)
+{
+    const char *args = proc_args();
+
+    snprintf(out, cap, "C:\\Magic\\Program\\%s%s%s", plat_basename(main_image.path), *args ? " " : "", args);
+}
+
+/* What GetCommandLineA returns: the program's path in capitals (as Windows 9x spells a program's path, and as GetModuleFileNameA does), then the arguments as they were given. */
 void proc_command_line(char *out, size_t cap)
 {
     const char *args = proc_args();
-    size_t i;
+    size_t i, n;
 
-    snprintf(out, cap, "C:\\Magic\\Program\\%s%s%s", plat_basename(main_image.path), *args ? " " : "", args);
-    for (i = 0; out[i] && out[i] != ' '; i++)                    /* the program's name in upper case, as the installer's folder spells it */
+    snprintf(out, cap, "C:\\Magic\\Program\\%s", plat_basename(main_image.path));
+    for (i = 0; out[i]; i++)
         if (out[i] >= 'a' && out[i] <= 'z')
             out[i] = (char)(out[i] - 32);
+    n = strlen(out);
+    if (*args && n + 2 < cap)
+        snprintf(out + n, cap - n, " %s", args);
 }
 
 /* ---- the guest's handles for children --------------------------------------------------------------------------------------------- */

@@ -29,6 +29,8 @@ import zigdl
 
 # program -> the folder the lifter writes under sources/generated (tools/lift/lift_all.sh)
 PROGRAMS = {"magic": "lift_magic_all", "deck": "lift_deck", "duel": "lift_duel"}
+# the same for Spells of the Ancients 2.15 (tools/lift/builds.py SOTA_MODULES; tools/install/install_sota.py makes them): kept apart, as the installer builds all of PROGRAMS
+SOTA_PROGRAMS = {"shandalar": "lift_shandalar", "facemaker": "lift_facemaker", "sotadeck": "lift_sotadeck"}
 DEFINES = ["-DLIFT_BACKEND_FLAT4G", "-DLIFT_PREEMPT", "-DLIFT_MODULE"]
 HEADERS = ("lift_rt.h", "lift_tables.h")
 
@@ -357,7 +359,7 @@ def plan(programs, gen_root, port_dir, native_dir, build_dir, out_dir, cc, targe
     headers = [os.path.join(native_dir, h) for h in HEADERS]
     result = {}
     for prog in programs:
-        gen_dir = os.path.join(gen_root, PROGRAMS.get(prog, prog))
+        gen_dir = os.path.join(gen_root, PROGRAMS.get(prog) or SOTA_PROGRAMS.get(prog, prog))
         srcs = program_sources(gen_dir, port_dir)
         objs = [os.path.join(build_dir, prog, os.path.splitext(os.path.basename(s))[0] + ".o") for s in srcs]
         out = os.path.join(out_dir, f"game_{prog}.{module_ext(target_os)}")

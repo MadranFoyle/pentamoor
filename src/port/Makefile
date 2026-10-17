@@ -215,6 +215,15 @@ $(BUILD)/test_touch$(EXE): test_touch.c touch.c touch.h iosboot.c iosboot.h
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(WINFLAGS) -iquote . -o $@ test_touch.c touch.c iosboot.c $(WINLIBS)
 
+# The Windows and C runtime calls Spells of the Ancients adds (winsys.c, crt.c, filedlg.c), and the process model (process.c) run against the test program itself as the "runtime".
+$(BUILD)/test_win32$(EXE): test_win32.c $(TEST_DEPS)
+	mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native -o $@ test_win32.c test_stubs.c $(LIB_SRC) $(PTHREAD_LIBS) -lm $(WINLIBS)
+
+$(BUILD)/test_process$(EXE): test_process.c $(TEST_DEPS)
+	mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native -o $@ test_process.c test_stubs.c $(LIB_SRC) $(PTHREAD_LIBS) -lm $(WINLIBS)
+
 $(BUILD)/test_paths$(EXE): test_paths.c $(TEST_DEPS)
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native -o $@ test_paths.c test_stubs.c $(LIB_SRC) $(PTHREAD_LIBS) -lm $(WINLIBS)
@@ -283,8 +292,10 @@ check-run: runtime module-stub
 	@echo "check-run: ok"
 
 
-test: $(BUILD)/test_touch$(EXE) $(BUILD)/test_profile$(EXE) $(BUILD)/test_steamdeck$(EXE) $(BUILD)/test_display$(EXE) $(BUILD)/test_wm$(EXE) $(BUILD)/test_gdi$(EXE) $(BUILD)/test_sound$(EXE) $(BUILD)/test_movie$(EXE) $(BUILD)/test_paths$(EXE) $(BUILD)/test_pad$(EXE) $(BUILD)/test_nav$(EXE) $(BUILD)/test_module$(EXE) module-stub
+test: $(BUILD)/test_touch$(EXE) $(BUILD)/test_win32$(EXE) $(BUILD)/test_process$(EXE) $(BUILD)/test_profile$(EXE) $(BUILD)/test_steamdeck$(EXE) $(BUILD)/test_display$(EXE) $(BUILD)/test_wm$(EXE) $(BUILD)/test_gdi$(EXE) $(BUILD)/test_sound$(EXE) $(BUILD)/test_movie$(EXE) $(BUILD)/test_paths$(EXE) $(BUILD)/test_pad$(EXE) $(BUILD)/test_nav$(EXE) $(BUILD)/test_module$(EXE) module-stub
 	$(BUILD)/test_touch$(EXE)
+	$(BUILD)/test_win32$(EXE)
+	$(BUILD)/test_process$(EXE)
 	$(BUILD)/test_profile$(EXE)
 	$(BUILD)/test_wm$(EXE)
 	$(BUILD)/test_pad$(EXE)

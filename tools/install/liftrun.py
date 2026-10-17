@@ -14,6 +14,9 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lift"))
+import builds  # noqa: E402
+
 GAME = "sources/installed/Magic/Program"
 GENERATED = "sources/generated"
 
@@ -43,6 +46,74 @@ def lift_steps(game=GAME, generated=GENERATED):
             ("gen_dll.py", ["--finish", "--out", duel]),
         ],
     }
+
+
+# ---- Spells of the Ancients 2.15 ------------------------------------------------------------------------------------------------------------------------
+def sota_file(game, name):
+    """The path of a file of a 2.15 install, whatever case its name is spelled in (the install's names are not in one case); the name as given if it is not there."""
+    if os.path.isdir(game):
+        for n in os.listdir(game):
+            if n.lower() == name.lower():
+                return os.path.join(game, n)
+    return os.path.join(game, name)
+
+
+def sota_steps(game, generated=GENERATED):
+    """{module: [(script, [arguments])...]} for the three programs of a 2.15 install (builds.SOTA_MODULES: shandalar, facemaker, sotadeck), `game` being its Program folder. Each module
+    is the program and the libraries it loads, lifted at the bases of builds.LIBRARY_BASES (the runtime maps each library at its base: the profile's `.base`)."""
+    bases = builds.LIBRARY_BASES["v2.15"]
+    steps = {}
+    for module, (exe, libs) in builds.SOTA_MODULES.items():
+        out = f"{generated}/lift_{module}"
+        path = sota_file(game, exe)
+        if module == "shandalar":
+            chain = [("gen_handlers.py", ["--program", "shandalar", "--exe", path, "--out", out, "--all", "--no-handlers"])]
+        else:
+            chain = [("gen_dll.py", ["--main", "--dll", path, "--out", out])]
+        for lib in libs:
+            chain.append(("gen_dll.py", ["--dll", sota_file(game, lib), "--base", f"0x{bases[lib]:08x}", "--out", out]))
+        if libs:
+            chain.append(("gen_dll.py", ["--finish", "--out", out]))
+        steps[module] = chain
+    return steps
+
+
+def sota_fingerprint(root, game):
+    """What a lifted 2.15 module depends on: the lifter's own files and the 2.15 files it lifts."""
+    h = hashlib.sha256()
+    files = sorted(glob.glob(os.path.join(root, "tools", "lift", "*.py"))) + [os.path.join(root, "src", "native", "layout.c")]
+    names = sorted({exe for exe, _ in builds.SOTA_MODULES.values()} | {lib for _, libs in builds.SOTA_MODULES.values() for lib in libs})
+    files += [sota_file(game, n) for n in names]
+    for p in files:
+        if not os.path.exists(p):
+            continue
+        h.update(os.path.basename(p).lower().encode() + b"\0")
+        with open(p, "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()
+
+
+def lift_sota(root, game, python=sys.executable, pythonpath=(), programs=None, force=False, say=print):
+    """Lift the 2.15 programs (the ones not already lifted from these very files) in parallel, as lift_all does for 1.0. `game`: the Program folder of the install."""
+    programs = list(programs or builds.SOTA_MODULES)
+    stamp = sota_fingerprint(root, game)
+    paths = [os.path.join(root, "tools", "lift")] + list(pythonpath)
+    todo = []
+    for p in programs:
+        if not force and is_lifted(root, p, stamp):
+            say(f"  [{p}] already lifted from these files; skipping (--force lifts it again)")
+        else:
+            todo.append(p)
+    steps = sota_steps(game)
+    t0 = time.time()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(todo))) as pool:
+        futs = {pool.submit(run_chain, root, p, steps[p], python, paths, say): p for p in todo}
+        for fut in concurrent.futures.as_completed(futs):
+            fut.result()
+            write_stamp(root, futs[fut], stamp)
+    if todo:
+        say(f"lifted {', '.join(todo)} in {int(time.time() - t0)} s")
+    return todo
 
 
 def python_command(python, script_path, args, paths):

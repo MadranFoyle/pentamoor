@@ -719,8 +719,9 @@ def test_a_scan_does_not_take_bytes_that_are_not_code_for_a_function():
 
 
 # ---- the build id (builds.py, gen_handlers.py, gen_dll.py; src/port/profile.c) ----------------------------------------------
-def tiny_pe(path, sections, entry_rva, image_base=0x400000, extra=b""):
-    """Write the smallest PE32 the lifter will read: `sections` is [(name, rva, bytes, flags)]; no imports. `extra` is appended to the file (another file, the same code)."""
+def tiny_pe(path, sections, entry_rva, image_base=0x400000, extra=b"", directories=None):
+    """Write the smallest PE32 the lifter will read: `sections` is [(name, rva, bytes, flags)]; no imports unless `directories` ({index: (rva, size)}: 0 is the export table) says so.
+    `extra` is appended to the file (another file, the same code)."""
     import struct  # noqa: PLC0415
     hdr_size, raw = 0x200, 0x200
     secs = []
@@ -744,6 +745,10 @@ def tiny_pe(path, sections, entry_rva, image_base=0x400000, extra=b""):
     struct.pack_into("<IIII", pe, opt + 56, image_size, hdr_size, 0, 2)
     struct.pack_into("<IIII", pe, opt + 72, 0x100000, 0x1000, 0x100000, 0x1000)
     struct.pack_into("<II", pe, opt + 92, 0, 16)
+    if directories:                          # the table of data directories: sixteen entries, the ones given filled in
+        struct.pack_into("<II", pe, opt + 92, 16, 0)
+        for index, (rva, size) in directories.items():
+            struct.pack_into("<II", pe, opt + 96 + 8 * index, rva, size)
     at = opt + 0xE0
     for name, rva, data, flags, foff, size in secs:
         pe[at:at + 8] = name.ljust(8, b"\0")
@@ -855,3 +860,138 @@ def test_no_address_of_the_game_is_written_in_the_runtime_outside_the_profile_ta
             if lit not in allowed.get(name, ()):
                 bad.append(f"{name}: {m.group(0)}")
     assert bad == [], "an address of the game outside src/port/profile.c: " + ", ".join(bad)
+
+
+# ---- what the lifter knows of the game's libraries and of the calls Spells of the Ancients adds ---------------------------------------------------------------------
+def export_section(rva, exports):
+    """The bytes of an export table at `rva` for [(name, function rva)]: the directory, the function and name tables, the ordinals and the names."""
+    import struct  # noqa: PLC0415
+    n = len(exports)
+    head = 40
+    funcs, names, ords = rva + head, rva + head + 4 * n, rva + head + 8 * n
+    strings = rva + head + 10 * n
+    blob, name_rvas, at = b"", [], strings
+    for name, _ in exports:
+        name_rvas.append(at)
+        blob += name.encode() + b"\0"
+        at += len(name) + 1
+    out = struct.pack("<IIHHIIIIIII", 0, 0, 0, 0, rva + head + 10 * n + len(blob), 1, n, n, funcs, names, ords)
+    out += b"".join(struct.pack("<I", f) for _, f in exports) + b"".join(struct.pack("<I", r) for r in name_rvas)
+    out += b"".join(struct.pack("<H", k) for k in range(n)) + blob + b"\0"
+    return out
+
+
+def write_library(path):
+    """A library with three exports whose conventions are in their code: StdTwo (`ret 8`: stdcall, two words), CdeclTwo (reads [ebp+0xc], plain `ret`: cdecl, two words) and
+    ThunkThree (a `jmp` to a function that reads [ebp+0x10] and does `ret 12`: the thunk is that function)."""
+    code = bytearray(0x100)
+    code[0x00:0x0a] = bytes.fromhex("8b442404" "03442408" "c20800")[:10]
+    code[0x10:0x18] = bytes.fromhex("55" "8bec" "8b450c" "5d" "c3")
+    code[0x20:0x25] = bytes.fromhex("e90b000000")
+    code[0x30:0x39] = bytes.fromhex("55" "8bec" "8b4510" "5d" "c20c00")
+    exports = [("StdTwo", 0x1000), ("CdeclTwo", 0x1010), ("ThunkThree", 0x1020)]
+    table = export_section(0x2000, exports)
+    tiny_pe(path, [(b".text", 0x1000, bytes(code), 0x60000020), (b".edata", 0x2000, table, 0x40000040)], 0x1000, image_base=0x10000000, directories={0: (0x2000, len(table))})
+
+
+def test_a_librarys_exports_say_their_calling_conventions(tmp_path):
+    import libsigs  # noqa: PLC0415
+    lib = tmp_path / "cardartlib.dll"
+    write_library(str(lib))
+    assert libsigs.export_signatures(str(lib)) == {"StdTwo": (2, 8), "CdeclTwo": (2, 0), "ThunkThree": (3, 12)}
+
+
+def test_the_game_s_own_libraries_are_the_ones_in_its_folder_that_windows_does_not_supply(tmp_path):
+    import libsigs  # noqa: PLC0415
+    from types import SimpleNamespace  # noqa: PLC0415
+    for n in ("CardArtLib.DLL", "MSVCRT.DLL", "other.dll"):
+        (tmp_path / n).write_bytes(b"MZ")
+    pe = SimpleNamespace(DIRECTORY_ENTRY_IMPORT=[SimpleNamespace(dll=n) for n in (b"cardartlib.dll", b"KERNEL32.dll", b"MSVCRT.dll", b"CARDARTLIB.DLL", b"missing.dll")])
+    found = libsigs.own_libraries(pe, str(tmp_path))
+    assert list(found) == ["cardartlib.dll"] and os.path.basename(found["cardartlib.dll"]) == "CardArtLib.DLL"      # the copy of the C runtime is Windows' name, and `other.dll` is imported by nothing
+
+
+def test_registered_export_signatures_are_found_after_the_documented_ones(tmp_path):
+    import import_signatures as sigs  # noqa: PLC0415
+    import libsigs  # noqa: PLC0415
+    from types import SimpleNamespace  # noqa: PLC0415
+    write_library(str(tmp_path / "CardArtLib.dll"))
+    prog = tmp_path / "shandalar.exe"
+    prog.write_bytes(b"MZ")
+    pe = SimpleNamespace(DIRECTORY_ENTRY_IMPORT=[SimpleNamespace(dll=b"cardartlib.dll")])
+    saved = dict(sigs.LIBRARY)
+    try:
+        sigs.LIBRARY.clear()
+        assert sigs.signature("cardartlib.dll", "ThunkThree") is None
+        assert libsigs.register(pe, str(prog)) == ["cardartlib.dll"]
+        assert sigs.signature("cardartlib.dll", "ThunkThree") == (3, 12) and sigs.signature("cardartlib.dll", "CdeclTwo") == (2, 0)
+        assert sigs.signature("kernel32.dll", "Sleep") == (1, 4)                   # a documented one is not looked up in a library
+        assert sigs.signature("deckdll.dll", "ThunkThree") is None                 # the name alone is not enough: the library has to be the one
+    finally:
+        sigs.LIBRARY.clear()
+        sigs.LIBRARY.update(saved)
+
+
+def test_the_calls_spells_of_the_ancients_makes_have_their_documented_signatures():
+    import import_signatures as sigs  # noqa: PLC0415
+    want = {
+        ("advapi32.dll", "RegOpenKeyA"): (3, 12), ("advapi32.dll", "RegCreateKeyA"): (3, 12), ("comdlg32.dll", "GetFileTitleA"): (3, 12), ("gdi32.dll", "ExtTextOutA"): (8, 32),
+        ("gdi32.dll", "RectInRegion"): (2, 8), ("kernel32.dll", "GetThreadTimes"): (5, 20), ("kernel32.dll", "GetVersionExA"): (1, 4), ("kernel32.dll", "GetWindowsDirectoryA"): (2, 8),
+        ("kernel32.dll", "ResumeThread"): (1, 4), ("kernel32.dll", "SuspendThread"): (1, 4), ("kernel32.dll", "WinExec"): (2, 8), ("user32.dll", "GetUpdateRect"): (3, 12),
+        ("user32.dll", "GetUpdateRgn"): (3, 12), ("user32.dll", "ChangeDisplaySettingsA"): (2, 8), ("kernel32.dll", "GetDiskFreeSpaceA"): (5, 20), ("user32.dll", "SetRectEmpty"): (1, 4),
+        ("user32.dll", "EqualRect"): (2, 8), ("kernel32.dll", "TlsAlloc"): (0, 0), ("kernel32.dll", "TlsFree"): (1, 4), ("kernel32.dll", "TlsGetValue"): (1, 4),
+        ("kernel32.dll", "TlsSetValue"): (2, 8), ("kernel32.dll", "GetLocaleInfoA"): (4, 16), ("kernel32.dll", "GetLocaleInfoW"): (4, 16), ("kernel32.dll", "GetVolumeInformationA"): (8, 32),
+        ("user32.dll", "RegisterWindowMessageA"): (1, 4), ("kernel32.dll", "GetCurrentThreadId"): (0, 0), ("kernel32.dll", "SetLastError"): (1, 4),
+        # the C runtime's: the caller pops, so nothing is popped by the callee; the number is the words a call copies (12 for the two that take what the format asks)
+        ("msvcrt.dll", "longjmp"): (2, 0), ("msvcrt.dll", "_setjmp3"): (12, 0), ("msvcrt.dll", "qsort"): (4, 0), ("msvcrt.dll", "strcoll"): (2, 0),
+        ("msvcrt.dll", "_beginthreadex"): (6, 0), ("msvcrt.dll", "_spawnl"): (12, 0), ("msvcrt.dll", "_findfirst"): (2, 0), ("msvcrt.dll", "_findnext"): (2, 0), ("msvcrt.dll", "_findclose"): (1, 0),
+    }
+    for (dll, name), sig in want.items():
+        assert sigs.signature(dll, name) == sig, (dll, name)
+    assert sigs.signature("kernel32.dll", "NoSuchCallEver") is None
+
+
+def test_the_master_card_table_is_found_by_its_pattern(tmp_path):
+    import struct  # noqa: PLC0415
+    import pefile  # noqa: PLC0415
+    import mastertable  # noqa: PLC0415
+    records = 100
+    data = bytearray()
+    for k in range(records):
+        rec = bytearray(0x48)
+        struct.pack_into("<I", rec, 0x10, 0x401000 + 0x20 * (k % 50))        # the code pointer of the card's rules: 50 handlers, each shared by two cards
+        struct.pack_into("<I", rec, 0, k + 1)
+        data += rec
+    pe_path = tmp_path / "SHANDALAR.EXE"
+    tiny_pe(str(pe_path), [(b".text", 0x1000, b"\x90" * 0x1000, 0x60000020), (b".data", 0x3000, b"\0" * 0x40 + bytes(data) + b"\0" * 0x100, 0xC0000040)], 0x1000)
+    pe = pefile.PE(str(pe_path))
+    start, count = mastertable.find(pe, 0x48)
+    assert (start, count) == (0x400000 + 0x3000 + 0x40, records)
+    handlers = mastertable.handler_addresses(pe, start, 0x48)
+    assert handlers == [0x401000 + 0x20 * k for k in range(50)]
+    assert mastertable.find(pe, 0x34)[1] < records                                # another stride is another table (or none)
+    few = tmp_path / "FEW.EXE"
+    tiny_pe(str(few), [(b".text", 0x1000, b"\x90" * 0x1000, 0x60000020), (b".data", 0x3000, bytes(data[:0x48 * 10]) + b"\0" * 0x100, 0xC0000040)], 0x1000)
+    assert mastertable.find(pefile.PE(str(few)), 0x48) == (0, 0)                  # ten records are not a table
+
+
+def test_the_library_bases_of_the_builds_are_the_bases_of_the_runtime_s_rows():
+    import re  # noqa: PLC0415
+    import builds  # noqa: PLC0415
+    text = open(os.path.join(ROOT, "src", "port", "profile.c")).read()
+    rows = {(b, f): int(base, 16) for b, f, base in re.findall(r'\.build = "([^"]+)", \.file = "([^"]+)", \.program = "", \.base = (0x[0-9a-fA-F]+)', text)}
+    want = {(b, f): base for b, libs in builds.LIBRARY_BASES.items() for f, base in libs.items()}
+    assert rows == want
+    lifted = {f for b, f, _, role in builds.KNOWN if b == "v2.15" and role == "lifted"}
+    modules = {exe for exe, _ in builds.SOTA_MODULES.values()} | set(builds.LIBRARY_BASES["v2.15"])
+    assert lifted == modules                                                       # every lifted file of the build is lifted as a program or a library, and nothing else is
+    assert {lib for _, libs in builds.SOTA_MODULES.values() for lib in libs} <= set(builds.LIBRARY_BASES["v2.15"])
+
+
+def test_the_build_of_2_15_is_the_six_files_of_the_patch_over_the_expansion_s():
+    import builds  # noqa: PLC0415
+    f = builds.fingerprints("v2.15")
+    assert f["shandalar.exe"] == "e4e46718c451974756b66e7666ac0bf1cc9ebdbc5897eb04a87b8ea2a02353e7" and f["deckdll.dll"] == "ce741d1f5547c143fd8494bbe09c26e918b892a3d9fc3c3761babb3c8268a667"
+    assert builds.name_of("SHANDALAR.EXE", f["shandalar.exe"]) == "v2.15 shandalar.exe"             # (the case of the name does not matter)
+    assert builds.name_of("MAGIC.EXE", f["shandalar.exe"]) is None
+    assert set(builds.fingerprints("v1.0")).isdisjoint({k for k in f if k not in ("DECK.EXE", "STATWIN.DLL", "MAGSND.DLL", "MAGVID.DLL")})

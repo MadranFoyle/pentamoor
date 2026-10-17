@@ -369,6 +369,60 @@ static void test_small_text_coverage(void)
 
 int pe_find_resource(uint32_t hinst, uint32_t type, uint32_t name, uint32_t *addr, uint32_t *size) { (void)hinst; (void)type; (void)name; (void)addr; (void)size; return 0; }
 
+/* What Spells of the Ancients asks of the graphics layer: whether a rectangle touches a region, text with a rectangle, the width of a character that arrives sign-extended, and the
+ * desktop's device context given back (it opens one for every character it measures) */
+static void test_sota_calls(void)
+{
+    Window *win = window_with_surface(32, 32);
+    uint32_t rgn = API("CreateRectRgn", 10, 10, 20, 20), rc = scratch(16), abc = scratch(64 * 12), hdc = API("GetDC", win->hwnd), h1, h2, own;
+
+    WR32(rc, 15); WR32(rc + 4, 15); WR32(rc + 8, 30); WR32(rc + 12, 30);
+    CHECK(API("RectInRegion", rgn, rc) == 1);
+    WR32(rc, 20); WR32(rc + 4, 20);
+    CHECK(API("RectInRegion", rgn, rc) == 0);                                          /* both are half open: x = 20 is outside */
+    WR32(rc, 0); WR32(rc + 4, 0); WR32(rc + 8, 10); WR32(rc + 12, 10);
+    CHECK(API("RectInRegion", rgn, rc) == 0);
+    WR32(rc + 8, 11); WR32(rc + 12, 11);
+    CHECK(API("RectInRegion", rgn, rc) == 1);
+    WR32(rc, 12); WR32(rc + 4, 12); WR32(rc + 8, 12); WR32(rc + 12, 12);
+    CHECK(API("RectInRegion", rgn, rc) == 0);                                          /* an empty rectangle touches nothing */
+    CHECK(API("RectInRegion", 0x1234, rc) == 0);
+
+    /* ExtTextOutA with ETO_OPAQUE and no text fills the rectangle with the background colour; the rest is as it was */
+    API("SetBkColor", hdc, RGB(10, 20, 30));
+    WR32(rc, 2); WR32(rc + 4, 2); WR32(rc + 8, 6); WR32(rc + 12, 5);
+    CHECK(API("ExtTextOutA", hdc, 0, 0, 2, rc, 0, 0, 0) == 1);
+    CHECK(API("GetPixel", hdc, 2, 2) == RGB(10, 20, 30) && API("GetPixel", hdc, 5, 4) == RGB(10, 20, 30));
+    CHECK(API("GetPixel", hdc, 6, 2) != RGB(10, 20, 30) && API("GetPixel", hdc, 2, 5) != RGB(10, 20, 30));
+    {
+        uint32_t txt = scratch(8), dx = scratch(16), outside = API("GetPixel", hdc, 20, 20);
+
+        memcpy(G + txt, "ab", 3);
+        WR32(dx, 5); WR32(dx + 4, 5);
+        CHECK(API("ExtTextOutA", hdc, 0, 0, 4, rc, txt, 2, dx) == 1);                  /* ETO_CLIPPED with the characters' own advances: nothing outside the rectangle */
+        CHECK(API("GetPixel", hdc, 20, 20) == outside);
+        CHECK(API("ExtTextOutA", hdc, 8, 8, 0, 0, txt, 2, 0) == 1);                    /* plain, like TextOut */
+    }
+
+    /* a character with its sign extended is a range that ends at 0xFFFFFFFF: one character, not four billion */
+    CHECK(API("GetCharABCWidthsA", hdc, 0xFFFFFFFFu, 0xFFFFFFFFu, abc) == 1);
+    CHECK(API("GetCharABCWidthsA", hdc, 0xFFFFFFE9u, 0xFFFFFFE9u, abc) == 1);
+    CHECK(API("GetCharWidthA", hdc, 0xFFFFFFFFu, 0xFFFFFFFFu, abc) == 1);
+    CHECK(API("GetCharABCWidthsA", hdc, 5, 4, abc) == 0 && API("GetCharWidthA", hdc, 0, 0x10000, abc) == 0);     /* backwards, and more than a font has */
+    CHECK(API("GetCharWidthA", hdc, 65, 66, abc) == 1 && API("GetCharABCWidthsA", hdc, 65, 66, abc) == 1);
+
+    /* the desktop's context is given back by ReleaseDC and its handle is the next one's; a window's own is kept (a window class with CS_OWNDC has one for good) */
+    h1 = API("GetDC", 0);
+    API("ReleaseDC", 0, h1);
+    h2 = API("GetDC", 0);
+    CHECK(h2 == h1 && API("GetCharWidthA", h2, 65, 65, abc) == 1);
+    API("ReleaseDC", 0, h2);
+    own = API("GetDC", win->hwnd);
+    API("ReleaseDC", win->hwnd, own);
+    CHECK(API("GetPixel", own, 1, 1) != 0xFFFFFFFFu);                                    /* still a context for the window */
+    API("ReleaseDC", 0, 0x12345678u);                                                    /* what is not a context is left alone */
+}
+
 int main(void)
 {
     extern void kernel32_init(void);
@@ -388,6 +442,7 @@ int main(void)
     test_card_text_metrics();
     test_text();
     test_small_text_coverage();
+    test_sota_calls();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

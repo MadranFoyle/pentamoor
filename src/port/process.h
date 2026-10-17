@@ -58,8 +58,10 @@ int proc_wait(long id);
 
 /* The arguments this process was started with ($PORT_CMDLINE), or "" */
 const char *proc_args(void);
-/* The command line the guest sees: "C:\Magic\Program\NAME.EXE" and the arguments. */
+/* The command line the guest sees: GetCommandLineA's ("C:\MAGIC\PROGRAM\NAME.EXE" in capitals, then the arguments), and the C runtime's argv[0] with the arguments
+ * ("C:\Magic\Program\" and the file's name as it is spelled). */
 void proc_command_line(char *out, size_t cap);
+void proc_program_path(char *out, size_t cap);
 
 /* The guest's handles for children (CreateProcessA, _spawnl with P_NOWAIT): numbers apart from kernel32's. */
 uint32_t proc_handle_new(long id);

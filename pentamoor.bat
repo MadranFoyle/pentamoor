@@ -1,5 +1,6 @@
 @echo off
-rem pentamoor.bat [deck|duel] [more arguments]: run the game (or its standalone deck builder or duel program). The same as ./pentamoor.
+rem pentamoor.bat [deck|duel|sota] [more arguments]: run the game (or its standalone deck builder or duel program). The same as ./pentamoor. `sota` is Spells of the Ancients 2.15 (experimental):
+rem the folder that holds its shandalar.exe is %PENTAMOOR_SOTA% (default sources\installed_sota\Program), built by tools\install\install_sota.py (docs/notes/sota-comparison.md, "Milestone 1").
 rem Double click it: the first time it offers to install the game (it asks for your disc image, an .iso file; type or paste the path or drag the file onto the window), then it runs it.
 rem Drop an .iso file on it, or pentamoor.bat "D:\MTG v1.0.iso", to install from that disc image first.
 rem It starts the runtime (pentamoor-run.exe, no game code in it) with the game module (game_magic.dll, game_deck.dll or game_duel.dll, the C made from your own files) for
@@ -25,7 +26,13 @@ if /i "%~x1"==".iso" if exist "%~1" (
 
 set "PROG=magic"
 set "EXE=MAGIC.EXE"
-if /i "%~1"=="deck" (
+if /i "%~1"=="sota" (
+  set "PROG=shandalar"
+  set "EXE=shandalar.exe"
+  set "GAME=%PENTAMOOR_SOTA%"
+  if "%PENTAMOOR_SOTA%"=="" set "GAME=sources\installed_sota\Program"
+  shift
+) else if /i "%~1"=="deck" (
   set "PROG=deck"
   set "EXE=DECK.EXE"
   shift
@@ -41,6 +48,9 @@ set "RUN=%PENTAMOOR_RUN%"
 if "%RUN%"=="" set "RUN=%BUILD%\pentamoor-run.exe"
 set "MODULE=%PENTAMOOR_MODULE%"
 if "%MODULE%"=="" set "MODULE=%BUILD%\game_%PROG%.dll"
+
+rem Spells of the Ancients: no installer offer (it is built from a folder you assembled: python tools\install\install_sota.py)
+if "%PROG%"=="shandalar" goto checks
 
 rem not installed (or not built) yet: in a release, offer to run the installer now
 set "WHY="

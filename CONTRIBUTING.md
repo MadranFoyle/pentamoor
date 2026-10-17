@@ -196,6 +196,7 @@ All are environment variables. This table is the whole list of the ones the runt
 | `PORT_AUDIO_DUMP=FILE` | write what the audio device was given (signed 16 bit stereo, 22,050 Hz) |
 | `PORT_COV=FILE`, `PORT_WATCH` | a coverage build only (`make -C src/port BUILD=build_cov EXTRA=-DLIFT_TRACE`): the lifted instructions that ran; every write to a stretch of guest memory (docs/PHASE_C.md) |
 | `PENTAMOOR_GAME`, `PENTAMOOR_RUN`, `PENTAMOOR_MODULE` | the launcher `./pentamoor`: the folder that holds `MAGIC.EXE` (default `sources/installed/Magic/Program`), another runtime binary, another game module |
+| `PENTAMOOR_SOTA` | the launcher `./pentamoor sota` (and `pentamoor.bat sota`): the folder that holds a Spells of the Ancients 2.15 `SHANDALAR.EXE` (default `sources/installed_sota/Program`); `tools/install/install_sota.py` checks such a folder and builds its modules |
 | `PENTAMOOR_CC` | the installer's C compiler (as `--compiler`), for the module build without `make` |
 | `PENTAMOOR_TEAM`, `PENTAMOOR_BUNDLE_ID`, `PENTAMOOR_DEVICE`, `PENTAMOOR_IOS_CONFIG` | `tools/ios/deploy.sh` only: the Apple team, the app's bundle id, the iPad, and the settings file that holds them (docs/notes/ios.md, "One command") |
 

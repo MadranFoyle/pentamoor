@@ -37,7 +37,7 @@ static void crt_init(void)
     argc_cell = heap_alloc(4);
     environ_cell = heap_alloc(4);
     acmdln_cell = heap_alloc(4);
-    proc_command_line(line, sizeof(line));                    /* the program's path and the arguments the program that started it gave (process.h) */
+    proc_program_path(line, sizeof(line));                    /* the program's path and the arguments the program that started it gave (process.h) */
     len = strlen(line);
     strings = heap_alloc((uint32_t)len + 1);
     strcpy(P(strings), line);
@@ -375,6 +375,8 @@ static void find_add(FindCollect *c, const char *name, int is_dir)
     snprintf(lpat, sizeof(lpat), "%s", c->pattern);
     find_lower(lname);
     find_lower(lpat);
+    if (!strcmp(lpat, "*.*"))
+        strcpy(lpat, "*");                                      /* the DOS pattern for every name, one with no dot too */
     if (!port_glob(lpat, lname))
         return;
     if (c->n == c->cap) {
