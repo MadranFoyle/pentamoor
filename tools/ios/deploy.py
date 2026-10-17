@@ -769,11 +769,17 @@ class Deployer(object):
         # where the game's code comes from
         have_prebuilt = os.path.isfile(os.path.join(self.root, "prebuilt", "iphonesimulator" if self.sim else "iphoneos", "game_magic.o"))
         self.libs, why, warning = choose_libs(self.kit, "iphonesimulator" if self.sim else "iphoneos", sv, o.rebuild, o.prebuilt, have_prebuilt)
-        if self.libs == "sources" and self.kit is None and not o.data_only and not o.no_build and not os.path.isfile(os.path.join(self.root, "sources", "generated", "lift_magic_all", "handlers_gen.c")):
-            raise Fail("the game has not been lifted here (sources/generated/lift_magic_all is missing)", "install and lift it first (tools/install/install.py ... --build, or tools/lift/lift_all.sh), "
-                       "or use an iPad kit made on a Mac that has")
-        if self.libs == "sources" and self.kit is not None and not os.path.isdir(os.path.join(self.root, "sources", "generated")):
-            raise Fail("this kit has no lifted C and no prebuilt objects for this SDK")
+        missing = None
+        if self.libs == "sources" and "project" in self.steps:
+            if self.kit is None and not os.path.isfile(os.path.join(self.root, "sources", "generated", "lift_magic_all", "handlers_gen.c")):
+                missing = Fail("the game has not been lifted here (sources/generated/lift_magic_all is missing)", "install and lift it first (tools/install/install.py ... --build, or tools/lift/lift_all.sh), "
+                               "or use an iPad kit made on a Mac that has")
+            elif self.kit is not None and not os.path.isdir(os.path.join(self.root, "sources", "generated")):
+                missing = Fail("this kit has no lifted C and no prebuilt objects for this SDK")
+        if missing and not self.r.dry:
+            raise missing
+        if missing:
+            warning = "%s (a real run would stop here)" % missing
         self.data_dir = self.find_data() if "data" in self.steps else None
         bits = []
         if xv:
@@ -1166,6 +1172,8 @@ class Deployer(object):
     # ---- the whole run ----
     def plan(self):
         o = self.o
+        if o.list_devices:
+            return ["device"]
         if o.logs:
             return ["prerequisites", "device", "signing", "logs"]
         steps = ["prerequisites", "device", "signing"]

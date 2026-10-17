@@ -214,7 +214,7 @@ KIT = {"with_sources": False, "xcode": {"version": "27.0"}, "sdk": {"iphoneos": 
 
 def test_choose_libs():
     assert dp.choose_libs(None, "iphoneos", "27.0")[0] == "sources"
-    assert dp.choose_libs(KIT, "iphoneos", "27.0")[::2] == ("prebuilt", None) or dp.choose_libs(KIT, "iphoneos", "27.0")[0] == "prebuilt"
+    assert dp.choose_libs(KIT, "iphoneos", "27.0")[0] == "prebuilt"
     assert dp.choose_libs(KIT, "iphoneos", "27.0")[2] is None
     mode, why, warn = dp.choose_libs(KIT, "iphoneos", "26.4")                  # another SDK, no lifted C in the kit: link anyway, say so
     assert mode == "prebuilt" and "26.4" in warn and "--with-sources" in warn
@@ -291,7 +291,7 @@ def test_command_shapes():
     dev, b = "UDID1", "com.x.pentamoor"
     c = dp.cmd_build("/p/P.xcodeproj", "/d", "platform=iOS,id=UDID1", "ABCDE12345", b)
     assert c[:5] == ["xcodebuild", "-project", "/p/P.xcodeproj", "-scheme", "Pentamoor"] and "-allowProvisioningUpdates" in c and "-allowProvisioningDeviceRegistration" in c
-    assert c[-3:] == ["DEVELOPMENT_TEAM=ABCDE12345", "PRODUCT_BUNDLE_IDENTIFIER=com.x.pentamoor", "build"] or c[-1] == "build"
+    assert c[-1] == "build"
     assert "DEVELOPMENT_TEAM=ABCDE12345" in c and "PRODUCT_BUNDLE_IDENTIFIER=com.x.pentamoor" in c and c[c.index("-destination") + 1] == "platform=iOS,id=UDID1"
     sim = dp.cmd_build("/p/P.xcodeproj", "/d", "platform=iOS Simulator,id=U", "", b, device=False)
     assert "-allowProvisioningUpdates" not in sim and not [a for a in sim if a.startswith("DEVELOPMENT_TEAM")]
@@ -300,7 +300,7 @@ def test_command_shapes():
     assert dp.cmd_launch(dev, b)[-2:] == ["--terminate-existing", b] and dp.cmd_launch(dev, b, True)[-2:] == ["--console", b]
     assert dp.built_app_path("/d") == "/d/Build/Products/Release-iphoneos/Pentamoor.app" and dp.built_app_path("/d", False).endswith("Release-iphonesimulator/Pentamoor.app")
     g = dp.cmd_gen_project("/o", "ABCDE12345", b, True, "/kit/prebuilt")
-    assert g[-5:] == ["--team", "ABCDE12345", "--entitlements", "--prebuilt", "/kit/prebuilt"] or ("--entitlements" in g and "--prebuilt" in g)
+    assert "--entitlements" in g and g[g.index("--prebuilt") + 1] == "/kit/prebuilt" and g[g.index("--team") + 1] == "ABCDE12345"
 
 
 def test_selftest_flag_search():
@@ -347,7 +347,7 @@ def test_dry_run_variants(tmp_path, capsys):
     game = make_game(str(tmp_path / "Magic"))
     base = ["--dry-run", "--device-json", os.path.join(DATA, "devices-ipad.json"), "--team", "ABCDE12345", "--data", game, "--work", str(tmp_path / "w")]
     rc, out, _ = run_main(capsys, *base, "--no-data", "--no-launch")
-    assert rc == 0 and "copy to" not in out and "process launch" not in out and "[6/6]" in out or "[6/" in out
+    assert rc == 0 and "copy to" not in out and "process launch" not in out and "[6/6] install" in out
     rc, out, _ = run_main(capsys, *base, "--data-only")
     assert rc == 0 and "xcodebuild" not in out and "install app" not in out and "copy to" in out
     rc, out, _ = run_main(capsys, *base, "--logs")
