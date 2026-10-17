@@ -723,7 +723,7 @@ static uint32_t put16(uint32_t at, uint32_t v) { WR16(at, v); return at + 2; }
 static uint32_t put32(uint32_t at, uint32_t v) { WR32(at, v); return at + 4; }
 static uint32_t putwide(uint32_t at, const char *s) { do { at = put16(at, (uint8_t)*s); } while (*s++); return at; }
 
-static int keydlg;      /* 1: the dialog under test has no OK or Cancel: Enter has to reach it as a character */
+static int keydlg;      /* 1: the dialog under test has no OK or Cancel but a push button: Enter reaches it as a character. 2: nothing at all that could take Enter (the "You won!" screen): the dialog gets IDOK as a command, Space is the character that closes it */
 
 static uint32_t dlgproc(const uint32_t *a)
 {
@@ -732,9 +732,16 @@ static uint32_t dlgproc(const uint32_t *a)
             wm_inject_key(0x0D, 0x1C, 1, 0x0D, 0);
             return 1;
         }
+        if (a[1] == WM_COMMAND) {                  /* Enter, as the dialog manager sends it when nothing in the dialog could take it */
+            note("COMMAND(%u) ", a[2]);
+            if (keydlg == 2)
+                wm_inject_key(0x20, 0x39, 1, ' ', 0);
+            return 1;
+        }
         if (a[1] == WM_CHAR) {
             note("CHAR(%u) ", a[2]);
-            API("EndDialog", a[0], 7);
+            if (keydlg == 1 || a[2] == ' ')
+                API("EndDialog", a[0], 7);
             return 1;
         }
         return 0;
@@ -833,22 +840,44 @@ static void test_dialog(void)
     CHECK(r == 42);
     CHECK(strstr(log_, "INIT(first=") == log_ && strstr(log_, ") OK ") != NULL);
 
-    /* a dialog with neither an OK nor a Cancel control (the duel's "You won!" screen) gets the keys itself, as characters */
+    /* a dialog with neither an OK nor a Cancel control gets the keys itself, as characters, when it has a push button (it may be the focus's) */
     t = scratch(128); o = t;
-    o = put32(o, 0x80C80000u); o = put32(o, 0); o = put16(o, 1);
+    o = put32(o, 0x80C80000u); o = put32(o, 0); o = put16(o, 2);
     o = put16(o, 5); o = put16(o, 5); o = put16(o, 100); o = put16(o, 80);
     o = put16(o, 0); o = put16(o, 0); o = putwide(o, "Keys");
     o = (o + 3) & ~3u;
     o = put32(o, WS_CHILD | WS_VISIBLE); o = put32(o, 0);
     o = put16(o, 10); o = put16(o, 20); o = put16(o, 30); o = put16(o, 12); o = put16(o, 50);
     o = put16(o, 0xFFFF); o = put16(o, 0x0082); o = putwide(o, "text"); o = put16(o, 0);
+    o = (o + 3) & ~3u;
+    o = put32(o, WS_CHILD | WS_VISIBLE | WS_TABSTOP); o = put32(o, 0);
+    o = put16(o, 10); o = put16(o, 40); o = put16(o, 30); o = put16(o, 12); o = put16(o, 51);
+    o = put16(o, 0xFFFF); o = put16(o, 0x0080); o = putwide(o, "Next"); o = put16(o, 0);
     dlg_template = t;
     dlg_size = o - t;
     keydlg = 1;
     log_clear();
     r = API("DialogBoxParamA", 0x400000, 102, 0, port_host_function(dlgproc), 0);
     keydlg = 0;
-    CHECK(r == 7 && strstr(log_, "CHAR(13)") != NULL);
+    CHECK(r == 7 && strstr(log_, "CHAR(13)") != NULL && strstr(log_, "COMMAND") == NULL);
+
+    /* the "You won!" screen of a duel that is not a Gauntlet's: a text and nothing that could take Enter (its two buttons are hidden). The original's dialog manager sends the procedure
+     * WM_COMMAND with IDOK, which it ignores, and no WM_CHAR 13: Enter does not close it. Space is a character and does (a click does too, not tried here). */
+    t = scratch(128); o = t;
+    o = put32(o, 0x80C80000u); o = put32(o, 0); o = put16(o, 1);
+    o = put16(o, 5); o = put16(o, 5); o = put16(o, 100); o = put16(o, 80);
+    o = put16(o, 0); o = put16(o, 0); o = putwide(o, "Won");
+    o = (o + 3) & ~3u;
+    o = put32(o, WS_CHILD | WS_VISIBLE); o = put32(o, 0);
+    o = put16(o, 10); o = put16(o, 20); o = put16(o, 30); o = put16(o, 12); o = put16(o, 50);
+    o = put16(o, 0xFFFF); o = put16(o, 0x0082); o = putwide(o, "text"); o = put16(o, 0);
+    dlg_template = t;
+    dlg_size = o - t;
+    keydlg = 2;
+    log_clear();
+    r = API("DialogBoxParamA", 0x400000, 103, 0, port_host_function(dlgproc), 0);
+    keydlg = 0;
+    CHECK(r == 7 && strstr(log_, "COMMAND(1) ") != NULL && strstr(log_, "CHAR(13)") == NULL && strstr(log_, "CHAR(32)") != NULL);
 }
 
 
@@ -1958,7 +1987,7 @@ static void test_screens(void)
     screen_w = 1024; screen_h = 768;
     CHECK(screens_kind(0.0) == SCREEN_NONE);
     screens_note(0x47a8f9, 0, SRC_TABLE, 1.0);                                              /* the title menu's loop */
-    CHECK(screens_kind(1.1) == SCREEN_TABLE && screens_kind(1.5) == SCREEN_NONE);           /* and a loop that has stopped passing is not on */
+    CHECK(screens_kind(1.1) == SCREEN_TITLE && screens_kind(1.5) == SCREEN_NONE);           /* and a loop that has stopped passing is not on (the title menu is told apart: Escape leaves the game there) */
     screens_note(0x4e78db, 0, SRC_SNAPSHOT, 2.0);                                           /* the overworld: the D-pad stays the arrow keys */
     CHECK(screens_kind(2.0) == SCREEN_NONE);
     screens_note(0x4e7900, 0, SRC_TABLE, 2.1);

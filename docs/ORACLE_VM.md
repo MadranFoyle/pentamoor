@@ -158,6 +158,6 @@ end turn, attack, block. What worked, from a duel that reached combat on both si
   Do not run two debugger clients: the second waits for ever, and one that is killed while the guest is stopped leaves it stopped (`oracle_ctl.py status` says `debug`; `probe_hits.py 0` starts it again).
 - **Writing a variable** (to win a duel): stop the guest inside the game first, then write; a poke from `oracle_qemu.GDBRemote` at an arbitrary stop lands in another process's page tables. A breakpoint on 0x4b42dc
   (the function that copies the drawn life totals, see `duel-won.md`) is hit by the next click on Done, and there the write to 0x6a4a04 (the opponent's life) is safe.
-- **The "You won!" dialog** has no buttons: a click closes it, Return does not (it does in the port).
+- **The "You won!" dialog** has no (visible) buttons: a click closes it, Return does not (the port now agrees: `docs/notes/dialogs.md`, "Enter in a dialog with nothing to press").
 - **The pointer**: after a move, check the arrow in a screenshot, not the number you asked for: the arrow's tip is where QMP's count put it, 1 to 2 pixels off, and a move that did not finish leaves it elsewhere; a click on
   a card or a button that is 1 pixel off the row above is the usual "nothing happened".

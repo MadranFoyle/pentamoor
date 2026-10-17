@@ -33,14 +33,15 @@
 typedef struct { ProfRange range; int kind; } Loop;
 /* the loops, in the profile's ranges: pace.map_loop (the overworld: walking is the arrow keys (the D-pad stays that), its buttons are for the stick), textmenu.loop (the text menu), buycards.loop
  * ("Cards for Sale": the Done button is in the table, the cards are boxes in the function's locals), clues.loop (Dungeon & Castle Clues: the arrows and Done are in the table, the twelve rows are
- * tested by the loop itself) */
-#define NLOOPS 4
+ * tested by the loop itself), title.loop (the title menu: a table screen, told apart because Escape leaves the game there: pad.c's Back button) */
+#define NLOOPS 5
 static void loops_of(const BuildProfile *p, Loop out[NLOOPS])
 {
     out[0] = (Loop){p->pace.map_loop, SCREEN_NONE};
     out[1] = (Loop){p->textmenu.loop, SCREEN_TEXTMENU};
     out[2] = (Loop){p->buycards.loop, SCREEN_BUYCARDS};
     out[3] = (Loop){p->clues.loop, SCREEN_CLUES};
+    out[4] = (Loop){p->title.loop, SCREEN_TITLE};
 }
 
 /* The locals of the "Cards for Sale" loop (0x509517; the frame is the one lift_out.ebp holds when the loop calls out): the number of cards (buycards.count_ebp, ebp - 0xa8), and for each a box at
@@ -259,7 +260,8 @@ static int collect_clues(NavTarget *out, int max)
 int screens_collect(NavTarget *out, int max, double now)
 {
     switch (screens_kind(now)) {
-    case SCREEN_TABLE: return collect_table(out, max);
+    case SCREEN_TABLE:
+    case SCREEN_TITLE: return collect_table(out, max);
     case SCREEN_TEXTMENU: return collect_textmenu(out, max);
     case SCREEN_BUYCARDS: return collect_buycards(out, max);
     case SCREEN_CLUES: return collect_clues(out, max);

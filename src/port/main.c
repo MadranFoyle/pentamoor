@@ -5,10 +5,12 @@
 #include <unistd.h>
 
 #include "front.h"
+#include "pad.h"
 #include "plat.h"
 #include "port.h"
 #include "profile.h"
 #include "sched.h"
+#include "screens.h"
 
 void port_index_functions(void);
 void kernel32_init(void);
@@ -42,6 +44,9 @@ void port_run(const Image *img)
 
 typedef struct { int argc; char **argv; } Args;
 
+/* pad.h's guard for the Back button: whether the title menu is the screen that is on */
+static int title_guard(void) { return screens_kind(port_now()) == SCREEN_TITLE; }
+
 static int game_main(void *p)
 {
     Args *args = p;
@@ -65,6 +70,7 @@ static int game_main(void *p)
     pace_install();
     textfocus_install();
     screens_install();
+    pad_set_back_guard(title_guard);            /* Back (Escape) leaves the game from the title menu with no question: there it has to be held (pad.h) */
     yesno_install();
     sound_install();
     video_install();

@@ -51,6 +51,7 @@ typedef struct {
     struct { int phase, t; } dbl;  /* a double click in progress (PB_DCLICK): phase 0 none, 1 first press held, 2 between, 3 second press held; t the ms in this phase */
     int nav;                      /* the game has things to move between now (a duel, a dialog, a menu): the D-pad moves the pointer between them (PB_NAV) instead of pressing its arrow key */
     struct { int on, nav, next; } dp[4];                                                      /* PB_NAV controls held: whether the press was a move (else its key is down), and the next repeat */
+    struct { int holding, t; } back;  /* the Back button pressed where a tap would leave the game (pad_set_back_guard): waiting out the hold; t the ms so far */
 } Pad;
 
 void pad_init(Pad *p, int sw, int sh);
@@ -82,6 +83,10 @@ void pad_set_nav(Pad *p, int on);
 void pad_put(Pad *p, int x, int y, PadOut *out);
 /* One tap of the arrow key of a direction (the answer 'scroll' to a PA_NAV: a list that goes on in that direction): key down, key up. */
 void pad_tap_dir(Pad *p, int dir, PadOut *out);
+/* The Back button is Escape, and on one screen (the title menu) Escape leaves the game with no question. `fn` says whether that is the screen now (asked when Back is pressed; NULL: never):
+ * Back must then be held PAD_BACK_HOLD_MS before the key is sent, and a tap does nothing. Elsewhere Back is a plain tap (a dialog's cancel, a menu, a duel, "Ready to Quit?" asks first). */
+#define PAD_BACK_HOLD_MS 500
+void pad_set_back_guard(int (*fn)(void));
 
 /* The pointer's arrow, drawn into a frame (rgb, w x h x 3) with its tip at x, y; clipped to the frame. pad_cursor_scale: how many pixels each cell of it is. */
 int pad_cursor_scale(int w);

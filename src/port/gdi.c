@@ -172,6 +172,30 @@ int color_index(const DC *dc, uint32_t c)
     return nearest_index(rgb);
 }
 
+void brush_color(const DC *dc, const Brush *b, uint8_t out[3])
+{
+    if (b->rel && dc)
+        colorref_rgb(dc, b->cref, out);
+    else
+        memcpy(out, b->rgb, 3);
+}
+
+void pen_color(const DC *dc, const Pen *p, uint8_t out[3])
+{
+    if (p->rel && dc)
+        colorref_rgb(dc, p->cref, out);
+    else
+        memcpy(out, p->rgb, 3);
+}
+
+void dc_resolve_tools(DC *dc)
+{
+    if (dc->brush.rel)
+        brush_color(dc, &dc->brush, dc->brush.rgb);
+    if (dc->pen.rel)
+        pen_color(dc, &dc->pen, dc->pen.rgb);
+}
+
 /* ---- surfaces -------------------------------------------------------------------------------------------------------------------- */
 Surface *surface_new(int w, int h)
 {
@@ -287,8 +311,8 @@ uint32_t dc_new(int memory, uint32_t hwnd)
     d->textcolor = 0;
     d->bkcolor = 0xFFFFFF;
     d->bkmode = 2;
-    d->pen = (Pen){1, {0, 0, 0}, 1};
-    d->brush = (Brush){1, {255, 255, 255}, 0};
+    d->pen = (Pen){1, {0, 0, 0}, 1, 0, 0};
+    d->brush = (Brush){1, {255, 255, 255}, 0, 0, 0};
     d->font = NULL;
     d->wext[0] = d->wext[1] = d->vext[0] = d->vext[1] = 1;
     d->sx = d->sy = 1.0;
@@ -921,6 +945,8 @@ static uint32_t CreateSolidBrush(const uint32_t *a)
 
     b->solid = 1;
     colorref_rgb(NULL, a[0], b->rgb);
+    b->cref = a[0];
+    b->rel = ((a[0] >> 24) & 0xFF) == 1;
     return obj_new(O_BRUSH, b);
 }
 
@@ -936,6 +962,8 @@ static uint32_t CreateBrushIndirect(const uint32_t *a)
     if (style != 1) {
         b->solid = 1;
         colorref_rgb(NULL, color, b->rgb);
+        b->cref = color;
+        b->rel = ((color >> 24) & 0xFF) == 1;
     }
     return obj_new(O_BRUSH, b);
 }
@@ -954,6 +982,8 @@ static uint32_t CreateHatchBrush(const uint32_t *a)
 
     b->solid = 1;
     colorref_rgb(NULL, a[1], b->rgb);
+    b->cref = a[1];
+    b->rel = ((a[1] >> 24) & 0xFF) == 1;
     return obj_new(O_BRUSH, b);
 }
 
@@ -963,6 +993,8 @@ static uint32_t CreatePen(const uint32_t *a)
 
     p->solid = a[0] != 5;
     colorref_rgb(NULL, a[2], p->rgb);
+    p->cref = a[2];
+    p->rel = ((a[2] >> 24) & 0xFF) == 1;
     p->width = (int32_t)a[1] > 1 ? (int)a[1] : 1;
     return obj_new(O_PEN, p);
 }
@@ -975,6 +1007,8 @@ static uint32_t CreatePenIndirect(const uint32_t *a)
 
     p->solid = style != 5;
     colorref_rgb(NULL, RD32(a[0] + 12), p->rgb);
+    p->cref = RD32(a[0] + 12);
+    p->rel = ((p->cref >> 24) & 0xFF) == 1;
     p->width = width > 1 ? width : 1;
     return obj_new(O_PEN, p);
 }
@@ -1082,6 +1116,7 @@ static uint32_t SelectPalette(const uint32_t *a)
     if (!dc || !p)
         return 0;
     dc->palette = p;
+    dc_resolve_tools(dc);                       /* a pen or brush made from a palette index means that entry of this palette */
     return 1;
 }
 
@@ -1164,8 +1199,8 @@ static uint32_t SelectObject(const uint32_t *a)
         dc->bitmap = o->p;
         return old ? old : default_bitmap_handle();
     }
-    case O_PEN: { Pen *old = &dc->pen; (void)old; dc->pen = *(Pen *)o->p; return stock_object(7); }
-    case O_BRUSH: dc->brush = *(Brush *)o->p; return stock_object(0);
+    case O_PEN: { Pen *old = &dc->pen; (void)old; dc->pen = *(Pen *)o->p; dc_resolve_tools(dc); return stock_object(7); }
+    case O_BRUSH: dc->brush = *(Brush *)o->p; dc_resolve_tools(dc); return stock_object(0);
     case O_FONT: dc->font = o->p; return stock_object(13);
     default: return 0;
     }
@@ -1198,7 +1233,7 @@ void gdi_color_query_result(uint32_t hdc, uint32_t brush, uint8_t fg[3], uint8_t
     colorref_rgb(d, d->bkcolor, bg);
     if (b) {
         if (b->solid) {
-            memcpy(bg, b->rgb, 3);
+            brush_color(d, b, bg);
             *has_bg = 1;
         } else if (!b->pattern)
             *transparent = 1;                                 /* NULL_BRUSH: the control leaves what is behind it */
@@ -1476,10 +1511,19 @@ static void rescale(DC *dc)
     if ((dc->mm == 7 || dc->mm == 8) && dc->wext[0] && dc->wext[1]) {
         dc->sx = (double)dc->vext[0] / dc->wext[0];
         dc->sy = (double)dc->vext[1] / dc->wext[1];
-        if (dc->mm == 7) {            /* isotropic: one scale for both axes (the smaller, as Windows fits it) */
-            double ax = dc->sx < 0 ? -dc->sx : dc->sx, ay = dc->sy < 0 ? -dc->sy : dc->sy, m = ax < ay ? ax : ay;
+        if (dc->mm == 7) {
+            /* MM_ISOTROPIC: the units must be equal, so Windows shrinks the viewport extent of the axis whose scale is the bigger, in whole units (the integer quotient). The card text's mapping:
+             * window 200 x 300, viewport 160 x 224: x would be 0.8 and y 0.7467, so the viewport's x becomes 224 * 200 / 300 = 149 and the scales are 149 / 200 = 0.745 and 224 / 300. (The original's
+             * extents of words, which the card text lays out by, agree with 0.745: docs/notes/card-text-metrics.md.) */
+            long vx = dc->vext[0], vy = dc->vext[1], wx = dc->wext[0], wy = dc->wext[1];
+            long ax = vx < 0 ? -vx : vx, ay = vy < 0 ? -vy : vy, bx = wx < 0 ? -wx : wx, by = wy < 0 ? -wy : wy;
 
-            dc->sx = dc->sy = m;
+            if (ax * by > ay * bx)            /* |vx / wx| > |vy / wy| */
+                vx = (vx < 0 ? -1 : 1) * (ay * bx / by);
+            else
+                vy = (vy < 0 ? -1 : 1) * (ax * by / bx);
+            dc->sx = (double)vx / (double)wx;
+            dc->sy = (double)vy / (double)wy;
         }
     } else
         dc->sx = dc->sy = 1.0;

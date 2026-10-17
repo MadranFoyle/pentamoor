@@ -15,7 +15,7 @@
 #include "nav.h"
 
 /* what screens_kind says is on */
-enum { SCREEN_NONE, SCREEN_TABLE, SCREEN_TEXTMENU, SCREEN_BUYCARDS, SCREEN_CLUES };
+enum { SCREEN_NONE, SCREEN_TABLE, SCREEN_TEXTMENU, SCREEN_BUYCARDS, SCREEN_CLUES, SCREEN_TITLE };      /* SCREEN_TITLE: the title menu, a table screen like SCREEN_TABLE (the D-pad reads the same) */
 
 void screens_install(void);                  /* the hooks (MAGIC.EXE only) */
 /* A loop of the game passed (src: SRC_TABLE the button table's pass, SRC_SNAPSHOT the mouse snapshot); ret is the address the call returns to, which says which loop it is, and ebp the frame

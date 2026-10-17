@@ -309,6 +309,56 @@ static void test_buttons(void)
 }
 
 /* the D-pad in a duel or a dialog: a press asks for the next target in that direction (PA_NAV, from where the pointer is), repeating while held, with no key; elsewhere it is the arrow key */
+/* Back is Escape; where a tap of Escape leaves the game with no question (the title menu) it has to be held PAD_BACK_HOLD_MS */
+static int guard_on;
+static int guard(void) { return guard_on; }
+
+static void test_back_guard(void)
+{
+    Pad p;
+    PadOut out;
+
+    pad_init(&p, 1024, 768);
+    out.n = 0;
+    pad_set_back_guard(guard);
+    guard_on = 0;                                                      /* anywhere else: a plain tap, as before */
+    pad_button(&p, PAD_BACK, 1, &out);
+    pad_button(&p, PAD_BACK, 0, &out);
+    CHECK(out.n == 2 && out.act[0].type == PA_KEYDOWN && out.act[0].vk == 27 && out.act[1].type == PA_KEYUP);
+    guard_on = 1;                                                      /* the title menu: a tap does nothing, not even later */
+    out.n = 0;
+    pad_button(&p, PAD_BACK, 1, &out);
+    run(&p, PAD_BACK_HOLD_MS - 100, 10, &out);
+    pad_button(&p, PAD_BACK, 0, &out);
+    run(&p, 1000, 10, &out);
+    CHECK(out.n == 0);
+    pad_button(&p, PAD_BACK, 1, &out);                                 /* held long enough: the key goes down once, and comes up with the button */
+    run(&p, PAD_BACK_HOLD_MS - 20, 10, &out);
+    CHECK(out.n == 0);
+    run(&p, 60, 10, &out);
+    CHECK(out.n == 1 && out.act[0].type == PA_KEYDOWN && out.act[0].vk == 27 && out.act[0].sc == 0x01 && out.act[0].repeat == 0);
+    run(&p, 2000, 10, &out);
+    CHECK(out.n == 1);                                                 /* no repeats */
+    pad_button(&p, PAD_BACK, 0, &out);
+    CHECK(out.n == 2 && out.act[1].type == PA_KEYUP && out.act[1].vk == 27);
+    out.n = 0;                                                         /* the pad let go of (unplugged) while Back is being held: nothing comes later */
+    pad_button(&p, PAD_BACK, 1, &out);
+    pad_release_all(&p, &out);
+    run(&p, 1000, 10, &out);
+    CHECK(out.n == 0);
+    guard_on = 0;                                                      /* the guard is asked when Back is pressed: a screen change while it is held changes nothing */
+    out.n = 0;
+    pad_button(&p, PAD_BACK, 1, &out);
+    CHECK(out.n == 1 && out.act[0].type == PA_KEYDOWN);
+    pad_button(&p, PAD_BACK, 0, &out);
+    pad_set_back_guard(NULL);                                          /* no guard installed: always a tap */
+    guard_on = 1;
+    out.n = 0;
+    pad_button(&p, PAD_BACK, 1, &out);
+    pad_button(&p, PAD_BACK, 0, &out);
+    CHECK(out.n == 2);
+}
+
 static void test_nav(void)
 {
     Pad p;
@@ -612,6 +662,7 @@ int main(void)
     test_table();
     test_cursor();
     test_buttons();
+    test_back_guard();
     test_nav();
     test_triggers_and_arrows();
     test_walk();

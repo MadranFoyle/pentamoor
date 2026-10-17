@@ -94,24 +94,44 @@ static void load_fallbacks(void)
         fallback_bold = fallback_regular;
 }
 
-typedef struct Resolved { TTFont *f; double em; } Resolved;
+typedef struct Resolved { TTFont *f; double em; int own; } Resolved;
 
-/* The font a LOGFONT-like object means at a vertical scale: the game's own file when it has the family (its height scaled so that
- * ascent + descent fills the requested cell, or the em itself for a negative height), else a stand-in at 3/4 of the size. */
+/* The ppem Windows gives one of the game's TrueType fonts asked for a cell `cell` pixels tall (a positive lfHeight, in device pixels): the largest whose hinted cell (the ascent and the
+ * descent each rounded, ttf_cell) is not taller. MPZurich Cn BT, which the card text is set in: a cell of 10 is 8 ppem (cell 8 + 2), 11 is 9, 12 is 10. */
+int font_ppem_for_cell(const TTFont *f, int cell)
+{
+    int p, best = 1;
+
+    for (p = 1; p <= 400; p++) {
+        int a, d;
+
+        ttf_cell(f, p, &a, &d);
+        if (a + d > cell)
+            break;
+        best = p;
+    }
+    return best;
+}
+
+/* The font a LOGFONT-like object means at a vertical scale: the game's own file when it has the family, else a stand-in at 3/4 of the size. The game's TrueType fonts are hinted at whole
+ * pixel sizes, as Windows draws them: the height of the font in device pixels (lfHeight times the scale, to the nearest pixel) is the em itself for a negative height and the cell height
+ * for a positive one (font_ppem_for_cell). The original's card text (lfHeight 14 at 0.7467) is 8 ppem; the port's 8.64 was the height scaled to fill the cell as a fraction. */
 static Resolved resolve(const Font *font, double scale)
 {
-    Resolved r = {0, 0};
+    Resolved r = {0, 0, 0};
     const char *face = font ? font->face : "Arial";
     int size = font ? font->size : 13, weight = font ? font->weight : 400, italic = font ? font->italic : 0, height = font ? font->height : size;
     double sz = size * scale;
     TTFont *own = game_font_for(face, weight, italic);
 
     if (own) {
-        int asc, desc;
+        int dev = (int)floor(sz + 0.5);
 
-        ttf_metrics(own, 100, &asc, &desc);
+        if (dev < 1)
+            dev = 1;
         r.f = own;
-        r.em = height < 0 ? sz : sz * 100.0 / (asc + desc ? asc + desc : 1);
+        r.own = 1;
+        r.em = height < 0 ? dev : font_ppem_for_cell(own, dev);
         if (r.em < 2)
             r.em = 2;
         return r;
@@ -131,31 +151,43 @@ static Resolved resolve(const Font *font, double scale)
     return r;
 }
 
-/* The advance of a string in device pixels (whole-pixel advances and kerning, as a hinted renderer lays them out). */
-static double string_length(const Resolved *r, const char *s, size_t n)
+/* The advance of a string in device pixels (whole-pixel advances; with `kern` the font's kerning pairs too, as the user interface's own text had them). Windows' GDI does not kern what a
+ * program draws with TextOut or measures with GetTextExtentPoint: the sum of the glyphs' hinted advances is the extent. */
+static double string_length(const Resolved *r, const char *s, size_t n, int kern)
 {
     double w = 0;
     size_t i;
 
     for (i = 0; i < n; i++) {
         w += ttf_advance(r->f, r->em, (unsigned char)s[i]);
-        if (i + 1 < n)
+        if (kern && i + 1 < n)
             w += ttf_kern(r->f, r->em, (unsigned char)s[i], (unsigned char)s[i + 1]);
     }
     return w;
 }
 
+/* The logical height of the cell of a resolved font on a DC with vertical scale `sy` (tmHeight, and the cy of an extent): the hinted cell in device pixels divided by the scale,
+ * truncated (the original's MPZurich Cn BT at 8 ppem on a 0.7467 mapping: a cell of 10 is 13). */
+static int cell_height_logical(const Resolved *r, double sy)
+{
+    int a, d;
+
+    ttf_cell(r->f, r->em, &a, &d);
+    return (int)((a + d) / sy);
+}
+
 /* The width and height of `s` in the DC's logical units. The font is realized at its height scaled by the mapping's vertical scale, and its
- * width follows from that: so the logical width is the realized device width divided by the horizontal scale. */
+ * width follows from that: the logical width is the realized device width divided by the horizontal scale, to the nearest unit (the original's extents on a 0.7467 mapping: a space
+ * of 2 pixels is 3, "Gain" of 15 is 20); the height is the logical tmHeight. */
 int text_width(const DC *dc, const char *s, size_t n, int *height)
 {
     Resolved r = resolve(dc->font, dc->sy);
 
     if (height)
-        *height = dc->font ? dc->font->size : 13;
+        *height = r.own ? cell_height_logical(&r, dc->sy) : dc->font ? dc->font->size : 13;
     if (!n || !r.f)
         return 0;
-    return (int)(string_length(&r, s, n) / dc->sx);
+    return (int)floor(string_length(&r, s, n, 0) / dc->sx + 0.5);
 }
 
 /* Windows 98 draws text without smoothing, through the font's own hinting: at the 8 to 10 pixel sizes a scaled-down card's rule text comes out as solid black
@@ -241,8 +273,6 @@ void draw_text_at(DC *dc, int x, int y, const char *s, size_t n, int align)
             free(g);
         }
         pen += ttf_advance(r.f, r.em, (unsigned char)s[i]);
-        if (i + 1 < (int)n)
-            pen += ttf_kern(r.f, r.em, (unsigned char)s[i], (unsigned char)s[i + 1]);
     }
     put_region_masked(dc, rx, ry, px, rw, rh, mask);
     free(mask);
@@ -273,13 +303,35 @@ static uint32_t GetTextExtentPointA(const uint32_t *a)
 static uint32_t GetTextMetricsA(const uint32_t *a)
 {
     DC *dc = dc_of(a[0]);
+    double sx = dc && dc->sx > 0 ? dc->sx : 1.0, sy = dc && dc->sy > 0 ? dc->sy : 1.0;
     int h = dc && dc->font ? dc->font->size : 13, avg;
-    Resolved r = resolve(dc ? dc->font : NULL, 1.0);
+    Resolved r = resolve(dc ? dc->font : NULL, dc ? sy : 1.0);
     int32_t vals[11];
     int i;
 
-    avg = r.f ? (int)ttf_advance(r.f, r.em, 'x') : h / 2;
-    vals[0] = h; vals[1] = h * 4 / 5; vals[2] = h - h * 4 / 5; vals[3] = 0; vals[4] = 0; vals[5] = avg; vals[6] = avg * 2; vals[7] = 400; vals[8] = 0;
+    if (r.own) {
+        /* the game's own TrueType font: the hinted cell at the whole ppem realized for this DC, in device pixels, then in logical units by truncation (the original's MPZurich Cn BT at 8 ppem
+         * on a 0.7467 mapping reported 13, 10, 2, 2, 0, 4: a cell of 10 = 8 + 2, an internal leading of 2, an average width of 3 pixels). docs/notes/card-text-metrics.md */
+        int asc, desc, c, mx = 0;
+
+        ttf_cell(r.f, r.em, &asc, &desc);
+        for (c = 32; c < 256; c++) {
+            int w = (int)ttf_advance(r.f, r.em, (unsigned char)c);
+
+            if (w > mx)
+                mx = w;
+        }
+        avg = ttf_avg_width(r.f, r.em);
+        if (avg < 1)
+            avg = (int)ttf_advance(r.f, r.em, 'x');
+        vals[0] = (int)((asc + desc) / sy); vals[1] = (int)(asc / sy); vals[2] = (int)(desc / sy);
+        vals[3] = asc + desc > (int)r.em ? (int)((asc + desc - (int)r.em) / sy) : 0; vals[4] = 0;
+        vals[5] = (int)(avg / sx); vals[6] = (int)(mx / sx);
+    } else {
+        avg = r.f ? (int)ttf_advance(r.f, r.em, 'x') : h / 2;
+        vals[0] = h; vals[1] = h * 4 / 5; vals[2] = h - h * 4 / 5; vals[3] = 0; vals[4] = 0; vals[5] = avg; vals[6] = avg * 2;
+    }
+    vals[7] = 400; vals[8] = 0;
     vals[9] = 96; vals[10] = 96;
     for (i = 0; i < 11; i++)
         WR32(a[1] + 4 * (uint32_t)i, (uint32_t)vals[i]);
@@ -328,7 +380,7 @@ int text_extent(const char *s, int size)
 {
     Resolved r = plain(size);
 
-    return r.f ? (int)string_length(&r, s, strlen(s)) : (int)strlen(s) * size / 2;
+    return r.f ? (int)string_length(&r, s, strlen(s), 1) : (int)strlen(s) * size / 2;
 }
 
 void text_on_rgb(uint8_t *rgb, int w, int h, int x, int y, const char *s, int size, const uint8_t color[3])
@@ -373,7 +425,7 @@ int ui_pixel_size(int pt) { return (pt * 96 + 36) / 72; }
  * high at 8 points, whose text runs as wide as Arial at 10 pixels (the Run dialog of Windows 98: its 56-character sentence is 272 pixels, Arial at 10 is 270, at 11 281). */
 static Resolved ui_resolve(const char *face, int pt, int bold)
 {
-    Resolved r = {0, 0};
+    Resolved r = {0, 0, 0};
     int px = ui_pixel_size(pt);
     TTFont *own = face && face[0] ? game_font_for(face, bold ? 700 : 400, 0) : NULL;
 
@@ -427,7 +479,7 @@ int ui_text_width(const char *face, int pt, int bold, const char *s, size_t n)
 {
     Resolved r = ui_resolve(face, pt, bold);
 
-    return r.f ? (int)string_length(&r, s, n) : (int)n * pt / 2;
+    return r.f ? (int)string_length(&r, s, n, 1) : (int)n * pt / 2;
 }
 
 /* Draw `s` with its top-left corner at (x, y) on an RGB screen buffer. */
@@ -559,7 +611,7 @@ static uint32_t FillRect(const uint32_t *a)
     if (a[2] < 32 && !br)
         have = 1;                                              /* COLOR_xxx + 1 system brush indices */
     else if (br && br->solid) {
-        memcpy(color, br->rgb, 3);
+        brush_color(dc, br, color);
         have = 1;
     }
     if (dc && have)
@@ -577,7 +629,7 @@ static uint32_t FrameRect(const uint32_t *a)
     if (!dc)
         return 1;
     if (br && br->solid)
-        memcpy(color, br->rgb, 3);
+        brush_color(dc, br, color);
     fill_rect_logical(dc, l, t, r, t + 1, color);
     fill_rect_logical(dc, l, b - 1, r, b, color);
     fill_rect_logical(dc, l, t, l + 1, b, color);
