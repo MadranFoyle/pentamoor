@@ -36,7 +36,10 @@ typedef struct WinApi {
 } WinApi;
 
 /* Every implemented function of a module, ending with {0}. */
-extern const WinApi KERNEL32_APIS[], KERNEL32_RT_APIS[], CRT_APIS[], STDIO_APIS[], VIDEO_APIS[];
+extern const WinApi KERNEL32_APIS[], KERNEL32_RT_APIS[], WINSYS_APIS[], CRT_APIS[], STDIO_APIS[], VIDEO_APIS[];
+
+/* The implementation of an import by (library, function), or NULL (modules.c; msvcrt.dll is found in msvcrtd.dll's table). */
+const WinApi *port_find_api(const char *dll, const char *name);
 
 /* The imports of the loaded program: where the loader put each one, and what the function behind it is. */
 typedef struct Import {
@@ -121,6 +124,7 @@ void textfocus_install(void);    /* when the game waits for typed text (textfocu
 void screens_install(void);      /* which screen of the game is on, for the D-pad (screens.c) */
 void yesno_install(void);        /* when the game asks a (Y/N) question (yesno.c) */
 void lzw_install_library(const struct BuildProfile *lib, uint32_t base);     /* a library's copy, when it is mapped at `base` (modules.c) */
+void lzw_reset(void);            /* forget the copies installed (the tests, with port_hooks_reset) */
 void port_hooks_reset(void);     /* forget them all (the tests) */
 int port_hook_count(void);      /* how many pre-call hooks and overrides are installed (the tests; an unknown build must have none) */
 int port_hook_at(int i, uint32_t *addr, int *is_override);      /* the i'th of them, pre-call hooks first, then overrides, in the order they were installed */

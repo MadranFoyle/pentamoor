@@ -650,17 +650,8 @@ void kernel32_init(void)
 
 static uint32_t timeBeginPeriod(const uint32_t *a) { (void)a; return 0; }
 
-/* ---- advapi32: the registry has nothing, and writes go nowhere ---------------------------------------------------------------------- */
-static uint32_t RegOpenKeyExA(const uint32_t *a) { (void)a; return 2; }       /* ERROR_FILE_NOT_FOUND: the game falls back to defaults */
-static uint32_t RegCreateKeyExA(const uint32_t *a)
-{
-    if (a[7])
-        WR32(a[7], new_handle((Handle){H_REGKEY, -1, NULL, 0, 0, NULL}));
-    if (a[8])
-        WR32(a[8], 1);
-    return 0;
-}
-static uint32_t two(const uint32_t *a) { (void)a; return 2; }
+/* (the registry is winsys.c's: nothing is stored, a few values of Windows' own are answered) */
+void k32_set_last_error(uint32_t code) { last_error_code = code; }
 
 const WinApi KERNEL32_APIS[] = {
     {"kernel32.dll", "GetVersion", GetVersion}, {"kernel32.dll", "GetCurrentProcess", GetCurrentProcess},
@@ -683,12 +674,11 @@ const WinApi KERNEL32_APIS[] = {
     {"kernel32.dll", "GetFileSize", GetFileSize}, {"kernel32.dll", "CopyFileA", CopyFileA},
     {"kernel32.dll", "CreateFileMappingA", CreateFileMappingA}, {"kernel32.dll", "MapViewOfFile", MapViewOfFile},
     {"kernel32.dll", "UnmapViewOfFile", one}, {"kernel32.dll", "CreateThread", CreateThread},
+    {"msvcrtd.dll", "_beginthreadex", CreateThread},         /* (security, stack size, start, argument, flags, &thread id): the arguments of CreateThread, and a handle back */
     {"kernel32.dll", "GetPrivateProfileIntA", GetPrivateProfileIntA}, {"kernel32.dll", "GetPrivateProfileStringA", GetPrivateProfileStringA},
     {"kernel32.dll", "FindResourceA", FindResourceA}, {"kernel32.dll", "LoadResource", identity}, {"kernel32.dll", "LockResource", LockResource},
     {"winmm.dll", "timeBeginPeriod", timeBeginPeriod}, {"winmm.dll", "timeEndPeriod", zero}, {"winmm.dll", "timeSetEvent", timeSetEvent},
     {"winmm.dll", "timeKillEvent", timeKillEvent},
-    {"advapi32.dll", "RegOpenKeyExA", RegOpenKeyExA}, {"advapi32.dll", "RegCreateKeyExA", RegCreateKeyExA},
-    {"advapi32.dll", "RegQueryValueExA", two}, {"advapi32.dll", "RegSetValueExA", zero}, {"advapi32.dll", "RegFlushKey", zero},
-    {"advapi32.dll", "RegCloseKey", zero}, {"shell32.dll", "SHAppBarMessage", zero}, {"comctl32.dll", "#17", zero},
+    {"shell32.dll", "SHAppBarMessage", zero}, {"comctl32.dll", "#17", zero},
     {0, 0, 0},
 };

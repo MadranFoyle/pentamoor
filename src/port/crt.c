@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
 #include <time.h>
 
 #include "port.h"
@@ -234,7 +236,224 @@ static uint32_t crt_time(const uint32_t *a)
     return t;
 }
 
+/* ---- Spells of the Ancients: sorting, the collating order, character classes, and listing a folder ------------------------------------------------ */
+/* qsort(base, count, width, compare): the comparison is the game's own function (cdecl, two element addresses, an int back), called through guest_call. A heap sort, in place in the
+ * guest's array with a one element scratch block: the order of equal elements is not defined for qsort, and it needs no second array, which the comparison would have to be able to
+ * see in the guest's memory. */
+static void qsort_swap(uint8_t *x, uint8_t *y, uint32_t width)
+{
+    uint8_t tmp[256];
+
+    while (width) {
+        uint32_t n = width < sizeof(tmp) ? width : (uint32_t)sizeof(tmp);
+
+        memcpy(tmp, x, n);
+        memcpy(x, y, n);
+        memcpy(y, tmp, n);
+        x += n;
+        y += n;
+        width -= n;
+    }
+}
+
+static int32_t qsort_compare(uint32_t cmp, uint32_t pa, uint32_t pb)
+{
+    uint32_t args[2] = {pa, pb};
+
+    return (int32_t)guest_call(cmp, 2, args);
+}
+
+static void qsort_sift(uint32_t base, uint32_t width, uint32_t cmp, uint32_t root, uint32_t end)
+{
+    for (;;) {
+        uint32_t child = 2 * root + 1, big = root;
+
+        if (child >= end)
+            return;
+        if (qsort_compare(cmp, base + width * big, base + width * child) < 0)
+            big = child;
+        if (child + 1 < end && qsort_compare(cmp, base + width * big, base + width * (child + 1)) < 0)
+            big = child + 1;
+        if (big == root)
+            return;
+        qsort_swap((uint8_t *)P(base + width * root), (uint8_t *)P(base + width * big), width);
+        root = big;
+    }
+}
+
+static uint32_t crt_qsort(const uint32_t *a)
+{
+    uint32_t base = a[0], count = a[1], width = a[2], cmp = a[3], i;
+
+    if (count < 2 || !width)
+        return 0;
+    for (i = count / 2; i-- > 0;)
+        qsort_sift(base, width, cmp, i, count);
+    for (i = count - 1; i > 0; i--) {
+        qsort_swap((uint8_t *)P(base), (uint8_t *)P(base + width * i), width);
+        qsort_sift(base, width, cmp, 0, i);
+    }
+    return 0;
+}
+
+/* strcoll in the "C" locale, the only one the game sets: the order of strcmp */
+static uint32_t crt_strcoll(const uint32_t *a) { return sign(strcmp(P(a[0]), P(a[1]))); }
+
+/* _isctype(c, mask): the class bits of the C locale for a character 0..255 (and EOF), masked; the bits are the C runtime's (ctype.h of Visual C++: _UPPER 1, _LOWER 2, _DIGIT 4,
+ * _SPACE 8, _PUNCT 0x10, _CONTROL 0x20, _BLANK 0x40, _HEX 0x80; _ALPHA is 0x103). */
+static uint32_t ctype_bits(int c)
+{
+    uint32_t b = 0;
+
+    if (c < 0 || c > 127)
+        return 0;
+    if (c >= 'A' && c <= 'Z')
+        b |= 0x1;
+    if (c >= 'a' && c <= 'z')
+        b |= 0x2;
+    if (c >= '0' && c <= '9')
+        b |= 0x4;
+    if (c == ' ' || (c >= 9 && c <= 13))
+        b |= 0x8;
+    if (c > 32 && c < 127 && !isalnum(c))
+        b |= 0x10;
+    if (c < 32 || c == 127)
+        b |= 0x20;
+    if (c == ' ')
+        b |= 0x40;
+    if (isxdigit(c))
+        b |= 0x80;
+    return b;
+}
+static uint32_t crt_isctype(const uint32_t *a) { return ctype_bits((int32_t)a[0]) & a[1]; }
+
+/* _findfirst(spec, &data), _findnext(handle, &data), _findclose(handle): the names in a folder that match a pattern ("art\*.pic"), compared without regard to case, in the order of the
+ * names; the folder is the guest's (the installed one and the overlay together). struct _finddata_t: attrib, three times, size, name[260]. "." and ".." are listed where the pattern
+ * takes them, as the file system of Windows does for every folder but the root. */
+typedef struct FindEntry { char name[260]; int is_dir; } FindEntry;
+typedef struct FindSearch { int used; FindEntry *entries; int n, next; char dir[260]; } FindSearch;
+static FindSearch searches[16];
+
+typedef struct FindCollect { FindEntry *e; int n, cap; char pattern[260]; } FindCollect;
+
+static void find_lower(char *s) { for (; *s; s++) *s = (char)tolower((unsigned char)*s); }
+
+static void find_add(FindCollect *c, const char *name, int is_dir)
+{
+    char lname[260], lpat[260];
+
+    snprintf(lname, sizeof(lname), "%s", name);
+    snprintf(lpat, sizeof(lpat), "%s", c->pattern);
+    find_lower(lname);
+    find_lower(lpat);
+    if (!port_glob(lpat, lname))
+        return;
+    if (c->n == c->cap) {
+        c->cap = c->cap ? c->cap * 2 : 32;
+        c->e = realloc(c->e, (size_t)c->cap * sizeof(*c->e));
+    }
+    snprintf(c->e[c->n].name, sizeof(c->e[c->n].name), "%s", name);
+    c->e[c->n].is_dir = is_dir;
+    c->n++;
+}
+
+static void find_cb(const char *name, int is_dir, void *ctx) { find_add(ctx, name, is_dir); }
+
+static int find_cmp(const void *x, const void *y) { return strcasecmp(((const FindEntry *)x)->name, ((const FindEntry *)y)->name); }
+
+static void find_fill(const FindSearch *s, const FindEntry *e, uint32_t out)
+{
+    char guest[600], host[1200];
+    struct stat st;
+    uint32_t size = 0, when = 0;
+
+    snprintf(guest, sizeof(guest), "%s%s%s", s->dir, s->dir[0] ? "\\" : "", e->name);
+    if (!e->is_dir && paths_host(guest, 0, host, sizeof(host)) && !stat(host, &st)) {
+        size = (uint32_t)st.st_size;
+        when = (uint32_t)st.st_mtime;
+    }
+    WR32(out, e->is_dir ? 0x10u : 0x20u);
+    WR32(out + 4, when);
+    WR32(out + 8, when);
+    WR32(out + 12, when);
+    WR32(out + 16, size);
+    strncpy(P(out + 20), e->name, 259);
+    P(out + 20)[259] = 0;
+}
+
+static void find_errno(uint32_t code) { WR32(cell(&errno_cell), code); }
+
+static uint32_t crt_findfirst(const uint32_t *a)
+{
+    char spec[300], *sep, *q;
+    FindCollect c = {0};
+    int i, drive_root;
+
+    snprintf(spec, sizeof(spec), "%s", P(a[0]));
+    for (q = spec; *q; q++)
+        if (*q == '/')
+            *q = '\\';
+    sep = strrchr(spec, '\\');
+    for (i = 0; i < 16 && searches[i].used; i++)
+        ;
+    if (i == 16) {
+        find_errno(24);                                         /* EMFILE */
+        return 0xFFFFFFFFu;
+    }
+    memset(&searches[i], 0, sizeof(searches[i]));
+    if (sep) {
+        *sep = 0;
+        snprintf(searches[i].dir, sizeof(searches[i].dir), "%s", spec);
+        snprintf(c.pattern, sizeof(c.pattern), "%s", sep + 1);
+    } else {
+        snprintf(c.pattern, sizeof(c.pattern), "%s", spec);
+    }
+    drive_root = strlen(searches[i].dir) == 2 && searches[i].dir[1] == ':';
+    paths_list(searches[i].dir[0] ? searches[i].dir : guest_cwd, find_cb, &c);
+    if (!drive_root) {
+        find_add(&c, ".", 1);
+        find_add(&c, "..", 1);
+    }
+    if (c.n > 1)
+        qsort(c.e, (size_t)c.n, sizeof(*c.e), find_cmp);
+    if (!c.n) {
+        free(c.e);
+        find_errno(2);                                          /* ENOENT */
+        return 0xFFFFFFFFu;
+    }
+    searches[i].used = 1;
+    searches[i].entries = c.e;
+    searches[i].n = c.n;
+    searches[i].next = 1;
+    find_fill(&searches[i], &c.e[0], a[1]);
+    return (uint32_t)i;
+}
+
+static uint32_t crt_findnext(const uint32_t *a)
+{
+    FindSearch *s = a[0] < 16 && searches[a[0]].used ? &searches[a[0]] : NULL;
+
+    if (!s || s->next >= s->n) {
+        find_errno(2);
+        return 0xFFFFFFFFu;
+    }
+    find_fill(s, &s->entries[s->next++], a[1]);
+    return 0;
+}
+
+static uint32_t crt_findclose(const uint32_t *a)
+{
+    if (a[0] < 16 && searches[a[0]].used) {
+        free(searches[a[0]].entries);
+        searches[a[0]].used = 0;
+        return 0;
+    }
+    return 0xFFFFFFFFu;
+}
+
 const WinApi CRT_APIS[] = {
+    {"msvcrtd.dll", "qsort", crt_qsort}, {"msvcrtd.dll", "strcoll", crt_strcoll}, {"msvcrtd.dll", "_isctype", crt_isctype},
+    {"msvcrtd.dll", "_findfirst", crt_findfirst}, {"msvcrtd.dll", "_findnext", crt_findnext}, {"msvcrtd.dll", "_findclose", crt_findclose},
     {"msvcrtd.dll", "__set_app_type", zero}, {"msvcrtd.dll", "_controlfp", controlfp}, {"msvcrtd.dll", "__setusermatherr", zero},
     {"msvcrtd.dll", "_XcptFilter", zero}, {"msvcrtd.dll", "_except_handler3", one}, {"msvcrtd.dll", "__p__fmode", p_fmode},
     {"msvcrtd.dll", "__p__commode", p_commode}, {"msvcrtd.dll", "__p___argv", p_argv}, {"msvcrtd.dll", "__p__acmdln", p_acmdln},

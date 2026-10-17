@@ -5,6 +5,7 @@
 #include <strings.h>
 
 #include "gdi.h"
+#include "gdi_int.h"
 #include "sched.h"
 #include "wm.h"
 #include "movie.h"
@@ -1414,8 +1415,64 @@ static uint32_t BeginPaint(const uint32_t *a)
 
 static uint32_t GetDesktopWindow(const uint32_t *a) { (void)a; return wm_desktop_hwnd(); }
 
+/* GetUpdateRect(hwnd, &rect, erase): the part of the window that needs painting. A window here is invalid as a whole or not at all (InvalidateRect marks the window), so the
+ * rectangle is the client area, or empty. Returns whether there is one. */
+static uint32_t GetUpdateRect(const uint32_t *a)
+{
+    Window *w = wm_window(a[0]);
+    int cw = 0, ch = 0;
+
+    if (w && w->invalid && w->visible && has_client_area(w)) {
+        wm_client_size(w, &cw, &ch);
+        if (a[1])
+            put_rect(a[1], 0, 0, cw, ch);
+        return 1;
+    }
+    if (a[1])
+        put_rect(a[1], 0, 0, 0, 0);
+    return 0;
+}
+
+/* GetUpdateRgn(hwnd, hrgn, erase): the same area as a region (the port's regions are rectangles): NULLREGION (1) or SIMPLEREGION (2), ERROR (0) for a window or region that is not. */
+static uint32_t GetUpdateRgn(const uint32_t *a)
+{
+    Window *w = wm_window(a[0]);
+    int cw = 0, ch = 0, painting;
+    Region *r = obj_get(a[1], O_REGION);
+
+    if (!w || !r)
+        return 0;
+    painting = w->invalid && w->visible && has_client_area(w);
+    if (painting)
+        wm_client_size(w, &cw, &ch);
+    r->l = 0; r->t = 0; r->r = painting ? cw : 0; r->b = painting ? ch : 0;
+    return painting ? 2 : 1;
+}
+
+/* RegisterWindowMessageA: one number from 0xC000 up for each different string, the same number for the same string (without regard to case, as Windows' atoms are). */
+static uint32_t RegisterWindowMessageA(const uint32_t *a)
+{
+    static char *names[64];
+    static int n;
+    int i;
+
+    for (i = 0; i < n; i++)
+        if (!strcasecmp(names[i], P(a[0])))
+            return 0xC000u + (uint32_t)i;
+    if (n == 64)
+        return 0;
+    names[n] = strdup(P(a[0]));
+    return 0xC000u + (uint32_t)n++;
+}
+
+/* ChangeDisplaySettingsA(devmode, flags): the game asks for a screen mode (640x480) for itself. The window here is the screen the game sees at the size it is given, whatever the
+ * desktop is, so the mode is always "set" (DISP_CHANGE_SUCCESSFUL) and nothing of the host's display is changed. */
+static uint32_t ChangeDisplaySettingsA(const uint32_t *a) { (void)a; return 0; }
+
 const WinApi USER32_APIS[] = {
     {"user32.dll", "GetDesktopWindow", GetDesktopWindow},
+    {"user32.dll", "GetUpdateRect", GetUpdateRect}, {"user32.dll", "GetUpdateRgn", GetUpdateRgn}, {"user32.dll", "RegisterWindowMessageA", RegisterWindowMessageA},
+    {"user32.dll", "ChangeDisplaySettingsA", ChangeDisplaySettingsA},
     {"user32.dll", "RegisterClassA", RegisterClassA}, {"user32.dll", "SetClassLongA", zero}, {"user32.dll", "DefWindowProcA", DefWindowProcA},
     {"user32.dll", "CallWindowProcA", CallWindowProcA}, {"user32.dll", "CreateWindowExA", CreateWindowExA},
     {"user32.dll", "DestroyWindow", DestroyWindow}, {"user32.dll", "ShowWindow", ShowWindow}, {"user32.dll", "UpdateWindow", UpdateWindow},

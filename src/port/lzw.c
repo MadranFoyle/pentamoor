@@ -289,15 +289,23 @@ static uint32_t header_impl(const uint32_t *a)
 }
 
 
-/* One set of entry points per copy of the code (an override carries no context, so each copy gets functions that select its own). A process has at most the program's own
- * copy and one library's (DECKDLL.DLL); the profile of each says where its entries and its state are (profile.c). */
-static const ProfLzw *prog_copy, *lib_copy;
+/* One set of entry points per copy of the code (an override carries no context, so each copy gets functions that select its own). A process has the program's own copy and, in
+ * each of up to LIB_COPIES libraries, another (1.0: DECKDLL.DLL; 2.15: deckdll.dll and drawcardlib.dll); the profile of each says where its entries and its state are (profile.c). */
+#define LIB_COPIES 3
+static const ProfLzw *prog_copy, *lib_copy[LIB_COPIES];
+static int nlib_copies;
 
 #define ENTRY(name, ctx, impl) static uint32_t name(const uint32_t *a) { const ProfLzw *saved = lz; uint32_t r; lz = ctx; r = impl(a); lz = saved; return r; }
 ENTRY(prog_header, prog_copy, header_impl)
 ENTRY(prog_read, prog_copy, read_impl)
-ENTRY(lib_header, lib_copy, header_impl)
-ENTRY(lib_read, lib_copy, read_impl)
+ENTRY(lib0_header, lib_copy[0], header_impl)
+ENTRY(lib0_read, lib_copy[0], read_impl)
+ENTRY(lib1_header, lib_copy[1], header_impl)
+ENTRY(lib1_read, lib_copy[1], read_impl)
+ENTRY(lib2_header, lib_copy[2], header_impl)
+ENTRY(lib2_read, lib_copy[2], read_impl)
+
+static const struct { HostGuestFn header, read; } LIB_ENTRY[LIB_COPIES] = {{lib0_header, lib0_read}, {lib1_header, lib1_read}, {lib2_header, lib2_read}};
 
 static void install_copy(const ProfLzw *c, HostGuestFn header, HostGuestFn read)
 {
@@ -307,8 +315,11 @@ static void install_copy(const ProfLzw *c, HostGuestFn header, HostGuestFn read)
 }
 
 /* The program's own copy (MAGIC.EXE's MPS_CODE at 0x70d000, DUEL.EXE's at 0x6c5000), if the build's profile has one. */
+void lzw_reset(void) { nlib_copies = 0; }              /* port_hooks_reset: the overrides are gone, so are the copies they stood for */
+
 void lzw_install(void)
 {
+    nlib_copies = 0;
     if (!profile->lzw.header)
         return;
     prog_copy = &profile->lzw;
@@ -320,6 +331,9 @@ void lzw_install_library(const BuildProfile *lib, uint32_t base)
 {
     if (!lib->lzw.header || lib->base != base)
         return;
-    lib_copy = &lib->lzw;
-    install_copy(lib_copy, lib_header, lib_read);
+    if (nlib_copies == LIB_COPIES)
+        port_fatal("more libraries with a picture decompressor than the runtime has room for (%d)", LIB_COPIES);
+    lib_copy[nlib_copies] = &lib->lzw;
+    install_copy(lib_copy[nlib_copies], LIB_ENTRY[nlib_copies].header, LIB_ENTRY[nlib_copies].read);
+    nlib_copies++;
 }

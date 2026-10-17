@@ -117,6 +117,17 @@ FUNCTIONS["Test_Ftrunc"] = (0x84d0, bytes.fromhex("8b4c2404" "8b542408" "687f0f0
 FUNCTIONS["Test_Sbb"] = (0x8500, bytes.fromhex("8b442404" "8b4c2408" "38c8" "18c0" "1cff" "0fbec0" "c3"))
 # the carry out of an add, taken by adc: mov eax,[esp+4]; add eax,[esp+8]; mov eax,0; adc eax,0
 FUNCTIONS["Test_Adc"] = (0x8520, bytes.fromhex("8b442404" "03442408" "b800000000" "83d000" "c3"))
+# rotates: rol eax,8 / ror eax,cl / rol ax,4 / rol al,3 and ror ah,1 / the carry and overflow flags a rotate by one leaves / a rotate by zero (cl = 0 or 32) leaves the flags alone
+FUNCTIONS["Test_Rol32"] = (0x8800, bytes.fromhex("8b442404" "c1c008" "c3"))
+FUNCTIONS["Test_Ror32cl"] = (0x8810, bytes.fromhex("8b442404" "8b4c2408" "d3c8" "c3"))
+FUNCTIONS["Test_Rol16"] = (0x8820, bytes.fromhex("8b442404" "66c1c004" "c3"))
+FUNCTIONS["Test_Rol8"] = (0x8830, bytes.fromhex("8b442404" "c0c003" "d0cc" "c3"))
+FUNCTIONS["Test_RolCarry"] = (0x8840, bytes.fromhex("8b442404" "d1c0" "b800000000" "83d000" "c3"))
+FUNCTIONS["Test_RorCarry"] = (0x8850, bytes.fromhex("8b442404" "d1c8" "b800000000" "83d000" "c3"))
+FUNCTIONS["Test_RolOF"] = (0x8860, bytes.fromhex("8b442404" "d1c0" "0f90c0" "0fb6c0" "c3"))
+FUNCTIONS["Test_RorOF"] = (0x8870, bytes.fromhex("8b442404" "d1c8" "0f90c0" "0fb6c0" "c3"))
+FUNCTIONS["Test_RolZero"] = (0x8880, bytes.fromhex("8b542404" "8b4c2408" "31c0" "83f801" "d3c2" "b800000000" "83d000" "c3"))
+FUNCTIONS["Test_RolMem16"] = (0x88a0, bytes.fromhex("8b4c2404" "66d101" "0fb701" "c3"))      # rol word [ecx],1; movzx eax,word [ecx]
 CALLEE = 0x5100
 IMPORT_SLOT = 0x7000
 
@@ -429,6 +440,52 @@ def test_a_jump_table_indexed_by_a_masked_value(tmp_path, harness):
 def test_rcr_takes_the_carry_of_the_shift_before_it(tmp_path, harness):
     assert run(tmp_path, harness, vector("Test_Rcr", [0x10, 3], 0x80000008))[0] == "PASS"
     assert run(tmp_path, harness, vector("Test_Rcr", [0x10, 2], 0x00000008))[0] == "PASS"
+
+
+def _s32(x):
+    return x - (1 << 32) if x >= 1 << 31 else x
+
+
+def _rotl(v, k, bits):
+    k %= bits
+    m = (1 << bits) - 1
+    return ((v << k) | (v >> (bits - k))) & m if k else v & m
+
+
+def test_rol_and_ror_rotate_eight_sixteen_and_thirty_two_bits(tmp_path, harness):
+    for v in (0x12345678, 0x80000001, 0, 0xffffffff):
+        assert run(tmp_path, harness, vector("Test_Rol32", [v], _s32(_rotl(v, 8, 32))))[0] == "PASS", hex(v)
+        for cl in (0, 1, 5, 31, 32, 33):
+            want = _rotl(v, 32 - cl % 32, 32) if cl % 32 else v      # (count masked to five bits)
+            assert run(tmp_path, harness, vector("Test_Ror32cl", [v, cl], _s32(want)))[0] == "PASS", (hex(v), cl)
+    # 16 bits: the upper half of the register is not touched
+    v = 0xabcd8421
+    assert run(tmp_path, harness, vector("Test_Rol16", [v], _s32((v & 0xffff0000) | _rotl(v & 0xffff, 4, 16))))[0] == "PASS"
+    # 8 bits: rol al,3 then ror ah,1 (the other bytes are not touched)
+    v = 0x11a5c3e1
+    want = (v & 0xffff0000) | (((v >> 8) & 0xff) >> 1 | ((v >> 8) & 1) << 7) << 8 | _rotl(v & 0xff, 3, 8)
+    assert run(tmp_path, harness, vector("Test_Rol8", [v], _s32(want)))[0] == "PASS"
+
+
+def test_a_rotate_in_memory(tmp_path, harness):
+    v = vector("Test_RolMem16", [0xA000], 0x0003)
+    v["memory_in"] = [{"addr": 0xA000, "dwords": [0xdead8001]}]
+    v["memory_out_expected"] = [{"addr": 0xA000, "dwords": [0xdead0003]}]
+    assert run(tmp_path, harness, v)[0] == "PASS"
+
+
+def test_a_rotate_sets_the_carry_and_the_overflow_and_a_rotate_by_zero_sets_nothing(tmp_path, harness):
+    for v in (0x80000000, 0x40000000, 0x00000001, 0xc0000000, 0x7fffffff):
+        assert run(tmp_path, harness, vector("Test_RolCarry", [v], v >> 31))[0] == "PASS", hex(v)         # rol: CF is the bit that left on the top
+        assert run(tmp_path, harness, vector("Test_RorCarry", [v], v & 1))[0] == "PASS", hex(v)          # ror: CF is the bit that left at the bottom
+        r = _rotl(v, 1, 32)
+        assert run(tmp_path, harness, vector("Test_RolOF", [v], ((r >> 31) ^ (r & 1))))[0] == "PASS", hex(v)
+        r = _rotl(v, 31, 32)
+        assert run(tmp_path, harness, vector("Test_RorOF", [v], ((r >> 31) ^ ((r >> 30) & 1))))[0] == "PASS", hex(v)
+    # the carry is 1 going in (0 < 1); a count of 0 or 32 leaves it, a count of 1 with a zero value makes it 0
+    assert run(tmp_path, harness, vector("Test_RolZero", [0x12345678, 0], 1))[0] == "PASS"
+    assert run(tmp_path, harness, vector("Test_RolZero", [0x12345678, 32], 1))[0] == "PASS"
+    assert run(tmp_path, harness, vector("Test_RolZero", [0, 1], 0))[0] == "PASS"
 
 
 def test_bts_with_a_register_index_reaches_the_next_dword(tmp_path, harness):

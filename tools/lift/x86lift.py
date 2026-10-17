@@ -283,6 +283,21 @@ class Lifter:
             cnt = "1u" if n == 1 else (f"{ops[1].imm & 0x1f}u" if ops[1].type == X.X86_OP_IMM else "(LO8(R_ecx) & 0x1fu)")
             step = "n_ = a_ & 1u; a_ = (a_ >> 1) | (CF << 31); CF = n_;" if mn == "rcr" else "n_ = a_ >> 31; a_ = (a_ << 1) | CF; CF = n_;"
             return [f"{{ uint32_t a_ = {self.read(i, ops[0])}, c_ = {cnt}, n_;", f"while (c_--) {{ {step} }}", self.write(i, ops[0], "a_"), "}"]
+        if mn in ("rol", "ror"):
+            # a rotate of 8, 16 or 32 bits. The count is masked to five bits first, then taken modulo the width; with a count of zero nothing changes, flags included.
+            # CF is the bit rotated last (the low bit of the result for rol, the high bit for ror); OF, defined only for a count of one, is the high bit of the result
+            # xor CF (rol) or xor the bit below it (ror); the other flags are not touched.
+            bits = self.bits(i, ops[0])
+            cnt = "1u" if n == 1 else (f"{ops[1].imm & 0x1f}u" if ops[1].type == X.X86_OP_IMM else "(LO8(R_ecx) & 0x1fu)")
+            a = self.read(i, ops[0])
+            if mn == "rol":
+                body = (f"k_ = c_ % {bits}u; r_ = k_ ? ((v_ << k_) | (v_ >> ({bits}u - k_))) & MASK({bits}) : v_; "
+                        f"CF = r_ & 1u; OF = ((r_ >> ({bits}u - 1u)) & 1u) ^ CF;")
+            else:
+                body = (f"k_ = c_ % {bits}u; r_ = k_ ? ((v_ >> k_) | (v_ << ({bits}u - k_))) & MASK({bits}) : v_; "
+                        f"CF = (r_ >> ({bits}u - 1u)) & 1u; OF = CF ^ ((r_ >> ({bits}u - 2u)) & 1u);")
+            return [f"{{ uint32_t a_ = {a}, c_ = {cnt}, v_ = a_ & MASK({bits}), k_, r_;",
+                    f"if (c_) {{ {body} {self.write(i, ops[0], 'r_')} }} }}"]
         if mn in ("bt", "bts", "btr", "btc"):
             need(2)
             if self.bits(i, ops[0]) != 32:

@@ -79,6 +79,31 @@ CDECL_OTHER = {("user32.dll", "wsprintfA"): VARIADIC_WORDS, ("msvfw32.dll", "MCI
 
 # stdcall functions only the DLLs import
 EXTRA_STDCALL = {"GetNearestPaletteIndex": 2}
+
+# Spells of the Ancients (2.0 and 2.15). The documented number of stack words of the Windows calls its programs and libraries import that 1.0's do not (tools/research/sotaimports.py
+# checks them against the code of the 2.15 files: `--sigs` compares them with the pushes before each call of the import).
+SOTA_STDCALL = {
+    # shandalar.exe, FaceMaker.exe, the libraries (and magic.exe)
+    "RegOpenKeyA": 3, "RegCreateKeyA": 3, "GetFileTitleA": 3, "ExtTextOutA": 8, "RectInRegion": 2, "GetThreadTimes": 5, "GetVersionExA": 1, "GetWindowsDirectoryA": 2,
+    "ResumeThread": 1, "SuspendThread": 1, "WinExec": 2, "GetUpdateRect": 3, "GetUpdateRgn": 3, "ChangeDisplaySettingsA": 2, "GetDiskFreeSpaceA": 5, "SetRectEmpty": 1, "EqualRect": 2,
+    "TlsAlloc": 0, "TlsFree": 1, "TlsGetValue": 1, "TlsSetValue": 2, "GetLocaleInfoA": 4, "GetLocaleInfoW": 4, "GetVolumeInformationA": 8, "RegisterWindowMessageA": 1,
+    "GetCurrentThreadId": 0, "SetLastError": 1, "GetFullPathNameA": 4, "IsBadCodePtr": 1, "RaiseException": 4, "TerminateThread": 2, "SetUnhandledExceptionFilter": 1,
+    # only magic.exe (the shell, not part of milestone 1) and ManaLink 3.0 import these
+    "CreateProcessA": 10, "FindFirstFileA": 2, "FindNextFileA": 2, "FindClose": 1, "CreateDialogParamA": 5, "IsDialogMessageA": 2, "GetWindowTextLengthA": 1,
+    "IsCharAlphaNumericA": 1, "ShowScrollBar": 3, "GetCursor": 0, "CharLowerA": 1, "CharUpperA": 1, "mciSendCommandA": 4, "mciGetErrorStringA": 3, "CreateMutexA": 3, "ReleaseMutex": 1,
+    "SetFileAttributesA": 2, "ExcludeClipRect": 5, "GetFileVersionInfoSizeA": 2, "GetFileVersionInfoA": 4, "VerQueryValueA": 4, "CreateEventA": 4, "SetEvent": 1, "ResetEvent": 1,
+}
+# The C runtime's (cdecl) additions: the stack words the caller pushes (`_spawnl` and `_setjmp3` take a variable number of arguments).
+SOTA_CDECL = {
+    "longjmp": 2, "_setjmp3": VARIADIC_WORDS, "qsort": 4, "strcoll": 2, "_beginthreadex": 6, "_spawnl": VARIADIC_WORDS, "_findfirst": 2, "_findnext": 2, "_findclose": 1,
+    "_beginthread": 3, "_endthread": 0, "_tzset": 0, "localtime": 1, "strftime": 4, "fputc": 2,
+}
+STDCALL.update(SOTA_STDCALL)
+CDECL.update(SOTA_CDECL)
+
+# What the game's own libraries export, read off their machine code (libsigs.py) and registered here before a program or library that imports them is lifted:
+# {(library file name, lower case; export name): (stack words, bytes the callee pops)}. Looked up last, so a name in the tables above keeps its documented numbers.
+LIBRARY = {}
 # functions that take a POINT by value, which is two stack words (STDCALL counts the point as one argument, as the C prototype writes it)
 POINT_BY_VALUE = {"PtInRect": 3, "WindowFromPoint": 2, "ChildWindowFromPoint": 3, "DragDetect": 3, "RealChildWindowFromPoint": 3}
 
@@ -92,4 +117,6 @@ def signature(dll, name):
     if (dll, name) in CDECL_OTHER:
         return (CDECL_OTHER[(dll, name)], 0)
     n = POINT_BY_VALUE.get(name, STDCALL.get(name, EXTRA_STDCALL.get(name)))
-    return None if n is None else (n, 4 * n)
+    if n is None:
+        return LIBRARY.get((dll, name))
+    return (n, 4 * n)

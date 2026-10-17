@@ -33,21 +33,6 @@ static const uint8_t *file_rva(const uint8_t *file, uint32_t nt, uint32_t rva)
 static uint32_t le32(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
 static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }
 
-static const WinApi *find_api(const char *dll, const char *name)
-{
-    const WinApi *tables[] = {KERNEL32_APIS, KERNEL32_RT_APIS, CRT_APIS, STDIO_APIS, USER32_APIS, CONTROLS_APIS, FILEDLG_APIS, WINHELP_APIS, MSGBOX_APIS, MENUS_APIS, GDI32_STATE_APIS, GDI32_BLIT_APIS, GDI32_TEXT_APIS, VIDEO_APIS};
-    size_t t;
-
-    for (t = 0; t < sizeof(tables) / sizeof(tables[0]); t++) {
-        const WinApi *a;
-
-        for (a = tables[t]; a->name; a++)
-            if (!strcmp(a->name, name) && !strcmp(a->dll, dll))
-                return a;
-    }
-    return NULL;
-}
-
 static void add_import(const char *dll, const char *name, uint32_t slot)
 {
     Import *im;
@@ -84,7 +69,7 @@ static void add_import(const char *dll, const char *name, uint32_t slot)
         im->cleanup = sig->cleanup;
     }
     {
-        const WinApi *api = find_api(dll, name);
+        const WinApi *api = port_find_api(dll, name);
 
         im->fn = api ? api->fn : NULL;
     }

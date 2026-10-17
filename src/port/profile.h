@@ -111,6 +111,11 @@ typedef struct ProfKeys {
 /* The screen's size as the game's layouts read it (main.c): the program is told the size by writing it here */
 typedef struct ProfDisplay { uint32_t width, height; } ProfDisplay;
 
+/* The programs a program of the build may start (spawn.c: _spawnl, WinExec, CreateProcessA): the file name it asks for (lower case, no folder) and the game module (file name
+ * without its extension, beside the running module) that runs that program. A program not in the list is not started: the call fails, as it did before the runtime had a process model. */
+#define PROFILE_MAX_PROGRAMS 4
+typedef struct ProfProgram { const char *file; const char *module; } ProfProgram;
+
 /* One file of one build. */
 typedef struct BuildProfile {
     const char *id;         /* the build id: SHA-256 of the file, 64 lower-case hex characters */
@@ -118,6 +123,9 @@ typedef struct BuildProfile {
     const char *file;       /* "MAGIC.EXE" */
     const char *program;    /* the program this file is: "MAGIC", "DUEL", "DECK" (LIFT_PROGRAM); "" for a library */
     uint32_t base;          /* a library: the address it is lifted for and mapped at; 0 for a program */
+    int hooks_verified;     /* 1: the hook addresses below (pace, buttons, textmenu, buycards, clues, title, keys, display) were checked against the running game. 0: this build's hooks were
+                             * never ported, so the row holds none of them and every hook stays off (a test keeps the two together). `lzw` is not a hook: the game cannot show a picture without it. */
+    ProfProgram programs[PROFILE_MAX_PROGRAMS];     /* what this program may start; {NULL, NULL} ends the list */
     ProfLzw lzw;
     ProfPace pace;
     ProfButtons buttons;

@@ -1749,6 +1749,17 @@ static uint32_t CreateRectRgnIndirect(const uint32_t *a)
     return obj_new(O_REGION, r);
 }
 
+/* RectInRegion(hrgn, &rect): does any part of the rectangle lie in the region? (The port's regions are their bounding rectangles; both are half open, as Windows' are.) */
+static uint32_t RectInRegion(const uint32_t *a)
+{
+    Region *r = obj_get(a[0], O_REGION);
+    int l = (int32_t)RD32(a[1]), t = (int32_t)RD32(a[1] + 4), rr = (int32_t)RD32(a[1] + 8), b = (int32_t)RD32(a[1] + 12);
+
+    if (!r)
+        return 0;
+    return l < r->r && r->l < rr && t < r->b && r->t < b && l < rr && t < b;
+}
+
 static uint32_t CreatePolygonRgn(const uint32_t *a)
 {
     Region *r = calloc(1, sizeof(*r));
@@ -1798,7 +1809,7 @@ const WinApi GDI32_STATE_APIS[] = {
     {"gdi32.dll", "GdiSetBatchLimit", one}, {"gdi32.dll", "SaveDC", SaveDC}, {"gdi32.dll", "RestoreDC", RestoreDC},
     {"gdi32.dll", "SetViewportOrgEx", SetViewportOrgEx}, {"gdi32.dll", "OffsetViewportOrgEx", OffsetViewportOrgEx},
     {"gdi32.dll", "SelectClipRgn", SelectClipRgn}, {"gdi32.dll", "IntersectClipRect", IntersectClipRect}, {"gdi32.dll", "CreateRectRgn", CreateRectRgn},
-    {"gdi32.dll", "SetRectRgn", SetRectRgn}, {"gdi32.dll", "CreateRectRgnIndirect", CreateRectRgnIndirect},
+    {"gdi32.dll", "SetRectRgn", SetRectRgn}, {"gdi32.dll", "CreateRectRgnIndirect", CreateRectRgnIndirect}, {"gdi32.dll", "RectInRegion", RectInRegion},
     {"gdi32.dll", "CreatePolygonRgn", CreatePolygonRgn}, {"gdi32.dll", "GetDeviceCaps", GetDeviceCaps},
     {0, 0, 0},
 };

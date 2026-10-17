@@ -7,8 +7,36 @@
 
 #include "port.h"
 #include "profile.h"
+#include "wm.h"
 
 #define P(a) (G + (uint32_t)(a))
+
+/* The function the port implements for an import (library name in lower case, as the PE names it). The release C runtime, msvcrt.dll, is the same library as the debug one,
+ * msvcrtd.dll, that the first build (1.0) imports, with the same functions: the tables name the debug one, and an import of the other is found there when no table has it by its own
+ * name (Spells of the Ancients' programs import msvcrt.dll). */
+const WinApi *port_find_api(const char *dll, const char *name)
+{
+    static const WinApi *const tables[] = {KERNEL32_APIS, KERNEL32_RT_APIS, WINSYS_APIS, CRT_APIS, STDIO_APIS, USER32_APIS, CONTROLS_APIS, FILEDLG_APIS, WINHELP_APIS, MSGBOX_APIS, MENUS_APIS,
+                                           GDI32_STATE_APIS, GDI32_BLIT_APIS, GDI32_TEXT_APIS, VIDEO_APIS};
+    size_t t;
+    int pass;
+
+    for (pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+            if (strcmp(dll, "msvcrt.dll"))
+                break;
+            dll = "msvcrtd.dll";
+        }
+        for (t = 0; t < sizeof(tables) / sizeof(tables[0]); t++) {
+            const WinApi *a;
+
+            for (a = tables[t]; a->name; a++)
+                if (!strcmp(a->name, name) && !strcmp(a->dll, dll))
+                    return a;
+        }
+    }
+    return NULL;
+}
 
 typedef struct HostModule {
     const char *name;                   /* "magsnd.dll" */
