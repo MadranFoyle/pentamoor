@@ -43,8 +43,8 @@ TITLE_NEW_GAME = (0.5, 0.648)
 DIFFICULTY_APPRENTICE = (0.566, 0.247)
 COLOUR_RED = (0.132, 0.215)
 FACE_PORTRAIT = (0.386, 0.208)           # in FaceMaker's window
-ANTE_DUEL = (0.459, 0.633)               # "Duel this Sorceress." (the first line of the encounter's choices)
-ANTE_PAY = (0.459, 0.66)
+ANTE_DUEL = {640: (290, 320), 800: (360, 379), 1024: (470, 486)}       # "Duel this Sorceress." (the first line of the encounter's choices), in pixels at each size
+ANTE_PAY = {640: (290, 335), 800: (360, 393), 1024: (470, 508)}
 VILLAGE_LEAVE = (0.733, 0.628)           # "Leave the village": a new game can begin in a village, not at an encounter
 
 
@@ -174,17 +174,21 @@ class SotaSoak(soak.Soak):
             if t.dialogs():
                 self.handle_dialog(t)
             elif time.time() - clicked > 6:                     # the ante screen is a picture, not a window: click its "Duel" line now and then until the board comes
-                g.click(*self.at(ANTE_DUEL))
+                g.click(*ANTE_DUEL[self.w])
                 clicked = time.time()
             if first and time.time() - t0 > 25 and time.time() - left > 45:       # the game began in a village (or on the map): leave it; the monsters come to the party
                 g.click(*self.at(VILLAGE_LEAVE))
                 time.sleep(2.5)
-                x, y = self.rnd.randrange(self.w // 3, 2 * self.w // 3), self.rnd.randrange(self.h // 4, 3 * self.h // 5)
-                g.cmd("move %d %d" % (x, y))                    # on the map: walk a step or two (a monster beside the party starts its encounter when the party moves)
-                time.sleep(0.3)
-                g.cmd("down %d %d" % (x, y))
-                time.sleep(1.2)
-                g.cmd("up %d %d" % (x, y))
+                mon = self.monsters()
+                if mon:                                         # on the map with no monster near: put the party on the first one, as the game's own encounters do
+                    g.poke_many(teleport_pokes(mon[0][0] // 32, mon[0][1] // 32))
+                else:
+                    x, y = self.rnd.randrange(self.w // 3, 2 * self.w // 3), self.rnd.randrange(self.h // 4, 3 * self.h // 5)
+                    g.cmd("move %d %d" % (x, y))                # (a monster beside the party starts its encounter when the party moves)
+                    time.sleep(0.3)
+                    g.cmd("down %d %d" % (x, y))
+                    time.sleep(1.2)
+                    g.cmd("up %d %d" % (x, y))
                 left = time.time()
             time.sleep(2.0)
         if first:
@@ -192,6 +196,13 @@ class SotaSoak(soak.Soak):
         else:
             self.ev("NOTE", "no further duel after the last one: restarting the game", shot=self.shot("moved-on"))
         return False
+
+    def monsters(self):
+        """[(pixel x, pixel y)] of the wandering monsters on the map (the table at MONSTERS: type, x, y, ... in 6 dwords; type -1 is none)."""
+        v = self.game.peek(MONSTERS, 6 * N_MONSTERS)
+        if not v:
+            return []
+        return [(v[6 * i + 1], v[6 * i + 2]) for i in range(N_MONSTERS) if v[6 * i] != 0xffffffff and 0 < v[6 * i + 1] < 4000 and 0 < v[6 * i + 2] < 4000]
 
     def win(self):
         """Win the duel the way a player cannot: the opponent's life to 0, then any action makes the engine look at the totals (tools/soak/won_dialog.py does the same for 1.0). The poke
@@ -366,6 +377,9 @@ class SotaMonkey(SotaSoak):
 
     def summary(self):
         super().summary()
+        line = "places visited: %d" % self.stats["places"]
+        print(line, flush=True)
+        open(os.path.join(self.workdir, "summary.txt"), "a").write(line + "\n")
 
 
 def main():

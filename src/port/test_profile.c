@@ -244,7 +244,7 @@ static void test_v215_values(void)
     CHECK(n == 2);                                          /* MAGIC.EXE 1.0 and shandalar.exe 2.15 hold hook addresses */
     CHECK(sh && sh->display.width == 0x57a7d0u && sh->display.height == 0x57a7d4u && hook_groups(sh) == (HK_DISPLAY | HK_PACE | HK_KEYS) && sh->hooks_verified == (HK_DISPLAY | HK_PACE | HK_KEYS));
     CHECK(sh->pace.tick_fn == 0x48a3a5u && sh->pace.ticks == 0x566f3cu && sh->pace.frame_ret == 0x438f85u && sh->pace.map_loop.lo == 0x438a70u && sh->pace.map_loop.hi == 0x439059u);
-    CHECK(sh->pace.idle_fn == 0x4eab14u && sh->pace.idle_ms == 10 && !profile_find(ID_MAGIC)->pace.idle_ms && !profile_find(ID_MAGIC)->pace.idle_fn);   /* 1.0 does not nap */
+    CHECK(sh->pace.idle_fn == 0x4eab14u && sh->pace.idle_ms == 16 && !profile_find(ID_MAGIC)->pace.idle_ms && !profile_find(ID_MAGIC)->pace.idle_fn);   /* 1.0 does not nap */
     CHECK(sh->buttons.pass == 0x4ba087u && sh->buttons.mouse_var == 0x9199b0u && !sh->buttons.snapshot);
     CHECK(sh && fm && dd && dc);
     if (!sh || !fm || !dd || !dc)
@@ -353,7 +353,7 @@ static void test_hooks(void)
         profile = profile_find(ID_S_SHANDALAR);
         install_all();
         CHECK(hooks_are(shandalar_hooks, 6, shandalar_over, 4));
-        CHECK(yesno_site(0x4a3296) && !yesno_site(0x468c0e) && yesno_site(0x4f0b96) && !yesno_site(0x509e4a) && !yesno_site(0x45119d) && !yesno_site(0x4b84e5));     /* "Buy for N gold?" and "Take this card?" were run; the sell site is not in the row */
+        CHECK(yesno_site(0x4a3296) && !yesno_site(0x468c0e) && !yesno_site(0x4f0b96) && !yesno_site(0x509e4a) && !yesno_site(0x45119d) && !yesno_site(0x4b84e5));     /* only "Buy for N gold?" was run: the sell (0x468c0e) and take (0x4f0b96) sites are matched by code shape but were not seen answering, so they are not in the row */
         CHECK(profile_write_screen_size(800, 600) == 2);      /* the screen-size globals 0x57a7d0 and 0x57a7d4 */
         profile = profile_find(ID_S_FACEMAKER);
         install_all();

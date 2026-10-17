@@ -209,9 +209,9 @@ Now each build is a **profile**: a row of a table, found by the **build id** of 
 
   | group | fields | used by |
   |---|---|---|
-  | identity | `id`, `build` ("v1.0"), `file`, `program` ("MAGIC", "DUEL", "DECK"; "" for a library), `base` (a library: where it is lifted for) | the lookup, the messages |
+  | identity | `id`, `build` ("v1.0"), `file`, `program` ("MAGIC", "DUEL", "DECK"; "" for a library), `base` (a library: where it is lifted for), `hooks_verified` (below) | the lookup, the messages |
   | `lzw` | `header`, `read`, `read2` (entries), `block` (the dictionary and the state behind it), `in_ptr`, `in_end`, `refill`, `callback`; the offsets inside the block are `LZW_*` in `profile.h` | `lzw.c`: MAGIC.EXE, DUEL.EXE, DECKDLL.DLL |
-  | `pace` | `tick_fn` (overridden), `ticks`, `frame_ret`, `map_loop` | `pace.c` |
+  | `pace` | `tick_fn` (overridden), `ticks`, `frame_ret`, `map_loop`; `idle_fn` and `idle_ms` (2.15 only: the mouse snapshot that the loops which wait for the player call on every pass, and the nap it takes there) | `pace.c` |
   | `buttons` | `pass`, `mouse_var`, `snapshot`, `ctx_cur`, `ctx_count`, `ctx_ptrs`, the six offsets in a record | `pace.c`, `screens.c` |
   | `textmenu`, `buycards`, `clues` | the loops' code ranges, the text menu's seven globals, the cards' ids, the frame offsets of the loops' locals | `screens.c` |
   | `title` | `loop` (the title menu's loop, the one screen where Escape leaves the game with no question) | `screens.c`, `main.c` (`pad_set_back_guard`) |
@@ -220,6 +220,8 @@ Now each build is a **profile**: a row of a table, found by the **build id** of 
 
   The table has five rows, for version 1.0: MAGIC.EXE (all the groups), DUEL.EXE (`lzw`), DECK.EXE (nothing), DECKDLL.DLL (`lzw`, at its base 0x32000000) and STATWIN.DLL (nothing; it is there so that a library of another build is refused). Their values are exactly the
   literals the sources had; `test_profile.c` compares every field with the old literal, and `test_lift.py` fails when a game address is written in the code of `src/port` anywhere but `profile.c` (comments may name them).
+- **`hooks_verified`** is a mask of `HK_*` (`profile.h`): `HK_PACE`, `HK_BUTTONS`, `HK_TEXTMENU`, `HK_BUYCARDS`, `HK_CLUES`, `HK_TITLE`, `HK_KEYS`, `HK_DISPLAY`. A row holds the addresses of a group only when its bit is set, and a group's bit is set only when its addresses were **run** in the game and their effect seen
+  (found by code shape is not enough: `docs/notes/sota-comparison.md`, "Milestone 2", lists each site of 2.15 as verified or not). 1.0's MAGIC.EXE has every bit; shandalar.exe 2.15 has `HK_PACE | HK_KEYS | HK_DISPLAY`. `test_profile.c` fails a row that holds an address of a group whose bit is clear.
 - **An unknown build** (an id no row has, a module without an id, or a file that is not the one the module was lifted from) **is refused**: the runtime prints
   `pentamoor: <file> is build <id>, which this version does not support (supported: v1.0 MAGIC.EXE)` and ends with **exit status 3**, before anything of the game has run. The game cannot run without the picture decompressor override, so an unknown build could not get past its
   first picture anyway. **`PORT_UNKNOWN_BUILD=1`** starts it anyway for research, with a warning and `PROFILE_NONE` as the profile: no pre-call hook, no override and no write is made (`test_profile.c` counts them: `port_hook_count()` and `profile_guest_writes` stay 0; `make -C src/port check-build` runs

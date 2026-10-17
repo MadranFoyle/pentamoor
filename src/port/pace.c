@@ -55,7 +55,8 @@ static uint32_t read_and_clear_ticks(const uint32_t *a)
 #define PASS_BUDGET 20000                       /* back-edges a pass of the table may need (a few hundred in fact: the records' loops and their drawing); a budget below this is renewed at its start */
 #define REPEAT_MS 400u                          /* a button held this long repeats */
 
-static double ui_last;
+static double ui_last;                          /* the last paced pass */
+static int snap_napped;                         /* pace_idle_snapshot (below) napped since the last pass: the loop that took the snapshot has had its rest */
 static uint32_t cur_press, press_val;           /* the press the loops have acted on (front.c's number), and the button state it had */
 static int suppressed, carried, ui_log;
 
@@ -82,6 +83,16 @@ static uint32_t pace_ui_pass(const uint32_t *a)
         WR32(arg, btn);
         if (ui_log)
             port_log("ui pass from 0x%x: the press came in while the baton was offered: state %u", ret, btn);
+    }
+    if (snap_napped)
+        snap_napped = 0;
+    else if (btn == 0 && profile->pace.idle_ms && RD32(profile->buttons.mouse_var) == 0) {
+        /* a screen's loop whose only work is this call (the title menu never takes the mouse snapshot: it called this 1.8 million times a second): nap, as pace_idle_snapshot does; a press that
+         * came in meanwhile is the state the call is given */
+        sched_sleep(profile->pace.idle_ms / 1000.0);
+        btn = RD32(profile->buttons.mouse_var);
+        if (btn != 0)
+            WR32(arg, btn);
     }
     down = front_ui_pass(&id, &held);
     if (id != 0 && id != cur_press && btn != 0) {     /* the first pass that sees this press down: the click */
@@ -137,6 +148,7 @@ static uint32_t pace_idle_snapshot(const uint32_t *a)
     if (RD32(profile->buttons.mouse_var) != 0)
         return 0;
     sched_sleep(profile->pace.idle_ms / 1000.0);
+    snap_napped = 1;
     return 0;
 }
 
