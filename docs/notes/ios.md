@@ -7,8 +7,8 @@ like the rest of the runtime, and the runtime is SDL2.
 it to anyone, do not put it on TestFlight or the App Store, do not commit it. Everything it builds goes to `dist/` (git-ignored) and nothing in the repository is made from the game; `tools/release/check_tree.py` still passes. The game's data
 (the `Magic` folder) is never inside the app: you copy it into the app's Documents folder yourself.
 
-What was run, and what was not, is listed at the end ([What was tested](#what-was-tested), [Not verified](#not-verified)). Short version: everything below ran in the Simulator on an iPad Pro 13-inch (M5) with the real game files;
-**nothing has run on a real iPad**, including `deploy.sh` (it ran against a Simulator and a fake `xcrun`, [below](#what-was-tested)).
+What was run, and what was not, is listed at the end ([What was tested](#what-was-tested), [Not verified](#not-verified)). Short version: almost everything below ran in the Simulator on an iPad Pro 13-inch (M5) with the real game files,
+and on 2026-10-17 `deploy.sh` ran once on a real iPad ([On a real iPad](#on-a-real-ipad-tested)): it worked at the first try, and a whole dungeon was played on it with no problems (the player's report; no soak or log review beyond the start-up log).
 
 ## One command
 
@@ -236,12 +236,21 @@ All on an Apple M1 Max, macOS 27.0.1, Xcode 27.0 (iPhoneSimulator 27.0 SDK), the
   in a folder (first deploy, redeploy skipping the data, changed data, data deleted in Files, both ways a folder may be copied, `--program`, `--logs`, a locked iPad, a signing failure). `test_ios.py` also tests the project generator's `--prebuilt` mode.
 - `devicectl` does not work on a Simulator (it answers that the capability is not supported), so the device path of `deploy.sh` could not be exercised in one; only the Simulator path (`xcodebuild` + `simctl`, the same steps in the same order with the same logging) was.
 
+## On a real iPad (tested)
+
+One run, on 2026-10-17: iPad Pro 12.9-inch (5th generation, M1), iPadOS 26.6.2, plugged in with USB, Developer Mode on, Xcode 27.0 on the Mac (the kit's prebuilt objects, SDK 27.0, as in the kit), a team id in `ios.env`, the default bundle id
+(the default `com.ben.pentamoor`). `./deploy.sh` went through its 8 steps without a question: the build and signing (`xcodebuild` with automatic signing made the profile and registered the iPad), the install, the copy of the game (1102 files, 292 MB, checked), the launch.
+`deploy.sh --logs` then showed the app's start-up: full screen, window 1366x1024 points, drawable 2732x2048 pixels (2 per point), picture scaled 2.667 times, the build recognised as the v1.0 `MAGIC.EXE`, the game loaded. The two lines
+"Unbalanced calls to begin/end appearance transitions" from SDL's view controller are printed at every start (the known scene-life-cycle quirk, harmless as far as seen).
+The player then played a whole dungeon (touch, the duels in it, walking, going in and out of the area) with no problem. That settles that the scene-life-cycle workaround, the 4 GB address-space reservation and the memory limit are fine on this iPad at least for that session.
+
+Not part of that run: Wi-Fi, installing over an older build, a free (7-day) Apple ID, other iPads or other iPadOS versions, long sessions with the soak tools, battery and heat.
+
 ## Not verified
 
-- **`deploy.sh` on a real iPad**: signing with `-allowProvisioningUpdates` (whether it finds the Apple ID in Xcode, makes the certificate and the profile and registers the iPad), Developer Mode and lock-state detection (the JSON of a real iPad: the fields are read from the documented names in both shapes, and a missing one is only a warning), the real file layout of
-  `devicectl device copy to` for a folder (the probe handles both, the fake in the tests does both), the speed of the copy over USB and Wi-Fi, a Wi-Fi paired iPad, installing over an older build, launching (`Untrusted Developer`), `--console`. The default bundle id may be taken by someone else's team.
+- **`deploy.sh` beyond the one USB run above**: a Wi-Fi paired iPad, the speed of the copy over Wi-Fi, installing over an older build, `--console`, a free Apple ID (the 7-day profile), `Untrusted Developer` (it did not come up on the run above). The default bundle id may be taken by someone else's team.
 - **Another Xcode**: the kit's prebuilt objects linked by a different Xcode or SDK than the one that compiled them (only 27.0 exists here; the warning and the `--with-sources` fallback are the plan, not an observation).
-- **Anything on a real iPad**: signing, the app starting under the device's limits, the 4 GB reservation, the memory limit, the scene-life-cycle workaround on a real iOS 26 or 27, thermals, battery, frame rate on an A-series or M-series iPad, the keyboard when the iPad is really held landscape.
+- **On a real iPad, beyond the dungeon played**: other devices and iPadOS versions (iPadOS 26.6.2 on an M1 is the only one seen), thermals, battery, a measured frame rate, the on-screen keyboard (not reported), long sessions.
 - The Simulator device was in portrait the whole time and showed the landscape app letterboxed at three quarters of the width; the touch mapping was checked in that state (a tap lands where it is drawn, by the log's picture coordinates), landscape at full size was not looked at.
 - Backgrounding and coming back, Stage Manager and window resizing (the app asks for full screen and is not meant to be resized), orientation changes, an Apple Pencil, a trackpad or an external keyboard on the iPad itself, a physical game controller (SDL's gamepad subsystem started and the Simulator's own "Gamepad" was found).
 - DECK.EXE and DUEL.EXE as the iOS program were started (`PENTAMOOR_PROGRAM=duel` shows the standalone duel program's setup dialog, `deck` the deck builder with its "New Deck" and the card row) and not played; only MAGIC.EXE was played. The ending movie and the spell clips (no ffmpeg on iOS). Sound by ear. Long sessions (the soak tools can run against the Simulator through `sim_drive.py`; they were not).
