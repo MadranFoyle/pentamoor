@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Optional entitlements for a real iPad (docs/notes/ios.md, "Memory"). Off by default: the Xcode project made by tools/ios/gen_xcodeproj.py uses this file only with the entitlements option,
+  and the Simulator needs neither. Each of them needs its capability on the app's identifier; Xcode's automatic signing adds it when it sees the entitlement (a paid developer team).
+
+  extended-virtual-addressing: the app may use more address space than the default (the guest's 4 GB reservation sits beside SDL's and the system's own; the default limit has room for
+                               it on most devices, this is for a device where the reservation fails).
+  increased-memory-limit:      a higher limit on resident memory before the system ends the app (the game itself needs well under 1 GB; the guest's pages are touched as the game uses them).
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
+	<true/>
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+</dict>
+</plist>

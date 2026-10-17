@@ -53,6 +53,11 @@ jobs:
       - name: SDL front end compiles
         run: make -C src/port check-front
 
+      # The runtime for an iPad (the iOS SDK of the runner's Xcode, arm64 Simulator; objects only, no game files, nothing linked or run): the iOS-only code (ios_main.c, the PLAT_IOS paths) is checked here.
+      - name: Runtime cross-compiles for iOS (macOS)
+        if: runner.os == 'macOS'
+        run: make -C src/port -j4 ios-runtime
+
       - name: Runtime builds with no generated sources, and loads a game module
         run: |
           test ! -e sources/generated
@@ -65,6 +70,9 @@ jobs:
 
       - name: Installer tests
         run: python -m pytest tools/install
+
+      - name: iOS tools tests (the Xcode project generator, the build script's flags and pins)
+        run: python -m pytest tools/ios
 
       - name: Lifter tests (the lifter, the scan that finds the game's functions)
         run: python -m pytest tools/lift/test_lift.py
