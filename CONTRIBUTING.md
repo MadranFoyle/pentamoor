@@ -108,7 +108,7 @@ python3 tools/release/check_archive.py dist/pentamoor-0.0.1-test-linux-x86_64.ta
 ```
 
 Pins to refresh now and then (each is a checksum or a commit): the Zig wheels in `tools/install/zigdl.py` (PyPI file and checksum per system), the embeddable Python and its checksum in
-`tools/release/package.py`, SDL2's version and checksum in `tools/release/build_macos.sh`, and the actions in `package.yml` and `release.yml` (full commit SHAs with the tag in a comment; take releases at least two weeks old; `ci.yml` itself names its actions by version tag).
+`tools/release/package.py`, SDL2's version and checksum in `tools/release/build_macos.sh`, and the actions in `ci.yml`, `package.yml` and `release.yml` (full commit SHAs with the tag in a comment; take releases at least two weeks old; the three files use the same SHAs for the same action).
 
 ## Adding a build
 
@@ -163,7 +163,7 @@ All are environment variables. This table is the whole list of the ones the runt
 
 | Variable | Effect |
 |---|---|
-| `PORT_HEADLESS=1` | no window (the runtime tests whether it is set at all; only the message-box choice below reads `0` as off) |
+| `PORT_HEADLESS=1` | no window (unset, empty or `0` is off, in the front end and in the message-box choice alike) |
 | `PORT_MUTE=1` | no sound |
 | `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy` | run with no display or speakers (what CI and automated runs use) |
 | `PORT_SCRIPT`, `PORT_CONTROL` | drive the window by a script file or by a named pipe (clicks, keys, screenshots) |

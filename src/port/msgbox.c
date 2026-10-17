@@ -154,8 +154,8 @@ int msgbox_mode_for(const char *env, int unattended)
 
 int msgbox_mode(void)
 {
-    const char *drv = getenv("SDL_VIDEODRIVER"), *hl = getenv("PORT_HEADLESS");
-    int unattended = getenv("PORT_CONTROL") != NULL || getenv("PORT_SCRIPT") != NULL || (hl && strcmp(hl, "0")) || (drv && !strcasecmp(drv, "dummy"));
+    const char *drv = getenv("SDL_VIDEODRIVER");
+    int unattended = getenv("PORT_CONTROL") != NULL || getenv("PORT_SCRIPT") != NULL || port_env_on("PORT_HEADLESS") || (drv && !strcasecmp(drv, "dummy"));
 
     return mode_override ? mode_override : msgbox_mode_for(getenv("PORT_MSGBOX"), unattended);
 }

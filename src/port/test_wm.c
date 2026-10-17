@@ -1511,6 +1511,34 @@ static void test_msgbox(void)
     CHECK(msgbox_mode() == MSGBOX_ASK);
     msgbox_set_mode(0);
 
+    /* PORT_HEADLESS is on when set to something other than "" or "0", in the message-box rule and for port_env_on alike */
+    {
+        const char *names[] = {"PORT_HEADLESS", "PORT_MSGBOX", "PORT_CONTROL", "PORT_SCRIPT", "SDL_VIDEODRIVER"};
+        char *saved[5];
+        int i;
+
+        for (i = 0; i < 5; i++) {
+            const char *v = getenv(names[i]);
+
+            saved[i] = v ? strdup(v) : NULL;
+            unsetenv(names[i]);
+        }
+        CHECK(!port_env_on("PORT_HEADLESS") && msgbox_mode() == MSGBOX_ASK);
+        setenv("PORT_HEADLESS", "1", 1);
+        CHECK(port_env_on("PORT_HEADLESS") && msgbox_mode() == MSGBOX_AUTO);
+        setenv("PORT_HEADLESS", "0", 1);
+        CHECK(!port_env_on("PORT_HEADLESS") && msgbox_mode() == MSGBOX_ASK);
+        setenv("PORT_HEADLESS", "", 1);
+        CHECK(!port_env_on("PORT_HEADLESS") && msgbox_mode() == MSGBOX_ASK);
+        for (i = 0; i < 5; i++) {
+            if (saved[i])
+                setenv(names[i], saved[i], 1);
+            else
+                unsetenv(names[i]);
+            free(saved[i]);
+        }
+    }
+
     /* the log line */
     msgbox_log_line(line, sizeof(line), "End of duel", "Want to play again?", IDYES, 0);
     CHECK(!strcmp(line, "MessageBox: End of duel: Want to play again? -> IDYES"));

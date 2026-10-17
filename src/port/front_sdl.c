@@ -1589,7 +1589,7 @@ int front_run(int (*game)(void *), void *arg)
     DispCombo combo = {0, 0, 0};
     int pad_l3 = 0, pad_r3 = 0;
 
-    if (getenv("PORT_HEADLESS"))                     /* automated runs (screenshots, tests) need no window */
+    if (port_env_on("PORT_HEADLESS"))                /* automated runs (screenshots, tests) need no window (PORT_HEADLESS=0 is off) */
         return game(arg);
     init_keys();
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");      /* SIGINT and SIGTERM are ours (below), not an SDL_QUIT */
