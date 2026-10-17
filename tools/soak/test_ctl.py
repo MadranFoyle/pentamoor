@@ -186,3 +186,11 @@ def test_read_ppm(tmp_path):
     p.write_bytes(b"P6\n2 1\n255\n" + bytes([1, 2, 3, 4, 5, 6]))
     assert sota_soak.read_ppm(str(p)) == (2, 1, bytes([1, 2, 3, 4, 5, 6]))
     assert sota_soak.read_ppm(str(tmp_path / "none.ppm")) is None
+
+
+def test_sota_saveload_and_soak_scripts_parse_and_agree_on_addresses():
+    import ast
+    import sota_soak
+    for name in ("sota_soak.py", "sota_saveload.py"):
+        ast.parse(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), name)).read())
+    assert sota_soak.PARTY_TILE == (0x912870, 0x912874) and sota_soak.LOCATIONS == 0x721e30

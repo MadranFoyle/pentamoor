@@ -320,6 +320,32 @@ static void test_erase_before_paint(void)
     CHECK(paints == 3 && log_is("ERASE "));
 }
 
+/* DefWindowProc(WM_CLOSE) is DestroyWindow: the window's procedure sees WM_DESTROY (a program ends its message loop there with PostQuitMessage: Spells of the Ancients 2.15's Quit), and
+ * the window and its child are gone afterwards. */
+static uint32_t closeproc(const uint32_t *a)
+{
+    if (a[1] == WM_DESTROY)
+        note("DESTROY ");
+    if (a[1] == WM_CLOSE) {
+        note("CLOSE ");
+        return API("DefWindowProcA", a[0], a[1], a[2], a[3]);
+    }
+    return a[1] == WM_NCCREATE;
+}
+
+static void test_close_destroys(void)
+{
+    uint32_t top, kid;
+
+    register_class("CloseClass", port_host_function(closeproc), 0, 0);
+    top = create("CloseClass", 0, 0, 0, 100, 100, 0, 0);
+    kid = create("CloseClass", 0, 10, 10, 20, 20, top, 0x40000000u);
+    log_clear();
+    API("SendMessageA", top, WM_CLOSE, 0, 0);
+    CHECK(log_is("CLOSE DESTROY "));                                    /* the child was destroyed by the window manager, not sent the message again by the test */
+    CHECK(wm_window(top) == NULL && wm_window(kid) == NULL);
+}
+
 /* "Sorcerer casts...": a child window whose WM_ERASEBKGND answers 1 without drawing (the BigCardChoice window; it draws its text in WM_PAINT) is see-through:
  * the parent's picture shows where the child drew nothing. A window that erases by drawing (even to black) is opaque. */
 static uint32_t paint_idx(const uint32_t *a, uint8_t idx, int erase_draws)
@@ -2152,6 +2178,7 @@ int main(void)
     test_queue_and_dispatch();
     test_update_calls();
     test_erase_before_paint();
+    test_close_destroys();
     test_see_through_child();
     test_display_notice();
     test_timers();

@@ -353,7 +353,7 @@ static void test_hooks(void)
         profile = profile_find(ID_S_SHANDALAR);
         install_all();
         CHECK(hooks_are(shandalar_hooks, 6, shandalar_over, 4));
-        CHECK(yesno_site(0x4a3296) && !yesno_site(0x468c0e) && !yesno_site(0x4f0b96) && !yesno_site(0x509e4a) && !yesno_site(0x45119d) && !yesno_site(0x4b84e5));     /* only "Buy for N gold?" was run; the sell and take sites are not in the row */
+        CHECK(yesno_site(0x4a3296) && !yesno_site(0x468c0e) && yesno_site(0x4f0b96) && !yesno_site(0x509e4a) && !yesno_site(0x45119d) && !yesno_site(0x4b84e5));     /* "Buy for N gold?" and "Take this card?" were run; the sell site is not in the row */
         CHECK(profile_write_screen_size(800, 600) == 2);      /* the screen-size globals 0x57a7d0 and 0x57a7d4 */
         profile = profile_find(ID_S_FACEMAKER);
         install_all();

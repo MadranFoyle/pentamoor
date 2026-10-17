@@ -45,6 +45,7 @@ COLOUR_RED = (0.132, 0.215)
 FACE_PORTRAIT = (0.386, 0.208)           # in FaceMaker's window
 ANTE_DUEL = (0.459, 0.633)               # "Duel this Sorceress." (the first line of the encounter's choices)
 ANTE_PAY = (0.459, 0.66)
+VILLAGE_LEAVE = (0.733, 0.628)           # "Leave the village": a new game can begin in a village, not at an encounter
 
 
 def teleport_pokes(tx, ty):
@@ -161,8 +162,9 @@ class SotaSoak(soak.Soak):
 
     def start_duel_from_ante(self, first=True):
         g = self.game
-        t_end = time.time() + (150 if first else 40)
-        clicked = 0.0
+        t0 = time.time()
+        t_end = t0 + (180 if first else 40)
+        clicked = left = 0.0
         while time.time() < t_end:
             t = self.look("starting a duel")
             if t is None:
@@ -174,23 +176,42 @@ class SotaSoak(soak.Soak):
             elif time.time() - clicked > 6:                     # the ante screen is a picture, not a window: click its "Duel" line now and then until the board comes
                 g.click(*self.at(ANTE_DUEL))
                 clicked = time.time()
+            if first and time.time() - t0 > 25 and time.time() - left > 45:       # the game began in a village (or on the map): leave it; the monsters come to the party
+                g.click(*self.at(VILLAGE_LEAVE))
+                time.sleep(2.5)
+                x, y = self.rnd.randrange(self.w // 3, 2 * self.w // 3), self.rnd.randrange(self.h // 4, 3 * self.h // 5)
+                g.cmd("move %d %d" % (x, y))                    # on the map: walk a step or two (a monster beside the party starts its encounter when the party moves)
+                time.sleep(0.3)
+                g.cmd("down %d %d" % (x, y))
+                time.sleep(1.2)
+                g.cmd("up %d %d" % (x, y))
+                left = time.time()
             time.sleep(2.0)
         if first:
-            self.ev("SETUP", "no duel board 150 s after the ante screen", shot=self.shot("setup"))
+            self.ev("SETUP", "no duel board 180 s after the first screen", shot=self.shot("setup"))
         else:
             self.ev("NOTE", "no further duel after the last one: restarting the game", shot=self.shot("moved-on"))
         return False
 
     def win(self):
-        """Win the duel the way a player cannot: the opponent's life to 0, then any action makes the engine look at the totals (tools/soak/won_dialog.py does the same for 1.0)."""
+        """Win the duel the way a player cannot: the opponent's life to 0, then any action makes the engine look at the totals (tools/soak/won_dialog.py does the same for 1.0). The poke
+        is repeated, a pass at a time, until the board is gone or a dialog (the result) is up: a poke made before the engine has set the life totals at the start of a duel is overwritten."""
         g = self.game
-        g.poke(WIN_LIFE, 0)
-        t = self.look("win")
-        if t is not None:
+        for _ in range(8):
+            g.poke(WIN_LIFE, 0)
+            t = self.look("win")
+            if t is None:
+                return False
+            texts = " ".join(c.title.lower() for d in t.dialogs() for c in t.children(d) if c.visible)
+            if not t.find("MAGICGAME_MainClass") or "won" in texts or "defeated" in texts or "lost" in texts:
+                return True
+            if t.dialogs():
+                self.handle_dialog(t)
             b = t.bar()
             if b and b[2]:
                 g.click(*b[2].center)
-        time.sleep(3)
+            time.sleep(3)
+        return False
 
     def play_duel(self, end_wall):
         """soak.Soak.play_duel; the duel is ended by winning it (the opponent's life poked to 0) or, otherwise, by conceding: chosen at random for each duel."""

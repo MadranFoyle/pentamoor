@@ -383,6 +383,13 @@ uint32_t wm_default_proc(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp)
     if (msg == WM_NCCREATE || msg == WM_NCHITTEST)
         return 1;
     if (msg == WM_CLOSE) {
+        /* DefWindowProc(WM_CLOSE) is DestroyWindow: the window's procedure gets WM_DESTROY first (Spells of the Ancients 2.15's main window answers it with PostQuitMessage, and
+         * without it the game's Quit ended the game's own loops and then waited for a WM_QUIT that never came); then the window and its children go. */
+        if (win->proc && wm_window(hwnd) == win) {
+            uint32_t args[4] = {hwnd, WM_DESTROY, 0, 0};
+
+            guest_call(win->proc, 4, args);
+        }
         wm_destroy(hwnd);
         return 0;
     }
@@ -1092,6 +1099,7 @@ static uint32_t PostMessageA(const uint32_t *a) { wm_post(a[0], a[1], a[2], a[3]
 
 static uint32_t PostQuitMessage(const uint32_t *a)
 {
+
     *sched_quit_flag() = 1;           /* WM_QUIT belongs to the calling thread's queue (the deck editor's thread must not end the game) */
     *sched_quit_code() = a[0];
     return 0;
