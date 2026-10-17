@@ -47,6 +47,9 @@ jobs:
       - name: Nothing tracked looks like decompiler output
         run: python tools/release/check_tree.py
 
+      - name: Every link between the Markdown files resolves
+        run: python tools/release/check_links.py
+
       - name: C unit tests (window manager, graphics, sound, movies, build profiles)
         run: make -C src/port test
 

@@ -77,7 +77,7 @@ the Wiz Stats page, and **Done** there returns to the map. At 800x600 the journa
 - Party sprite not visible on the map while standing on a castle's tile: the castle's sprite (a large one) is drawn over it. After a step off it shows again.
 - A screenshot taken right after a teleport can show the previous scrolled map frame for one frame (a mountain where later frames showed water); a second shot was right.
 - The 640x480 and 800x600 maze layouts were not walked beyond a few steps; the other event types of a castle (treasure, the "dice" events at `Palette_Subsystem_004a2ef0`, a fight against the wizard himself at the end) were not reached.
-- Not tried: 1024x768 (the Dungeon Clues/Wiz Stats/castle screens), clicking the up/down arrows of the Clues list with more than twelve entries, the dungeon treasure pick-up.
+- Not tried here (1024x768 was walked later: [resolution.md](resolution.md), which lists the castle gate and interior, a free dungeon, the Clues and Wiz Stats at that size): 1024x768 (the Dungeon Clues/Wiz Stats/castle screens), clicking the up/down arrows of the Clues list with more than twelve entries, the dungeon treasure pick-up.
 - **Entering the dungeon in slot 5 of the saved game's table crashes the process** (SIGSEGV, exit status -11, nothing on stderr; 640x480, from `sources/emu_overlay`'s game: the party put on the entry's tile with `0x67f010 + 0x30 * 5` poked to 7 and
   the latch cleared, as the recipe above does). Slots 6 and 9 are entered fine. It happens with the runtime from before the 2026-10 fixes too, so it is not from them. Not looked into (found while pressing Escape on every screen: `controller.md`).
 

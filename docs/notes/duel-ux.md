@@ -71,13 +71,13 @@ no cancel failed to clear its prompt (the script logs a NOTE when one does not).
 What the soak does not cover, and what it taught:
 - **Duels were conceded or lost, never won**, and it does not choose targets with any sense, so the paths of a win (the reward screens, the
   Gauntlet's next round) are still unseen. Attacks are "click every permanent of mine, then Done": the attack window opened and closed, but
-  whether creatures really attacked was not checked.
+  whether creatures really attacked was not checked. *Correction (documentation audit, 2026-10): a duel was won later, by setting the opponent's life, and the screens after it were recorded: [duel-won.md](duel-won.md).*
 - **After a duel the saved game moves on**: the first duel is the Sorcerer's, a second one follows on the ante screen, a third time the game is
   in a village. So a game process plays at most two duels from one save; the script restarts it (the saved game is in a fresh copy of the overlay each time).
 - The coin toss is not always a movie: when the player wins it, it is a dialog with "Play first" / "Draw first" (800x600 and 1024x768 showed it).
   The script reads dialogs from the window tree, so it does not care.
 - "Sorcerer casts..." (the dialog that shows an AI spell) needs about a dozen Return presses before it goes (there is no button; it ends by a timer or the
-  key, a few seconds), and its picture shows a black panel at 640x480. Not looked into.
+  key, a few seconds), and its picture shows a black panel at 640x480. Not looked into. *Correction (documentation audit, 2026-10): fixed, the panel was a child window that draws nothing of its own: [sorcerer-casts-dialog.md](sorcerer-casts-dialog.md).*
 - Window titles can contain newlines ("Your next draw:\n..." in the result dialog), which spread over several lines of `windows`; the script's parser
   skips them (the first test run reported them as stray stderr).
 - Under load three games and a build were all slow (the first duel took 5 minutes to start at 640x480 while the others were starting); the stall limit of

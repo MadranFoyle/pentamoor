@@ -73,7 +73,7 @@ goes to the main window and does nothing; the original probably worked the same,
   opponent's life at 3 and a Goblin Rock Sled (3/1) on turn 2 would be the line (play Mountain, Mountain, cast the Sled by clicking its row and paying with the
   lands), but it was not played out: the poke is the reliable path, and shows the same result screens.
 
-## Rechecked at 640x480 after the file dialogs, click-one-pass, gauntlet dialogs and IntersectRect merges (#110 to #114)
+## Rechecked at 640x480 after the file dialogs, click-one-pass, gauntlet dialogs and IntersectRect merges (#110 to #114, pull requests of the earlier repository)
 
 Main game (`MAGIC.EXE`, `PORT_RES` unset, saved game from `sources/emu_overlay`, build of `main` at 8e72475): Resume Game (330,390), "Duel a Sorcerer" (290,325), the coin toss movie
 (a click on it), "Start the duel" (496,371), the prompt bar "Main phase (before combat)"; `poke 0x6a4a04 0`, Done (214,241). Then: "You won!" dialog (155,0)-(485,492) -> `key return`
@@ -82,7 +82,7 @@ dungeon clue.", the clue plaque) -> a click at (190,321) (the text "slimy Sorcer
 as in the soak). No hang, no crash, process alive; the log has nothing but the three start-up lines: **no "is not implemented" line**, the `IntersectRect` stub message that the first run
 above still had is gone.
 
-`./pentamoor duel` (`DUEL.EXE`, own build in `src/port/build_duel`): OK on the setup dialog (173,409), coin toss movie click, "Start the duel" (497,371), the opponent's life
+`./pentamoor duel` (`DUEL.EXE`, own build in `src/port/build_duel`: a build of the old single-program kind, `make static`; the game modules of today are `build/game_duel.*`): OK on the setup dialog (173,409), coin toss movie click, "Start the duel" (497,371), the opponent's life
 dropped to 0 by `poke 0x681eac 0` and a click on Done: the dialog "Congratulations! You've won the duel! That was round 1 Your record is 1/0/0" with an OK button (237,453)
 -> the setup dialog again (control returned). Nothing on stderr. In DUEL.EXE the opponent's real life is at **0x681eac** (the player's at 0x681ea8), not at the MAGIC.EXE
 addresses; `0x68ee70` is another pair of 20s that does nothing when poked. Found by scanning for two consecutive dwords of 20 with `peek`.

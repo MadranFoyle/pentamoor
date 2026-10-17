@@ -1,5 +1,7 @@
 # Oracle VM: Windows 98SE under QEMU
 
+*(Status, documentation audit 2026-10: the "decompilation" below is the upstream project's decompiled tree, which has been removed from this repository (README, "History"). The oracle itself is still the way to check what the original does: the port's lifter reads the game's own executables, and the VM is what native engine functions and screens are compared against. The VM described is the maintainer's own, on a Mac; nothing here has been rerun for this audit.)*
+
 The reference ("oracle") for verifying the decompilation is the original 1997 game running
 unmodified in a Windows 98SE virtual machine. Nothing from the game or from Windows is stored in
 this repository: installers, ISOs, disk images and extracted game files live in the git-ignored

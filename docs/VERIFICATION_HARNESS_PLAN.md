@@ -1,5 +1,7 @@
 # Automated Verification Harness — Design & Roadmap
 
+*(Status, documentation audit 2026-10: written while the upstream project's decompiled tree was in this repository, so "the decompilation in this repo", the renamed symbols, "the source, headers, CSV symbol maps and generator scripts" and `src/magic/...` all mean that removed tree (README, "History"). The "Phase 2: port" boxes and "Current status" at the end are out of date: the native program exists and is described in [PHASE_C.md](PHASE_C.md), and what was verified is in [SYMBOL_VERIFICATION.md](SYMBOL_VERIFICATION.md). The design of the layers, and the oracle, are still what `tools/verification_harness/` implements.)*
+
 ## Why this exists
 
 The decompilation in this repo has two very different layers of trustworthiness:

@@ -9,7 +9,7 @@ scaling to any window or display with the aspect ratio kept and the mouse mapped
 
 Done: [notes/display.md](notes/display.md). A fullscreen toggle (F11, Alt+Enter, both sticks held on a pad), the scaling modes `fit`, `integer` and `stretch` and the filters `nearest`, `linear` and `sharp` (keys and `PORT_SCALE`, `PORT_FILTER`),
 the mouse mapped through the picture's own rectangle at any window, display and display-scaling factor (a Retina window gets its full resolution), a resizable window that starts as the largest whole multiple of the screen that fits, and `display.cfg`
-in the overlay folder that keeps all of it between runs. The pure rules are in `src/port/display.c` and take the screen size as a parameter, as new code should. Not yet seen on real hardware: a Retina Mac, Windows with display scaling, Wayland.
+in the overlay folder that keeps all of it between runs. The pure rules are in `src/port/display.c` and take the screen size as a parameter, as new code should. Not yet seen on real hardware: a visible window on a Retina Mac (a hidden one was checked), Windows with display scaling, Wayland, a real controller (nothing in [notes/display.md](notes/display.md), "Not checked", has changed since).
 
 ## Mobile (a proof of concept)
 

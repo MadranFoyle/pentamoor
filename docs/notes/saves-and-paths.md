@@ -74,7 +74,7 @@ Nothing else was missing: `sound\locmus1.wav`, `C:\MAGIC\PROGRAM\DuelArt\Damage.
 ## Not covered
 
 * In-duel Save (the `SaveGame/*.SVG` slots, `D:MAGIC0.SVE`..) was not exercised end to end; only that the folder is made and the autosave files are
-  written. DUEL.EXE's `GetOpenFileNameA`/`GetSaveFileNameA` are stubs that return 0 (the standalone duel program's own file dialogs).
+  written. DUEL.EXE's `GetOpenFileNameA`/`GetSaveFileNameA` are stubs that return 0 (the standalone duel program's own file dialogs). *Correction (documentation audit, 2026-10): no longer true, they are real dialogs now: [file-dialogs.md](file-dialogs.md).*
 * The game never calls `DeleteFileA`, `remove`, `rename` or `FindFirstFile` (checked in MAGIC.EXE, DUEL.EXE, DECK.EXE, DECKDLL.DLL imports), so no
   "whiteout" for a deleted installed file exists: a delete only removes the overlay's copy.
 * Several guest threads calling `paths_host` at once while creating the same new folder in two spellings can still race on a case-sensitive host;
