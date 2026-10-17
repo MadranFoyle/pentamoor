@@ -22,6 +22,7 @@
 #include "sched.h"
 #include "steamdeck.h"
 #include "textin.h"
+#include "touch.h"
 #include "wm.h"
 
 void front_set_finished(void);
@@ -736,10 +737,13 @@ static void push_mouse_button(int right, int down, int x, int y)
 static void display_print_view(const char *why);
 static void winshot(const char *path);
 
+/* A finger event for a picture pixel, as SDL would deliver it (a position as a fraction of the window): the whole of the touch path is then exercised, the display's mapping included. */
+static void push_finger(Uint32 type, int id, int px, int py);
+
 static void run_step(const Step *s)
 {
     SDL_Event e;
-    int x, y;
+    int x, y, id;
 
     memset(&e, 0, sizeof(e));
     if (!strcmp(s->cmd, "move") && sscanf(s->arg, "%d %d", &x, &y) == 2) {
@@ -805,6 +809,8 @@ static void run_step(const Step *s)
             m.button.state = SDL_RELEASED;
             SDL_PushEvent(&m);
         }
+    } else if ((!strcmp(s->cmd, "tdown") || !strcmp(s->cmd, "tmove") || !strcmp(s->cmd, "tup")) && sscanf(s->arg, "%d %d %d", &id, &x, &y) == 3) {       /* a finger (id) at a picture pixel: tdown 1 330 308, tmove, tup (touch.h) */
+        push_finger(s->cmd[1] == 'd' ? SDL_FINGERDOWN : s->cmd[1] == 'm' ? SDL_FINGERMOTION : SDL_FINGERUP, id, x, y);
     } else if (!strcmp(s->cmd, "winshot")) {
         winshot(s->arg);
     } else if (!strcmp(s->cmd, "view")) {              /* the window, the output and where the picture is, on stderr */
@@ -1121,6 +1127,75 @@ static void map_mouse(Uint32 which, int button, int *x, int *y)
     mouse_y = *y;
 }
 
+/* ---- touch ----
+ * A touch screen is a mouse to the game, with a right button: touch.c (pure, tested) turns the fingers into mouse actions; here are the SDL events in and the queued mouse out. It is on for an
+ * iOS app and off elsewhere (SDL's own conversion of a finger into the left button stays: a Steam Deck's screen), PORT_TOUCH=1 / 0 turns it on / off. */
+static Touch touch;
+static int touch_on;
+static int in_background;                                   /* iOS: the app is not on the screen: nothing is drawn */
+
+static void touch_flush(void)
+{
+    TouchAction a;
+
+    while (touch_next(&touch, &a)) {
+        mouse_x = a.x;
+        mouse_y = a.y;
+        pad_mouse(a.x, a.y);
+        if (a.kind != TA_MOVE && padlog_on())
+            padlog("touch: %s at (%d,%d)", a.kind == TA_LDOWN ? "left button down" : a.kind == TA_LUP ? "left button up" : a.kind == TA_RDOWN ? "right button down" : "right button up", a.x, a.y);
+        switch (a.kind) {
+        case TA_MOVE:  front_push_mouse(IN_MOVE, a.x, a.y); break;
+        case TA_LDOWN: flush_alt(); front_push_mouse(IN_DOWN, a.x, a.y); break;
+        case TA_LUP:   front_push_mouse(IN_UP, a.x, a.y); break;
+        case TA_RDOWN: flush_alt(); front_push_mouse(IN_RDOWN, a.x, a.y); break;
+        case TA_RUP:   front_push_mouse(IN_RUP, a.x, a.y); break;
+        }
+    }
+}
+
+/* a finger event (x and y are fractions of the window) to the picture's pixels, through the same mapping as the mouse's: the window in the events' unit is ww * scale */
+static void finger_to_pixel(const SDL_TouchFingerEvent *f, int *px, int *py)
+{
+    double sc = mouse_scale_button;
+
+    refresh_view();
+    display_to_screen(&D.view, SCREEN_W, SCREEN_H, D.ow, D.oh, D.ww * sc, D.wh * sc, (int)(f->x * D.ww * sc + 0.5), (int)(f->y * D.wh * sc + 0.5), px, py);
+}
+
+static void finger_event(const SDL_Event *ev)
+{
+    int x, y, id = (int)(ev->tfinger.fingerId & 0x7FFFFFFF);
+    Uint32 now = SDL_GetTicks();
+
+    finger_to_pixel(&ev->tfinger, &x, &y);
+    if (ev->type == SDL_FINGERDOWN) {
+        if (padlog_on())
+            padlog("touch: finger %d down at (%d,%d)", id, x, y);
+        flush_alt();
+        touch_down(&touch, id, x, y, now);
+    } else if (ev->type == SDL_FINGERMOTION)
+        touch_move(&touch, id, x, y, now);
+    else
+        touch_up(&touch, id, x, y, now);
+    touch_flush();
+}
+
+static void push_finger(Uint32 type, int id, int px, int py)
+{
+    SDL_Event e;
+
+    refresh_view();
+    memset(&e, 0, sizeof(e));
+    e.type = type;
+    e.tfinger.windowID = script_window;
+    e.tfinger.touchId = 1;                                       /* not SDL_MOUSE_TOUCHID: the scripted finger is a real one */
+    e.tfinger.fingerId = id;
+    e.tfinger.x = (float)((D.view.dst.x + (double)px * D.view.dst.w / SCREEN_W) / D.ow);
+    e.tfinger.y = (float)((D.view.dst.y + (double)py * D.view.dst.h / SCREEN_H) / D.oh);
+    SDL_PushEvent(&e);
+}
+
 static void ensure_pre(int w, int h)
 {
     if (D.pre && D.pre_w == w && D.pre_h == h)
@@ -1313,6 +1388,7 @@ static void note_geometry(void)
     save_soon();
 }
 
+#ifndef PORT_IOS
 static void set_fullscreen(int on)
 {
     if (on == is_fullscreen())
@@ -1335,6 +1411,7 @@ static void set_fullscreen(int on)
     D.fs_t = SDL_GetTicks();
     save_soon();
 }
+#endif
 
 /* while a window is being put back after full screen, once its size event shows the wrong size, set it again */
 static void restore_step(void)
@@ -1367,7 +1444,9 @@ static void display_act(DispAction a)
 
     switch (a) {
     case DA_FULLSCREEN:
-        set_fullscreen(!is_fullscreen());
+#ifndef PORT_IOS
+        set_fullscreen(!is_fullscreen());       /* (an iOS app's window is always the whole screen) */
+#endif
         break;
     case DA_SCALE:
         D.now.scale = scale_cycle(D.now.scale);
@@ -1514,6 +1593,19 @@ int front_run(int (*game)(void *), void *arg)
         return game(arg);
     init_keys();
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");      /* SIGINT and SIGTERM are ours (below), not an SDL_QUIT */
+#ifdef PORT_IOS
+    touch_on = !getenv("PORT_TOUCH") || strcmp(getenv("PORT_TOUCH"), "0");
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    SDL_SetHint(SDL_HINT_IOS_HIDE_HOME_INDICATOR, "1");
+    SDL_SetHint("SDL_AUDIO_CATEGORY", "playback");     /* sound plays with the silent switch on, as a game's does (SDL_HINT_AUDIO_CATEGORY, SDL 2.0.22 and newer) */
+#else
+    touch_on = getenv("PORT_TOUCH") && !strcmp(getenv("PORT_TOUCH"), "1");
+#endif
+    if (touch_on) {
+        SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");  /* the fingers are touch.c's, not the left button */
+        SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");  /* and a mouse or trackpad is not also a finger */
+    }
+    touch_init(&touch);
     SDL_SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2");     /* Windows: sharp on a scaled display instead of stretched by the system (SDL 2.24 and newer reads it; older ones ignore it) */
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "SDL_Init: %s (running without a window)\n", SDL_GetError());
@@ -1522,11 +1614,15 @@ int front_run(int (*game)(void *), void *arg)
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
     SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
     SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");           /* a full-screen game on one display must not minimize when another is clicked (or Steam's overlay, Gamescope's windows) */
-    /* SDL's default (touch events make mouse events) is kept: a touch screen is a mouse to the game. Controllers: every one connected is opened (SDL queues an
+    /* Touch: SDL's default (touch events make left-button mouse events) is kept unless touch.c does the fingers (above). Controllers: every one connected is opened (SDL queues an
      * SDL_CONTROLLERDEVICEADDED for each at start and for each plugged in later); SDL_GAMECONTROLLERCONFIG adds mappings as for any SDL program. */
     /* A Steam Deck (or Gamescope: Game mode) starts full screen, keeps hearing the pad while Steam's overlay has the focus, and shows the on-screen keyboard only for a text field.
      * Elsewhere nothing of this is on unless asked for (PORT_FULLSCREEN=1, PORT_TEXTINPUT=auto). */
     deck = deck_here();
+#ifdef PORT_IOS
+    deck = 1;                           /* the iPad is handled like a handheld: full screen (always, there), text input only for a text field (the on-screen keyboard), the pad heard whichever app has the focus */
+    SDL_DisableScreenSaver();           /* the screen does not dim and lock while a duel is watched */
+#endif
     if (deck || getenv("PORT_PAD_BACKGROUND"))
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");     /* before the controller subsystem starts */
     pad_on = !getenv("PORT_NOPAD");
@@ -1591,6 +1687,17 @@ int front_run(int (*game)(void *), void *arg)
             poll_control();
         }
         update_text_input();
+        if (touch_on && touch_active(&touch)) {
+            static int was_map = -1;
+            int on_map = pace_map_active();
+
+            if (on_map != was_map && padlog_on())
+                padlog("touch: the world map's loop is %s", on_map ? "running: a held finger is a held button" : "not running: a held finger becomes a long press");
+            was_map = on_map;
+            touch_set_hold_press(&touch, on_map);                 /* on the world map a held finger is a held button (the party walks); elsewhere it is a long press (right click) in the end */
+            touch_tick(&touch, SDL_GetTicks());
+            touch_flush();
+        }
         if (SDL_WaitEventTimeout(&ev, 8)) {
             do {
                 if (padlog_on())
@@ -1631,6 +1738,22 @@ int front_run(int (*game)(void *), void *arg)
                     }
                     if (pad_on)
                         pad_event(&ev);
+                    break;
+                case SDL_FINGERDOWN:
+                case SDL_FINGERMOTION:
+                case SDL_FINGERUP:
+                    if (touch_on && ev.tfinger.touchId != SDL_MOUSE_TOUCHID)
+                        finger_event(&ev);
+                    break;
+                case SDL_APP_WILLENTERBACKGROUND:      /* iOS: nothing may be drawn once the app is in the background (the system ends an app that does) */
+                    in_background = 1;
+                    flush_pending(-1);
+                    release_all();
+                    pad_release();
+                    break;
+                case SDL_APP_DIDENTERFOREGROUND:
+                    in_background = 0;
+                    dirty = D.upload = D.reupload = 1;
                     break;
                 case SDL_MOUSEWHEEL:
                     if (ev.wheel.y)
@@ -1770,7 +1893,7 @@ int front_run(int (*game)(void *), void *arg)
             D.upload = dirty = 1;
         if (pad_view_changed())
             D.upload = dirty = 1;
-        if (dirty) {
+        if (dirty && !in_background) {
             present_now();
             dirty = 0;
         }

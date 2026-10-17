@@ -115,6 +115,23 @@ int main(int argc, char **argv)
     CHECK(lift_xt == 0);                                                /* pushed once, popped once */
     (void)r;
 
+    /* the iOS build links the three programs' modules in and picks one by name (gamemod_static_pick): a module name, a program name or a path to either */
+    {
+        static const char *const names[] = {"magic", "deck", "duel"};
+
+        CHECK(gamemod_static_pick("magic", names, 3) == 0);
+        CHECK(gamemod_static_pick("MAGIC.EXE", names, 3) == 0);
+        CHECK(gamemod_static_pick("game_deck.dylib", names, 3) == 1);
+        CHECK(gamemod_static_pick("/a/b/Program/DUEL.EXE", names, 3) == 2);
+        CHECK(gamemod_static_pick("build/game_duel.so", names, 3) == 2);
+        CHECK(gamemod_static_pick("Deck", names, 3) == 1);
+        CHECK(gamemod_static_pick("stub.exe", names, 3) == -1);
+        CHECK(gamemod_static_pick("", names, 3) == -1);
+        CHECK(gamemod_static_pick(NULL, names, 3) == -1);
+        CHECK(gamemod_static_pick("magic", names, 0) == -1);
+        CHECK(gamemod_static_pick("magical.exe", names, 3) == -1);
+    }
+
     printf("test_module: %d checks, %d failed\n", checks, failures);
     return failures != 0;
 }
