@@ -9,6 +9,7 @@
  *   - the game module's library (dlopen / LoadLibrary: plat_dlopen, plat_dlsym)
  *   - mkdir, localtime_r, "is this the same file", "can this be run", popen with binary output, the null device, the PATH separator
  *   - O_BINARY (0 where files have no text mode): every open() of a game file passes it
+ *   - iOS (PLAT_IOS): an app cannot start another program, so plat_popen_read and plat_system fail there; the game modules are linked into the app (gamemod.c, PORT_STATIC_MODULES)
  *
  * The header includes no <windows.h> (it defines names the runtime uses itself); only plat_win.c does.
  */
@@ -40,6 +41,10 @@
 #define PLAT_NULL_DEVICE "/dev/null"
 #define PLAT_EXE_SUFFIX ""
 #ifdef __APPLE__
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#define PLAT_IOS 1                          /* iOS and iPadOS: no process can be started (no popen, no system) and the game's modules are linked into the app (docs/notes/ios.md) */
+#endif
 #define PLAT_MODULE_SUFFIX ".dylib"
 #else
 #define PLAT_MODULE_SUFFIX ".so"

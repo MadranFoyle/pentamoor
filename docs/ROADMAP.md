@@ -11,6 +11,13 @@ Done: [notes/display.md](notes/display.md). A fullscreen toggle (F11, Alt+Enter,
 the mouse mapped through the picture's own rectangle at any window, display and display-scaling factor (a Retina window gets its full resolution), a resizable window that starts as the largest whole multiple of the screen that fits, and `display.cfg`
 in the overlay folder that keeps all of it between runs. The pure rules are in `src/port/display.c` and take the screen size as a parameter, as new code should. Not yet seen on real hardware: a Retina Mac, Windows with display scaling, Wayland.
 
+## Mobile (a proof of concept)
+
+An iPad build exists ([notes/ios.md](notes/ios.md)): the lifted game compiled into an app you build yourself for your own device, SDL2 for the window, a touch layer (`touch.c`: tap, drag, long press and two-finger tap as the right button). It runs in the Simulator; a real iPad has not run it,
+and it is sideload only because the app contains code made from the player's own game files. What would come next, in order of what the proof of concept found: running it on a real iPad (memory limits, the scene life cycle that SDL 2.32 lacks), a proper touch design (trackpad mode,
+hover, on-screen buttons for the keys the game needs), a smaller idle cost (the game's own spinning loops).
+New code should keep taking the screen size and the input as parameters, as the display and touch code do.
+
 ## Long term: replacing the lifted code with clean C
 
 Functions are replaced one at a time, each checked against its lifted twin ([PHASE_C.md](PHASE_C.md)). Layout and drawing come first. **Design the replacements so that bigger and wider screens are easy later.** Concretely:

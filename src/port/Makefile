@@ -13,6 +13,7 @@
 #   make -C src/port module-magic        one module (module-deck, module-duel)
 #   build/pentamoor-run -m build/game_magic.so sources/installed/Magic/Program/MAGIC.EXE     (what ./pentamoor does)
 #   make -C src/port static GEN=../../sources/generated/lift_magic_all BUILD=build_static    the old single executable, lifted code linked in (build_static/pentamoor)
+#   make -C src/port ios-runtime         the runtime compiled for an iPad / iPhone (macOS with Xcode only; objects only, no game files; tools/ios/build_ios.sh makes the app: docs/notes/ios.md)
 BUILD ?= build
 CC ?= cc
 CFLAGS ?= -std=gnu99 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter
@@ -63,8 +64,8 @@ endif
 # dlopen is in libc on macOS and current glibc; older glibc wants -ldl. Windows: LoadLibrary (plat_win.c), nothing to link.
 DL_LIBS = $(if $(filter Linux,$(UNAME)),-ldl,)
 PLAT = plat_posix.c plat_win.c
-SRC = main.c $(PLAT) guest.c pe.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c lzw.c modules.c sound.c video.c movie.c pace.c gamemod.c pad.c nav.c navwm.c screens.c steamdeck.c display.c display_cfg.c textin.c textfocus.c yesno.c profile.c $(FRONT)
-HEADERS = plat.h port.h profile.h wm.h gdi.h gdi_int.h sched.h front.h pad.h nav.h navwm.h screens.h steamdeck.h textin.h yesno.h filedlg.h winhelp.h msgbox.h ../native/lift_rt.h ../native/lift_tables.h padlog.h display.h
+SRC = main.c $(PLAT) guest.c pe.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c lzw.c modules.c sound.c video.c movie.c pace.c gamemod.c pad.c nav.c navwm.c screens.c steamdeck.c display.c display_cfg.c textin.c textfocus.c yesno.c profile.c touch.c $(FRONT)
+HEADERS = plat.h port.h profile.h wm.h gdi.h gdi_int.h sched.h front.h pad.h nav.h navwm.h screens.h steamdeck.h textin.h yesno.h filedlg.h winhelp.h msgbox.h ../native/lift_rt.h ../native/lift_tables.h padlog.h display.h touch.h iosboot.h
 RTFLAGS = -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native
 
 PROGRAMS = magic deck duel
@@ -129,6 +130,32 @@ $(BUILD)/modglue.o $(BUILD)/modules_none.o: $(BUILD)/%.o: %.c ../native/lift_rt.
 clean:
 	rm -rf $(BUILD)
 
+# The runtime for iOS (an iPad or iPhone): the same sources plus the app's entry (ios_main.c) and its pure decisions (iosboot.c), compiled with Xcode's clang for an iOS SDK. This builds the
+# objects only (tools/ios/build_ios.sh links them with SDL2, the game modules and the app's files); it needs no game file and is what a machine without them can check.
+#   make -C src/port ios-runtime                                 iphonesimulator, arm64
+#   make -C src/port ios-runtime IOS_SDK=iphoneos                an iPad / iPhone
+# SDL's headers: IOS_SDL_CFLAGS (build_ios.sh gives it the pinned SDL2's own include folder), else sdl2-config's (the declarations are the same).
+IOS_SDK ?= iphonesimulator
+IOS_MIN ?= 15.0
+IOS_TARGET ?= arm64-apple-ios$(IOS_MIN)$(if $(filter iphonesimulator,$(IOS_SDK)),-simulator,)
+IOS_BUILD ?= $(BUILD)/ios-$(IOS_SDK)
+IOS_SDKPATH = $(shell xcrun --sdk $(IOS_SDK) --show-sdk-path 2>/dev/null)
+IOS_CC = xcrun --sdk $(IOS_SDK) clang -target $(IOS_TARGET) -isysroot $(IOS_SDKPATH)
+IOS_SDL_CFLAGS ?= $(filter-out -Dmain=SDL_main,$(shell sdl2-config --cflags 2>/dev/null))
+IOS_SRC = $(filter-out front.c front_none.c front_sdl.c plat_win.c,$(SRC)) front.c front_sdl.c ios_main.c iosboot.c
+IOS_OBJS = $(patsubst %.c,$(IOS_BUILD)/%.o,$(IOS_SRC))
+IOS_PROGRAMS ?= -DPORT_STATIC_MAGIC -DPORT_STATIC_DECK -DPORT_STATIC_DUEL
+IOS_FLAGS = $(RTFLAGS) -DPORT_IOS -DPORT_STATIC_MODULES $(IOS_PROGRAMS) $(IOS_SDL_CFLAGS)
+# what tools/ios/gen_xcodeproj.py puts in the Xcode project: the runtime's C files for iOS, and the flags that differ from the Makefile's
+print-ios-src:
+	@echo $(IOS_SRC)
+ios-runtime: $(IOS_OBJS)
+	@echo "ios-runtime: ok ($(words $(IOS_OBJS)) objects for $(IOS_TARGET) in $(IOS_BUILD))"
+$(IOS_BUILD)/%.o: %.c $(HEADERS)
+	@test -n "$(IOS_SDKPATH)" || { echo "ios-runtime: xcrun cannot find the $(IOS_SDK) SDK (Xcode is needed)"; exit 1; }
+	@mkdir -p $(IOS_BUILD)
+	$(IOS_CC) $(CFLAGS) $(IOS_FLAGS) -c -o $@ $<
+
 # The tests of the window manager and the graphics layer: host functions stand in for the game's window procedures, so no game files are needed.
 LIB_SRC = $(PLAT) nav.c navwm.c screens.c lzw.c guest.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c front.c yesno.c pace.c textfocus.c profile.c steamdeck.c display.c modules.c sound.c video.c movie.c
 TEST_DEPS = test_stubs.c $(LIB_SRC) display.h nav.h navwm.h screens.h port.h wm.h gdi.h gdi_int.h sched.h front.h filedlg.h winhelp.h msgbox.h yesno.h profile.h padlog.h
@@ -179,6 +206,11 @@ $(BUILD)/test_profile$(EXE): test_profile.c $(TEST_DEPS)
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native -o $@ test_profile.c test_stubs.c $(LIB_SRC) $(PTHREAD_LIBS) -lm $(WINLIBS)
 
+# Fingers as a mouse, and the iOS app's start-up decisions: pure (touch.c, iosboot.c).
+$(BUILD)/test_touch$(EXE): test_touch.c touch.c touch.h iosboot.c iosboot.h
+	mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) $(WINFLAGS) -iquote . -o $@ test_touch.c touch.c iosboot.c $(WINLIBS)
+
 $(BUILD)/test_paths$(EXE): test_paths.c $(TEST_DEPS)
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native -o $@ test_paths.c test_stubs.c $(LIB_SRC) $(PTHREAD_LIBS) -lm $(WINLIBS)
@@ -188,7 +220,7 @@ check-front:
 	@test -n "$(SDL_CFLAGS)" || { echo "check-front: sdl2-config not found"; exit 1; }
 	$(CC) $(CFLAGS) -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native $(SDL_CFLAGS) -fsyntax-only front_sdl.c
 
-.PHONY: clean test check-front check-module check-run check-program check-build
+.PHONY: clean test check-front check-module check-run check-program check-build ios-runtime print-ios-src
 
 # The loading path without any game: a module with no functions (stubgame/) is built and loaded by the runtime, which then stops because the program it was given is not there.
 # A missing module and a module that is not one are refused with their own messages. CI runs it. (The program path is relative: MSYS rewrites an argument that starts with / when it starts a Windows program.)
@@ -247,7 +279,8 @@ check-run: runtime module-stub
 	@echo "check-run: ok"
 
 
-test: $(BUILD)/test_profile$(EXE) $(BUILD)/test_steamdeck$(EXE) $(BUILD)/test_display$(EXE) $(BUILD)/test_wm$(EXE) $(BUILD)/test_gdi$(EXE) $(BUILD)/test_sound$(EXE) $(BUILD)/test_movie$(EXE) $(BUILD)/test_paths$(EXE) $(BUILD)/test_pad$(EXE) $(BUILD)/test_nav$(EXE) $(BUILD)/test_module$(EXE) module-stub
+test: $(BUILD)/test_touch$(EXE) $(BUILD)/test_profile$(EXE) $(BUILD)/test_steamdeck$(EXE) $(BUILD)/test_display$(EXE) $(BUILD)/test_wm$(EXE) $(BUILD)/test_gdi$(EXE) $(BUILD)/test_sound$(EXE) $(BUILD)/test_movie$(EXE) $(BUILD)/test_paths$(EXE) $(BUILD)/test_pad$(EXE) $(BUILD)/test_nav$(EXE) $(BUILD)/test_module$(EXE) module-stub
+	$(BUILD)/test_touch$(EXE)
 	$(BUILD)/test_profile$(EXE)
 	$(BUILD)/test_wm$(EXE)
 	$(BUILD)/test_pad$(EXE)

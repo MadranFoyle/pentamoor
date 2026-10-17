@@ -107,6 +107,10 @@ static int game_main(void *p)
     return 0;
 }
 
+#ifdef PORT_IOS
+/* iOS: SDL owns main() (it starts UIKit, then calls SDL_main); ios_main.c's SDL_main builds the arguments an app does not have and calls this */
+#define main pentamoor_main
+#endif
 int main(int argc, char **argv)
 {
     Args args = {argc, argv};

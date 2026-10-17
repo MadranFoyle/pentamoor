@@ -71,6 +71,7 @@ extern __thread uint32_t port_sp;
 /* the game: the lifted code's tables, from the game module (gamemod.c) */
 extern const LiftGame *lift_game;
 void gamemod_load(const char *path);          /* path may be NULL: the module linked into the executable (the single-executable build), or $PENTAMOOR_MODULE */
+int gamemod_static_pick(const char *spec, const char *const names[], int n);   /* which of the linked-in programs ("magic", "deck", "duel") a module or program name means: -1 if none (iOS, gamemod.c) */
 LiftThreadState lift_thread_initial(void);
 
 /* the screen's size: 640x480 as the retail game has it, or what PORT_RES asks for (screen_set); the buffers that hold a frame are sized for the largest */
@@ -103,6 +104,7 @@ void port_prehook(uint32_t addr, HostGuestFn fn);    /* runs before the lifted f
 struct BuildProfile;
 void lzw_install(void);          /* the program's own copy of the picture decompressor, if the active profile has one (lzw.c) */
 void pace_install(void);         /* the overworld's frame rate (pace.c) */
+int pace_map_active(void);       /* the overworld's loop has made a frame in the last third of a second (pace.c; the touch screen's mode) */
 void textfocus_install(void);    /* when the game waits for typed text (textfocus.c) */
 void screens_install(void);      /* which screen of the game is on, for the D-pad (screens.c) */
 void yesno_install(void);        /* when the game asks a (Y/N) question (yesno.c) */
