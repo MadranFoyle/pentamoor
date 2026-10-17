@@ -146,3 +146,59 @@ def test_no_game_in_this_folder():
             assert os.path.getsize(p) < 200_000, f
             with open(p, "rb") as fh:
                 assert b"\0" not in fh.read(), f
+
+
+def make_prebuilt(root, sdks=("iphoneos", "iphonesimulator"), programs=("magic", "deck", "duel")):
+    for sdk in sdks:
+        (root / sdk).mkdir(parents=True, exist_ok=True)
+        for p in programs:
+            (root / sdk / ("game_%s.o" % p)).write_bytes(b"\0")
+        (root / sdk / "libSDL2.a").write_bytes(b"\0")
+    (root / "sdl-include").mkdir(exist_ok=True)
+    (root / "sdl-include" / "SDL.h").write_text("")
+    return str(root)
+
+
+def test_prebuilt_project(tmp_path):
+    """The kit's project: no GameLibs target and no build script; the objects and SDL2 come from the prebuilt folder, by SDK."""
+    pre = make_prebuilt(tmp_path / "pre")
+    proj = gx.build("ABCDE12345", "org.example.pentamoor", False, str(tmp_path / "out"), pre)
+    text = read_file(os.path.join(proj, "project.pbxproj"))
+    assert text.count("{") == text.count("}")
+    defined = re.findall(r"^\t\t([0-9A-F]{24}) /\*.*\*/ = ", text, re.M)
+    assert len(defined) == len(set(defined))
+    used = set(re.findall(r"(?:fileRef|target|targetProxy|buildConfigurationList|mainGroup|productRefGroup|productReference|remoteGlobalIDString|containerPortal|rootObject) = ([0-9A-F]{24})", text))
+    assert used <= set(defined), used - set(defined)
+    assert "GameLibs" not in text and "PBXAggregateTarget" not in text and "build_ios.sh" not in text and "PBXShellScriptBuildPhase" not in text
+    assert "PREBUILT_LIBS = %s" % pre in text or 'PREBUILT_LIBS = "%s"' % pre in text
+    for needle in ("$(PREBUILT_LIBS)/$(PLATFORM_NAME)/game_magic.o", "$(PREBUILT_LIBS)/$(PLATFORM_NAME)/game_deck.o", "$(PREBUILT_LIBS)/$(PLATFORM_NAME)/game_duel.o",
+                   "$(PREBUILT_LIBS)/$(PLATFORM_NAME)/libSDL2.a", "$(PREBUILT_LIBS)/sdl-include", "PORT_STATIC_MAGIC=1", "PORT_STATIC_DUEL=1", "-platform_version", "ABCDE12345"):
+        assert needle in text, needle
+    assert "dist/work-ios" not in text and "dist/ios/" not in text
+    if shutil.which("plutil"):
+        subprocess.run(["plutil", "-lint", os.path.join(proj, "project.pbxproj")], check=True, capture_output=True)
+
+
+def test_prebuilt_project_only_has_the_programs_that_are_there(tmp_path):
+    pre = make_prebuilt(tmp_path / "pre", programs=("magic",))
+    text = read_file(os.path.join(gx.build("", "org.example.x", False, str(tmp_path / "out"), pre), "project.pbxproj"))
+    assert "game_magic.o" in text and "game_deck.o" not in text and "PORT_STATIC_MAGIC=1" in text and "PORT_STATIC_DECK" not in text
+
+
+def test_prebuilt_folder_is_checked(tmp_path):
+    with pytest.raises(SystemExit):
+        gx.build("", "org.example.x", False, str(tmp_path / "o1"), str(tmp_path / "nothing"))
+    pre = make_prebuilt(tmp_path / "pre")
+    os.remove(os.path.join(pre, "sdl-include", "SDL.h"))
+    with pytest.raises(SystemExit):
+        gx.build("", "org.example.x", False, str(tmp_path / "o2"), pre)
+    pre2 = make_prebuilt(tmp_path / "pre2")
+    os.remove(os.path.join(pre2, "iphonesimulator", "libSDL2.a"))
+    with pytest.raises(SystemExit):
+        gx.build("", "org.example.x", False, str(tmp_path / "o3"), pre2)
+
+
+def test_prebuilt_cli(tmp_path):
+    pre = make_prebuilt(tmp_path / "pre", sdks=("iphoneos",))
+    r = subprocess.run([sys.executable, os.path.join(HERE, "gen_xcodeproj.py"), "--prebuilt", pre, "--out", str(tmp_path / "x")], capture_output=True, text=True)
+    assert r.returncode == 0 and "deploy.sh" in r.stdout and os.path.isfile(str(tmp_path / "x" / "Pentamoor.xcodeproj" / "project.pbxproj"))

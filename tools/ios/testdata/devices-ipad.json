@@ -1,0 +1,60 @@
+{
+  "_comment": "A hand-written `xcrun devicectl list devices --json-output` for tests (the fields devicectl documents, in the older hardwareProperties/deviceProperties/connectionProperties shape). Not captured from a real device. The identifiers are made up.",
+  "info": {"commandType": "devicectl.list.devices", "jsonVersion": 2, "outcome": "success", "version": "397.21"},
+  "result": {
+    "devices": [
+      {
+        "identifier": "11111111-2222-3333-4444-555555555555",
+        "visibilityClass": "default",
+        "connectionProperties": {
+          "authenticationType": "manualPairing",
+          "isMobileDeviceOnly": false,
+          "lastConnectionDate": "2026-10-16T21:12:40.123Z",
+          "localHostnames": ["Test-iPad.coredevice.local", "00008132-000A1B2C3D4E5F67.coredevice.local"],
+          "pairingState": "paired",
+          "potentialHostnames": ["00008132-000A1B2C3D4E5F67.coredevice.local"],
+          "transportType": "wired",
+          "tunnelState": "connected",
+          "tunnelTransportProtocol": "tcp"
+        },
+        "deviceProperties": {
+          "bootState": "booted",
+          "ddiServicesAvailable": true,
+          "developerModeStatus": "enabled",
+          "hasInternalOSBuild": false,
+          "name": "Test iPad",
+          "osBuildUpdate": "23A344",
+          "osVersionNumber": "26.0.1"
+        },
+        "hardwareProperties": {
+          "deviceType": "iPad",
+          "ecid": 3894327198334758,
+          "hardwareModel": "J820AP",
+          "marketingName": "iPad Pro 13-inch (M5)",
+          "platform": "iOS",
+          "productType": "iPad17,4",
+          "reality": "physical",
+          "serialNumber": "TESTSERIAL01",
+          "supportedCPUTypes": [{"name": "arm64e", "subType": 2, "type": 16777228}],
+          "udid": "00008132-000A1B2C3D4E5F67"
+        }
+      },
+      {
+        "identifier": "66666666-7777-8888-9999-000000000000",
+        "visibilityClass": "default",
+        "connectionProperties": {"pairingState": "paired", "transportType": "localNetwork", "tunnelState": "disconnected"},
+        "deviceProperties": {"bootState": "booted", "developerModeStatus": "enabled", "name": "Test iPhone", "osVersionNumber": "26.0"},
+        "hardwareProperties": {"deviceType": "iPhone", "marketingName": "iPhone 17 Pro", "platform": "iOS", "productType": "iPhone18,1", "reality": "physical", "serialNumber": "TESTSERIAL02",
+                               "udid": "00008150-000B2C3D4E5F6A78"}
+      },
+      {
+        "identifier": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+        "visibilityClass": "simulators",
+        "connectionProperties": {"pairingState": "paired", "transportType": "sameMachine", "tunnelState": "disconnected"},
+        "deviceProperties": {"bootState": "shutdown", "name": "Test Simulator iPad", "osVersionNumber": "27.0", "provider": "com.apple.CoreSimulator.SimulatorCoreDevicePlugin"},
+        "hardwareProperties": {"deviceType": "iPad", "marketingName": "iPad Pro 13-inch (M5)", "platform": "iOS", "productType": "iPad17,4", "reality": "simulated",
+                               "udid": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"}
+      }
+    ]
+  }
+}

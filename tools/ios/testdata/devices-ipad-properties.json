@@ -1,0 +1,21 @@
+{
+  "_comment": "The same iPad as devices-ipad.json in the shape the current devicectl writes (a `properties` dictionary with hardware, connection, software and state; the older keys are deprecated there). Made from a real Simulator entry's layout with the values of a physical, paired, USB-connected iPad; not captured from a real device. The identifiers are made up.",
+  "info": {"commandType": "devicectl.list.devices", "jsonVersion": 5, "outcome": "success", "version": "642.16"},
+  "result": {
+    "devices": [
+      {
+        "identifier": "11111111-2222-3333-4444-555555555555",
+        "visibilityClass": "default",
+        "capabilities": [{"featureIdentifier": "com.apple.coredevice.feature.renamedevice", "name": "Rename Device"}],
+        "properties": {
+          "connection": {"authenticationType": "manualPairing", "pairingState": "paired", "state": "connected", "transportType": "wired", "lastConnectionDate": 813898881},
+          "device": {"developerModeStatus": "disabled"},
+          "hardware": {"deviceType": "iPad", "marketingName": "iPad Pro 13-inch (M5)", "platform": "iOS", "productType": "iPad17,4", "reality": "physical", "udid": "00008132-000A1B2C3D4E5F67",
+                       "serialNumber": "TESTSERIAL01"},
+          "software": {"osVersionNumber": {"components": [26, 0, 1, 0, 0], "originalComponentsCount": 3, "stringValue": "26.0.1"}},
+          "state": {"bootState": "booted", "name": "Test iPad", "visibilityClass": "default"}
+        }
+      }
+    ]
+  }
+}

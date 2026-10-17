@@ -8,7 +8,99 @@ it to anyone, do not put it on TestFlight or the App Store, do not commit it. Ev
 (the `Magic` folder) is never inside the app: you copy it into the app's Documents folder yourself.
 
 What was run, and what was not, is listed at the end ([What was tested](#what-was-tested), [Not verified](#not-verified)). Short version: everything below ran in the Simulator on an iPad Pro 13-inch (M5) with the real game files;
-**nothing has run on a real iPad**.
+**nothing has run on a real iPad**, including `deploy.sh` (it ran against a Simulator and a fake `xcrun`, [below](#what-was-tested)).
+
+## One command
+
+`tools/ios/deploy.sh` does what [the manual steps below](#on-a-real-ipad-by-hand-the-fallback) do, in one command, on the Mac the iPad is connected to: it checks Xcode and the iPad, signs, builds, installs, copies the game in, and starts the app. Everything that depends on the game is
+done in advance on the Mac that has the game, once, and put in an **iPad kit** (a folder you copy over); the other Mac then needs no checkout, no lifted code, no Homebrew and no Python beyond the `/usr/bin/python3` that comes with Xcode.
+
+**On the Mac that has the game** (installed and lifted as for any build), once and after every change of the code:
+
+```bash
+sources/kits/make-ipad-kit.sh              # -> sources/kits/out/pentamoor-ipad-kit-<commit>.tar.gz (about 260 MB; the script is local, see "The kit")
+```
+
+**On the Mac the iPad is plugged into** (USB, or paired over Wi-Fi once; Xcode installed and your Apple ID signed in to it; the iPad unlocked and trusted, Developer Mode on):
+
+```bash
+tar xzf pentamoor-ipad-kit-*.tar.gz && cd pentamoor-ipad-kit-*
+xattr -dr com.apple.quarantine .           # only if the archive came through a browser or AirDrop
+./deploy.sh --team TEAMID1234              # builds, signs, installs, copies the game, starts it
+```
+
+Run it again for a new build or to renew the profile: the game is not copied twice (a stamp file in the app's Documents is compared), so a re-deploy takes seconds to a minute. With a checkout that has the game installed and lifted (`sources/generated`, `sources/installed/Magic`)
+the same `tools/ios/deploy.sh` works without a kit and builds the game's code itself. `./deploy.sh --dry-run` prints every command it would run and changes nothing.
+
+Your Team ID is the 10 characters of developer.apple.com > Account > Membership details, or Xcode > Settings > Accounts. To never type it, put it in a settings file (read as plain `KEY=VALUE` lines, never executed, only these three keys):
+
+```bash
+mkdir -p ~/.config/pentamoor && echo 'PENTAMOOR_TEAM=TEAMID1234' > ~/.config/pentamoor/ios.env       # also PENTAMOOR_BUNDLE_ID=..., PENTAMOOR_DEVICE=...; $PENTAMOOR_IOS_CONFIG names another file
+```
+
+Precedence: command line, then environment variables of the same names, then that file, then detection (the team of the one valid *Apple Development* / *iPhone Developer* certificate in the keychain; a *Developer ID* certificate is not for devices and is not used, the message says so).
+The bundle id defaults to `com.<your user name>.pentamoor`; it has to be one that no other team has registered, so pass `--bundle-id` if Apple refuses it.
+
+### The steps
+
+Each prints one line; each is safe to repeat.
+
+| Step | What it does |
+|---|---|
+| 1 prerequisites | macOS, `xcodebuild`, the iphoneos SDK, `xcrun devicectl` (Xcode 15 or newer), the game folder; chooses the game's code: the kit's prebuilt objects, or the lifted C when the kit's SDK differs from this Mac's and the kit has it (below) |
+| 2 device | `xcrun devicectl list devices --json-output` (the JSON, not the table; the older and the current shape are both read); the only connected iPad, or `--device NAME_OR_UDID`; stops with the fix if it is not paired, not reachable, in Developer Mode off (Settings > Privacy & Security > Developer Mode, then restart), or locked |
+| 3 signing | team and bundle id, in the precedence above |
+| 4 project | `gen_xcodeproj.py` writes the Xcode project (`--prebuilt` in a kit: no build script, the objects are linked) |
+| 5 build | `xcodebuild -project ... -scheme Pentamoor -configuration Release -destination 'platform=iOS,id=UDID' -derivedDataPath ... -allowProvisioningUpdates -allowProvisioningDeviceRegistration DEVELOPMENT_TEAM=... PRODUCT_BUNDLE_IDENTIFIER=... build`, automatic signing with the Apple ID that is signed in to Xcode |
+| 6 install | `xcrun devicectl device install app` |
+| 7 data | `xcrun devicectl device copy to` the game folder into the app's `Documents/Magic`, unless `Documents/pentamoor-data.stamp` on the iPad has the same data id (paths and sizes of the files); then it lists `Documents/Magic/Program` to check `MAGIC.EXE` is there. `--program duel` writes `Documents/program.txt` |
+| 8 launch | `xcrun devicectl device process launch --terminate-existing` (`--console` follows the output; the app then logs to the console) |
+
+Options: `--no-data`, `--data-only`, `--force-data`, `--no-build`, `--no-install`, `--no-launch`, `--entitlements`, `--logs` (fetches `Documents/pentamoor.log` and shows its end), `--list-devices`, `--rebuild`, `--prebuilt`, `--work DIR`, `-v`, and `--simulator [UDID|NAME]`, which does the same steps in a Simulator
+with `xcodebuild` and `simctl` (no account; it is how the flow is tried without an iPad). `--selftest` runs each tool's own `--help` and checks that every option `deploy.sh` passes exists in this Xcode.
+
+One thing about `devicectl device copy to` is not in its help: whether a folder source is placed *as* the destination or *inside* it. The copy first sends a one-file folder to `Documents/.pentamoor-probe` to find out, then uses the right destination, and checks the result; if the listing is not usable it
+assumes "as the destination" and says so.
+
+### The kit
+
+`sources/kits/make-ipad-kit.sh` (local: `sources/` is git-ignored, and the kit holds the game and code made from it; it is never committed or shared) builds the kit folder and a `.tar.gz` of it:
+
+```
+pentamoor-ipad-kit-<commit>/
+  deploy.sh  README-IPAD.txt  kit-manifest.json     the manifest: commit, LIFT_ABI, the SHA-256 of MAGIC/DECK/DUEL.EXE, Xcode and SDK versions, hashes of the objects, the data id
+  tools/ios/   deploy.py deploy.sh gen_xcodeproj.py build_ios.sh Info.plist.in Pentamoor.entitlements
+  src/port/ src/native/                              the runtime's sources (tracked files; Xcode compiles these, about a minute the first time)
+  prebuilt/iphoneos/   game_magic.o game_deck.o game_duel.o libSDL2.a     compiled here with build_ios.sh's flags (arm64, minimum iOS 15.0); 12 MB
+  prebuilt/sdl-include/                              SDL2's headers
+  Magic/                                             the game folder (281 MB)
+  [prebuilt/iphonesimulator/                         with --with-simulator: to try the kit in a Simulator]
+  [sources/generated/lift_*/ dist/work-ios/SDL2-*.tar.gz     with --with-sources: the lifted C (+90 MB) and SDL's pinned source]
+```
+
+**Another Xcode.** The objects were compiled with the Xcode and SDK that the manifest names. `deploy.sh` compares the SDK version with the other Mac's: if they differ and the kit has the lifted C (`--with-sources`) it compiles that instead (`build_ios.sh libs`, a minute or two; `--rebuild` forces it);
+if they differ and it has not, it links the prebuilt objects anyway and warns (an object file is plain machine code plus a version stamp, so this often works; a link error is then explained and the fix is a kit made on that Xcode or with `--with-sources`). Only Xcode 27.0 (iphoneos and iphonesimulator 27.0 SDKs) has been used, on both sides.
+
+### When something goes wrong
+
+`./deploy.sh --dry-run` shows the plan; `./deploy.sh --logs` brings the app's own log; `-v` shows every command; the full `xcodebuild` output is `dist/ios/deploy/xcodebuild-device.log`. The usual errors, and what `deploy.sh` says for them:
+
+| Message | Cause and fix |
+|---|---|
+| no iPad is connected / could not find device | cable, unlock, tap Trust; Wi-Fi: pair once with a cable (Xcode > Window > Devices and Simulators > Connect via network). `xcrun devicectl list devices` must show it |
+| Developer Mode is off | Settings > Privacy & Security > Developer Mode > on > restart > Turn On. The switch only appears after the iPad has been connected to a Mac with Xcode |
+| the iPad is locked | unlock it and keep it awake |
+| xcodebuild could not create a provisioning profile for team ... | Xcode has no Apple ID for that team: Xcode > Settings > Accounts > + > Apple ID, then run again (the first build needs the internet). The relevant `xcodebuild` lines are printed |
+| no valid signing certificate | Xcode > Settings > Accounts > Manage Certificates > + Apple Development. A Developer ID certificate cannot sign a device build |
+| bundle id taken / cannot be registered to your team | `--bundle-id com.you.pentamoor2` |
+| free account limits (10 App IDs a week, 3 apps) | wait, use a paid account, or delete an old app from the iPad |
+| Untrusted Developer / the app closes at once | Settings > General > VPN & Device Management > your Apple ID under Developer App > Trust |
+| the Xcode is too old for the iPad's iPadOS / platform not installed | update Xcode; Settings > Components for the iOS platform |
+| `Documents/Magic/Program/MAGIC.EXE` missing, the app says where to put the game | `--force-data`; or copy the folder by hand (below) |
+| a link error with prebuilt objects | another Xcode than the kit's: `--rebuild` (kit with `--with-sources`), or make the kit again on this Xcode |
+| the app says `cannot reserve the guest's address space`, or is ended for memory | `--entitlements` (see Memory) |
+
+What was and was not run for this tool is under [What was tested](#what-was-tested) and [Not verified](#not-verified).
 
 ## Build and run in the Simulator
 
@@ -31,9 +123,9 @@ The Simulator's device starts in portrait, and the app (landscape only) is then 
 so `tools/soak` style scripts work against the Simulator. The control steps `tdown ID X Y`, `tmove`, `tup` are fingers (below), so a long press or a two-finger tap can be scripted. For real touches use `xcrun simctl` or the
 MCP simulator tool; the app takes what the Simulator sends.
 
-## On a real iPad
+## On a real iPad, by hand (the fallback)
 
-You need an Apple developer account (a free one signs for 7 days; a paid one for a year), Xcode, and the iPad in Developer Mode and trusted. Nothing here touches a keychain or a provisioning profile.
+[One command](#one-command) does all of this. By hand: you need an Apple developer account (a free one signs for 7 days; a paid one for a year), Xcode, and the iPad in Developer Mode and trusted. Nothing here touches a keychain or a provisioning profile.
 
 1. Install the game and lift it as above (`sources/generated/lift_*` must exist).
 2. `python3 tools/ios/gen_xcodeproj.py --team YOURTEAMID --bundle-id com.yourname.pentamoor` (the team is the 10-character id: Xcode > Settings > Accounts, or the Membership page of developer.apple.com; or leave `--team` out and pick the team in Xcode).
@@ -118,7 +210,7 @@ The guest's threads are host threads with the default stack (512 KB on iOS, as o
 
 `tools/ios/gen_xcodeproj.py` writes the project itself (the old text format, no generator, deterministic, 13 tests). `GameLibs` is an aggregate target whose script runs `build_ios.sh <platform> libs` in a clean environment; `Pentamoor` compiles the runtime's files
 (the list is `make -C src/port print-ios-src`, the Makefile's own, so the two cannot differ) and links them with the objects and SDL2 (`IOS_PLAT` is `simulator` or `device` by SDK). It builds with `xcodebuild -scheme Pentamoor -sdk iphonesimulator` (and `-sdk iphoneos CODE_SIGNING_ALLOWED=NO`);
-the Simulator build from it runs.
+the Simulator build from it runs. `--prebuilt DIR` writes a project with no `GameLibs` target that links objects built beforehand (the iPad kit, [One command](#one-command)).
 
 ## What was tested
 
@@ -134,8 +226,21 @@ All on an Apple M1 Max, macOS 27.0.1, Xcode 27.0 (iPhoneSimulator 27.0 SDK), the
   CPU as `top` saw it: title screen and encounter screens 110 % (one core and a bit) and the Mac's own run of the same screens on SDL's dummy driver is 100 %, because the game's own loops there spin; a duel board 22 %. A spinning loop is a battery question on an iPad, not a speed one; it has not been looked at.
 - `make -C src/port test check-front check-module check-run check-program check-build`, `pytest tools/install tools/lift tools/steamdeck tools/release tools/ios` and `tools/release/check_tree.py` pass. `make -C src/port ios-runtime` (the runtime's 48 files compiled for iphonesimulator arm64, no game files) is in the macOS CI job.
 
+`deploy.sh` and the iPad kit (the same Mac, Xcode 27.0, the real game; nothing of it ran against a real device):
+
+- **The kit, unpacked in a fresh folder as if on another Mac, and run from there with the PATH unchanged**: `./deploy.sh --simulator UDID` checked Xcode, generated the project from the kit's files, linked the kit's prebuilt objects with the runtime compiled there, built, installed with `simctl`, copied the 1102 files of the game, started the app, and the title screen came up
+  (about 50 s from nothing on an M1 Max); the same command again: 3 s, with "already in the app, not copied" (the stamp). The kit is 311 MB (256 MB packed) with the Simulator objects, 402 MB with `--with-sources`; `--with-sources` and a pretended other SDK took the compile-from-lifted-C path and ran the same (47 s).
+- `--dry-run` against saved device lists (both JSON shapes, hand-written from the documented fields, in `tools/ios/testdata/`), and the real `devicectl list devices` / `xcrun devicectl` errors on a Mac with no iPad ("no iPad is connected" with the fix).
+- `deploy.sh --selftest` on the real tools: every option the script passes to `xcodebuild`, `devicectl` (list devices, info lockState, info files, install app, copy to, copy from, process launch) and `simctl` is in that tool's `--help`, and the real device list parses.
+- `tools/ios/test_deploy.py` (no Xcode needed, runs on Linux): the JSON and the choice of device, team detection from certificate subjects (including a real generated certificate through `openssl`, and the Developer ID case), the settings file and its precedence, bundle ids, the data stamp, the choice between prebuilt objects and lifted C, the error hints, the commands, and the whole flow against a fake `xcrun`/`xcodebuild` that keeps a pretend app container
+  in a folder (first deploy, redeploy skipping the data, changed data, data deleted in Files, both ways a folder may be copied, `--program`, `--logs`, a locked iPad, a signing failure). `test_ios.py` also tests the project generator's `--prebuilt` mode.
+- `devicectl` does not work on a Simulator (it answers that the capability is not supported), so the device path of `deploy.sh` could not be exercised in one; only the Simulator path (`xcodebuild` + `simctl`, the same steps in the same order with the same logging) was.
+
 ## Not verified
 
+- **`deploy.sh` on a real iPad**: signing with `-allowProvisioningUpdates` (whether it finds the Apple ID in Xcode, makes the certificate and the profile and registers the iPad), Developer Mode and lock-state detection (the JSON of a real iPad: the fields are read from the documented names in both shapes, and a missing one is only a warning), the real file layout of
+  `devicectl device copy to` for a folder (the probe handles both, the fake in the tests does both), the speed of the copy over USB and Wi-Fi, a Wi-Fi paired iPad, installing over an older build, launching (`Untrusted Developer`), `--console`. The default bundle id may be taken by someone else's team.
+- **Another Xcode**: the kit's prebuilt objects linked by a different Xcode or SDK than the one that compiled them (only 27.0 exists here; the warning and the `--with-sources` fallback are the plan, not an observation).
 - **Anything on a real iPad**: signing, the app starting under the device's limits, the 4 GB reservation, the memory limit, the scene-life-cycle workaround on a real iOS 26 or 27, thermals, battery, frame rate on an A-series or M-series iPad, the keyboard when the iPad is really held landscape.
 - The Simulator device was in portrait the whole time and showed the landscape app letterboxed at three quarters of the width; the touch mapping was checked in that state (a tap lands where it is drawn, by the log's picture coordinates), landscape at full size was not looked at.
 - Backgrounding and coming back, Stage Manager and window resizing (the app asks for full screen and is not meant to be resized), orientation changes, an Apple Pencil, a trackpad or an external keyboard on the iPad itself, a physical game controller (SDL's gamepad subsystem started and the Simulator's own "Gamepad" was found).
