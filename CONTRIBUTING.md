@@ -55,6 +55,14 @@ first of `cc`, `gcc`, `clang` that really builds a shared library; else the Zig 
 (there is no Makefile in a release); its flags are the Makefile's module flags, and a test (`tools/install/test_release.py`) compares the two. `install.py --self-test` builds the small stub module
 (`src/port/stubgame`) with the chosen compiler and has the runtime load it, with no game files.
 
+`modbuild.py` can also build the modules for another system than the one it runs on, which is how someone with several machines of their own can build all their modules on one of them:
+`python3 tools/install/modbuild.py --target windows-x86_64 --out some/folder` (`--list-targets`: `windows-x86_64`, `linux-x86_64`, `linux-aarch64`, `macos-arm64`, `macos-x86_64`, or a Zig triple such as
+`x86_64-windows-gnu`; `--gen` names the lifter's output, default `sources/generated`; `--build-dir` keeps one target's object files apart from another's). Zig is the cross compiler (`zig cc -target ...`, the
+one `zigdl.py` fetches into `tools/local`, or `--tools DIR`); for a Mac target on a Mac the system's clang is used first (`-arch arm64` or `x86_64`, macOS 11). The Linux targets are built against glibc 2.35,
+the one the release runtime is built with, so the module loads on that and newer. Nothing is run, and a native build (no `--target`) is exactly what it was. The result is a file to carry over, made from
+the game: keep it like `sources/`. A macOS module for both processors is two builds joined with `lipo -create`; the runtime of the macOS release is universal and `dlopen` picks the half that matches.
+`tools/install/test_modbuild_target.py` checks the command lines, the names and the compiler choice with no game files and no cross compiler.
+
 **iOS** (macOS with Xcode only; [docs/notes/ios.md](docs/notes/ios.md)): there is no module to load on an iPad, so the three programs' lifted C is linked into the app. `tools/ios/build_ios.sh simulator` builds SDL2 (the same pinned source as the macOS runtime), the
 three modules (each joined into one object whose only visible symbol is its renamed `pentamoor_game_init_<program>`), the runtime (`make -C src/port ios-runtime`, which also builds with no game files) and `dist/ios/simulator/Pentamoor.app`; `tools/ios/sim.sh` installs it
 in a simulated iPad Pro and copies the game in; `tools/ios/gen_xcodeproj.py` writes the Xcode project for a real device. **Never commit a built app** (`dist/` is git-ignored): it holds code made from the game.

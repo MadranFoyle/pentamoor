@@ -8,10 +8,16 @@ The flags are the Makefile's (MODFLAGS, SOFLAGS); tools/install/test_install.py 
 
 Choosing the compiler (find_compiler): $PENTAMOOR_CC or --compiler if given; else the first of cc, gcc, clang on the PATH that really compiles and links a small
 shared library here; else the Zig that is already in <root>/tools/local (the Windows release carries one); else Zig is downloaded there (zigdl.py).
+
+Building for another system (--target, TARGETS): the same sources can be compiled for a system and a processor other than this machine's, with Zig as a cross compiler
+(`zig cc -target x86_64-windows-gnu` makes a Windows DLL on a Mac), or with Apple's clang for either processor of a Mac. Nothing is run; the result is only a file to carry over.
+    python3 tools/install/modbuild.py --target windows-x86_64 --out some/folder        (--gen: the lifter's output folder, default sources/generated)
+A native build (no --target) is exactly what it always was.
 """
 import concurrent.futures
 import glob
 import os
+import platform
 import shlex
 import shutil
 import subprocess
@@ -37,6 +43,66 @@ def host_os():
 
 def module_ext(target_os=None):
     return {"darwin": "dylib", "windows": "dll"}.get(target_os or host_os(), "so")
+
+
+def host_arch():
+    return TRIPLE_ARCH.get(platform.machine().lower(), platform.machine().lower())
+
+
+class Target:
+    """A system and processor to build for: name ('windows-x86_64'), os ('darwin', 'windows', 'linux': host_os()'s words), arch ('x86_64', 'aarch64'), the triple Zig is told
+    (`zig cc -target`), and, for a Mac, the architecture name Apple's compiler is told (`-arch`) and the oldest macOS the module is made for."""
+
+    def __init__(self, name, os_name, arch, zig, apple_arch=None, min_os=None):
+        self.name, self.os, self.arch, self.zig, self.apple_arch, self.min_os = name, os_name, arch, zig, apple_arch, min_os
+
+    def __repr__(self):
+        return f"Target({self.name!r})"
+
+    def is_native(self):
+        """Is this the system and processor the script runs on?"""
+        return self.os == host_os() and self.arch == host_arch()
+
+
+# The glibc of the Linux targets is the one the project's release runtime is built against (the ubuntu-22.04 runner of .github/workflows/package.yml: glibc 2.35): a module made
+# against an older glibc loads on newer ones, not the other way round. macOS 11 is the oldest the universal runtime supports.
+TARGETS = {t.name: t for t in (
+    Target("windows-x86_64", "windows", "x86_64", "x86_64-windows-gnu"),
+    Target("linux-x86_64", "linux", "x86_64", "x86_64-linux-gnu.2.35"),
+    Target("linux-aarch64", "linux", "aarch64", "aarch64-linux-gnu.2.35"),
+    Target("macos-arm64", "darwin", "aarch64", "aarch64-macos.11.0", "arm64", "11.0"),
+    Target("macos-x86_64", "darwin", "x86_64", "x86_64-macos.11.0", "x86_64", "11.0"),
+)}
+# Zig's own triples are accepted as well ('x86_64-windows-gnu', 'aarch64-macos'): they are read as the target they stand for
+TRIPLE_OS = {"windows": "windows", "linux": "linux", "macos": "darwin", "darwin": "darwin"}
+TRIPLE_ARCH = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "aarch64", "arm64": "aarch64"}
+
+
+def parse_target(text):
+    """The Target a name or a Zig triple stands for: 'windows-x86_64', 'macos-arm64', 'x86_64-linux-gnu.2.35'. None for no text. Raises BuildError for one that is not known."""
+    if not text:
+        return None
+    if text in TARGETS:
+        return TARGETS[text]
+    parts = text.split("-")
+    if len(parts) >= 2 and parts[0] in TRIPLE_ARCH and parts[1].split(".")[0] in TRIPLE_OS:
+        arch, os_name = TRIPLE_ARCH[parts[0]], TRIPLE_OS[parts[1].split(".")[0]]
+        for t in TARGETS.values():
+            if t.os == os_name and t.arch == arch:
+                return Target(t.name, t.os, t.arch, text, t.apple_arch, t.min_os)        # the triple as given is what Zig is told
+    raise BuildError(f"unknown target '{text}'; known: {', '.join(TARGETS)} (or a Zig triple such as x86_64-windows-gnu)")
+
+
+def target_args(cc, target):
+    """What to add to every compile and link command to make `cc` build for `target`: nothing for no target, or for this machine's own system and processor with a compiler of
+    this machine (a native build is untouched). Zig takes -target; Apple's compiler on a Mac takes -arch and the oldest macOS; any other compiler cannot be pointed elsewhere."""
+    if target is None or (target.is_native() and cc.kind != "zig"):
+        return []
+    if cc.kind == "zig":
+        return ["-target", target.zig]
+    if target.os == "darwin" and host_os() == "darwin":
+        return ["-arch", target.apple_arch, f"-mmacosx-version-min={target.min_os}"]
+    raise BuildError(f"{cc.argv[0]} cannot build for {target.name} from this machine; a cross build needs Zig (--compiler zig)")
 
 
 class Compiler:
@@ -82,12 +148,19 @@ def link_flags(kind, target_os=None):
     return ["-shared"]
 
 
-def compile_command(cc, src, obj, native_dir, target_os=None):
-    return cc.argv + compile_flags(cc.kind, native_dir, target_os) + ["-c", "-o", obj, src]
+def compile_command(cc, src, obj, native_dir, target_os=None, target=None):
+    if target is not None:
+        target_os = target.os
+    return cc.argv + target_args(cc, target) + compile_flags(cc.kind, native_dir, target_os) + ["-c", "-o", obj, src]
 
 
-def link_command(cc, objs, out, target_os=None):
-    return cc.argv + link_flags(cc.kind, target_os) + ["-o", out] + list(objs) + ["-lm"]
+def link_command(cc, objs, out, target_os=None, target=None, strip=False):
+    """`strip`: also drop the symbol table and debug information of the result (-s; not for a Mac, whose linker keeps only what the objects carry, and they carry none). Zig's Linux
+    libraries are five times larger without it."""
+    if target is not None:
+        target_os = target.os
+    extra = ["-s"] if strip and (target_os or host_os()) != "darwin" else []
+    return cc.argv + target_args(cc, target) + link_flags(cc.kind, target_os) + extra + ["-o", out] + list(objs) + ["-lm"]
 
 
 def program_sources(gen_dir, port_dir):
@@ -123,9 +196,9 @@ def run_quiet(argv, env=None, timeout=None, cwd=None):
     return subprocess.run(argv, env=full, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", timeout=timeout)
 
 
-def probe(cc, native_dir, target_os=None, timeout=600):
-    """Does this compiler make a 64-bit shared library from C99 here? Returns (ok, first line of its --version or the error). The first run of Zig builds its own caches."""
-    target_os = target_os or host_os()
+def probe(cc, native_dir, target_os=None, timeout=600, target=None):
+    """Does this compiler make a 64-bit shared library from C99 here (for `target`, if given)? Returns (ok, first line of its --version or the error). The first run of Zig builds its own caches."""
+    target_os = target.os if target is not None else target_os or host_os()
     with tempfile.TemporaryDirectory(prefix="pentamoor-probe-") as d:
         src, obj, lib = (os.path.join(d, n) for n in ("probe.c", "probe.o", "probe." + module_ext(target_os)))
         with open(src, "w") as f:
@@ -133,11 +206,11 @@ def probe(cc, native_dir, target_os=None, timeout=600):
         try:
             version = run_quiet(cc.argv + ["--version"], cc.env, timeout=timeout)
             first = (version.stdout.strip().splitlines() or [""])[0] if version.returncode == 0 else ""
-            for cmd in (compile_command(cc, src, obj, native_dir, target_os), link_command(cc, [obj], lib, target_os)):
+            for cmd in (compile_command(cc, src, obj, native_dir, target_os, target), link_command(cc, [obj], lib, target_os, target)):
                 r = run_quiet(cmd, cc.env, timeout=timeout, cwd=d)
                 if r.returncode != 0:
                     return False, (r.stdout.strip().splitlines() or ["failed"])[-1][:200]
-        except (OSError, subprocess.TimeoutExpired) as e:
+        except (OSError, subprocess.TimeoutExpired, BuildError) as e:
             return False, str(e)
     return True, first
 
@@ -232,6 +305,41 @@ def find_compiler(native_dir, tools_dir, explicit=None, download=True, ask=None,
     return cc
 
 
+def find_target_compiler(target, native_dir, tools_dir, explicit=None, download=True, ask=None, say=print, which=shutil.which, prober=probe, fetch=zigdl.fetch,
+                         tools_missing=xcode_tools_missing):
+    """The compiler that builds the modules for `target` (a Target). For no target, or this machine's own, that is find_compiler's choice. For another system or processor:
+    `explicit` if given ("zig" is the Zig in tools_dir), else, for a Mac target on a Mac, the system's clang (it builds either processor), else Zig, which is a cross compiler
+    for all of them. Whatever is chosen is tried on a small library for that target first. Raises BuildError."""
+    if target is None or target.is_native():
+        return find_compiler(native_dir, tools_dir, explicit, download, ask, say, which, prober, fetch, tools_missing)
+    explicit = explicit or os.environ.get("PENTAMOOR_CC")
+
+    def tried(cc, label):
+        ok, detail = prober(cc, native_dir, target=target)
+        if not ok:
+            raise BuildError(f"{label} cannot build a shared library for {target.name}: {detail}")
+        cc.version = detail
+        return cc
+
+    if explicit and explicit.strip().lower() != "zig":
+        argv = split_command(explicit)
+        if not shutil.which(argv[0]) and not os.path.exists(argv[0]):
+            raise BuildError(f"the compiler '{explicit}' was not found")
+        return tried(Compiler(argv), explicit)
+    if not explicit and target.os == "darwin" and host_os() == "darwin":
+        for path in system_candidates(which, tools_missing):
+            cc = Compiler([path])
+            ok, detail = prober(cc, native_dir, target=target)
+            if ok:
+                cc.version = detail
+                return cc
+            say(f"  not usable for {target.name}: {path}: {detail}")
+    cc = get_zig(tools_dir, download, ask, say, fetch)
+    cc = tried(cc, f"Zig ({' '.join(cc.argv)})")
+    cc.version = "zig " + cc.version
+    return cc
+
+
 # ---- building ---------------------------------------------------------------------------------------------------------------------------------------------
 def newest(paths):
     return max((os.path.getmtime(p) for p in paths if os.path.exists(p)), default=0)
@@ -243,9 +351,9 @@ def tmp_name(path):
     return root + ".tmp" + ext
 
 
-def plan(programs, gen_root, port_dir, native_dir, build_dir, out_dir, cc, target_os=None):
-    """{program: {"srcs": [...], "objs": [...], "out": path, "compile": [(src, obj, argv)...], "link": argv}} for the programs that have lifted C."""
-    target_os = target_os or host_os()
+def plan(programs, gen_root, port_dir, native_dir, build_dir, out_dir, cc, target_os=None, target=None, strip=False):
+    """{program: {"srcs": [...], "objs": [...], "out": path, "compile": [(src, obj, argv)...], "link": argv}} for the programs that have lifted C. `target`: a Target to build for."""
+    target_os = target.os if target is not None else target_os or host_os()
     headers = [os.path.join(native_dir, h) for h in HEADERS]
     result = {}
     for prog in programs:
@@ -255,8 +363,8 @@ def plan(programs, gen_root, port_dir, native_dir, build_dir, out_dir, cc, targe
         out = os.path.join(out_dir, f"game_{prog}.{module_ext(target_os)}")
         result[prog] = {
             "srcs": srcs, "objs": objs, "out": out, "headers": headers,
-            "compile": [(s, o, compile_command(cc, s, o, native_dir, target_os)) for s, o in zip(srcs, objs)],
-            "link": link_command(cc, objs, tmp_name(out), target_os),
+            "compile": [(s, o, compile_command(cc, s, o, native_dir, target_os, target)) for s, o in zip(srcs, objs)],
+            "link": link_command(cc, objs, tmp_name(out), target_os, target, strip),
         }
     return result
 
@@ -266,12 +374,13 @@ def human(seconds):
     return f"{seconds // 60} min {seconds % 60:02d} s" if seconds >= 60 else f"{seconds} s"
 
 
-def build_modules(programs, gen_root, port_dir, native_dir, build_dir, out_dir, cc, jobs=None, say=print, target_os=None, heartbeat=20.0, runner=run_quiet):
+def build_modules(programs, gen_root, port_dir, native_dir, build_dir, out_dir, cc, jobs=None, say=print, target_os=None, heartbeat=20.0, runner=run_quiet, target=None, strip=False):
     """Compile every file of every program in `programs` (up to `jobs` at once, the biggest first; a file whose object is newer than it and the headers is left alone), then link each
     module into out_dir/game_<program>.<ext>. Prints the file count and percent (by size of the C) as files finish, and a line every `heartbeat` seconds while a big one is running.
-    Returns {program: path of the module}."""
+    Returns {program: path of the module}. `target`: a Target to cross-build for (give it a build_dir of its own: the objects of one target are not another's); `strip`: link without symbols and debug information."""
     jobs = jobs or max(1, min(os.cpu_count() or 1, 8))
-    plans = plan(programs, gen_root, port_dir, native_dir, build_dir, out_dir, cc, target_os)
+    target_os = target.os if target is not None else target_os
+    plans = plan(programs, gen_root, port_dir, native_dir, build_dir, out_dir, cc, target_os, target, strip)
     todo = []
     total = done_bytes = 0
     for prog, p in plans.items():
@@ -329,10 +438,15 @@ def build_modules(programs, gen_root, port_dir, native_dir, build_dir, out_dir, 
     for prog, p in plans.items():
         say(f"linking game_{prog}.{module_ext(target_os)}")
         os.makedirs(os.path.dirname(p["out"]), exist_ok=True)
+        before = set(os.listdir(os.path.dirname(p["out"])))
         r = runner(p["link"], cc.env)
         if r.returncode != 0:
             raise BuildError(f"linking {p['out']} failed (exit {r.returncode}):\n  {' '.join(p['link'])}\n" + "\n".join(r.stdout.strip().splitlines()[-25:]))
         os.replace(tmp_name(p["out"]), p["out"])
+        if target is not None and target_os == "windows":      # a Windows link also writes an import library (Zig names it after the first object) and maybe a debug file: not part of the module
+            for name in set(os.listdir(os.path.dirname(p["out"]))) - before:
+                if name.lower().endswith((".lib", ".pdb")):
+                    os.remove(os.path.join(os.path.dirname(p["out"]), name))
         made[prog] = p["out"]
     return made
 
@@ -353,3 +467,51 @@ def self_test(cc, port_dir, native_dir, run, say=print, jobs=2):
     with tempfile.TemporaryDirectory(prefix="pentamoor-selftest-") as d:
         made = build_modules(["stubgame"], port_dir, port_dir, native_dir, os.path.join(d, "obj"), os.path.join(d, "out"), cc, jobs, say)
         return smoke_test(run, made["stubgame"])
+
+
+# ---- the command line: build the modules for this machine or, with --target, for another ---------------------------------------------------------------------
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+
+
+def main(argv=None, say=print):
+    import argparse
+    ap = argparse.ArgumentParser(description="Compile the game modules from the C the lifter wrote (tools/lift), for this machine or, with --target, for another system or processor. "
+                                             "Nothing is run, and nothing is changed outside --out and --build-dir.")
+    ap.add_argument("--target", help=f"build for another system: {', '.join(TARGETS)} (or a Zig triple such as x86_64-windows-gnu); default: this machine, as the installer does")
+    ap.add_argument("--out", help="where the game_<program>.<ext> files go (default: dist/modules/<target>)")
+    ap.add_argument("--gen", help="the lifter's output folder, holding lift_magic_all, lift_deck and lift_duel (default: sources/generated)")
+    ap.add_argument("--programs", nargs="+", default=list(PROGRAMS), help=f"which programs (default: {' '.join(PROGRAMS)})")
+    ap.add_argument("--root", default=ROOT, help="the folder that holds src/port, src/native and tools/local (default: the one this file is in)")
+    ap.add_argument("--build-dir", help="where the object files go (default: sources/build/<target>); a target needs one of its own")
+    ap.add_argument("--compiler", help="the compiler: a command, or 'zig' for the one in tools/local (default: for a target, Zig, or Apple's clang for a Mac target on a Mac)")
+    ap.add_argument("--tools", help="the folder that holds ziglang/, where Zig is downloaded if it is needed (default: tools/local)")
+    ap.add_argument("--no-download", action="store_true", help="never download the Zig compiler")
+    ap.add_argument("--jobs", "-j", type=int, help="how many C files to compile at once (default: the number of processors, at most 8)")
+    ap.add_argument("--strip", action="store_true", help="link without symbols and debug information (a Zig-built Linux module is five times smaller)")
+    ap.add_argument("--list-targets", action="store_true", help="print the known targets and exit")
+    args = ap.parse_args(argv)
+    if args.list_targets:
+        for t in TARGETS.values():
+            say(f"{t.name:16} zig -target {t.zig}")
+        return 0
+    try:
+        target = parse_target(args.target)
+        root = os.path.abspath(args.root)
+        label = target.name if target else "native"
+        port, native = os.path.join(root, "src", "port"), os.path.join(root, "src", "native")
+        gen = os.path.abspath(args.gen or os.path.join(root, "sources", "generated"))
+        out = os.path.abspath(args.out or os.path.join(root, "dist", "modules", label))
+        build = os.path.abspath(args.build_dir or os.path.join(root, "sources", "build", label))
+        cc = find_target_compiler(target, native, os.path.abspath(args.tools or os.path.join(root, "tools", "local")), args.compiler, download=not args.no_download, say=say)
+        say(f"building for {label} with {cc.describe()}")
+        made = build_modules(args.programs, gen, port, native, build, out, cc, jobs=args.jobs, say=say, target=target, strip=args.strip)
+    except BuildError as e:
+        say(f"modbuild: {e}")
+        return 1
+    for prog, path in made.items():
+        say(f"{path}  {os.path.getsize(path)} bytes")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
