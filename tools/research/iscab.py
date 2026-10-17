@@ -11,8 +11,11 @@ Layout, as worked out from the 2.0 disc (little-endian):
       names ("Program\\CardArt"), the others at file descriptors, 0x2a bytes each:
       +0x00 name offset (NUL-terminated string, relative to the table)  +0x04 directory index  +0x08 u16 flags (4 compressed, 2 obfuscated, 1 split, 8 an unused slot)
       +0x0a expanded size  +0x0e packed size  +0x12 u16 DOS attributes  +0x16 u16 DOS date  +0x1a u16 DOS time  +0x26 offset of the data in the cabinet
-  data: for a compressed file, a run of chunks, each a u16 length and that many bytes of raw deflate (zlib without the header), each inflated on its own.
-        (The obfuscated flag is set on every file but the bytes are plain deflate, the 1.0 reader of this flag in other tools applies to other versions.)
+  data: version 0x01005100 (the 2.0 disc): for a compressed file, a run of chunks, each a u16 length and that many bytes of raw deflate (zlib without the header), each
+        inflated on its own. (The obfuscated flag is set on every file but the bytes are plain deflate, the 1.0 reader of this flag in other tools applies to other versions.)
+        version 0x01000004 (the ManaLink 3.0 add-on, January 1998): the same descriptor and file table, but a compressed file is ONE raw deflate stream, with no chunk
+        lengths and no obfuscation flag; the bytes of stored (incompressible) files are deflate "stored" blocks, so a packed size can exceed the expanded one by a few bytes.
+        `read` picks the layout from the version (major digit of the low word: 5 = chunks) and falls back on the other when the size does not come out.
 """
 import contextlib
 import struct
@@ -68,14 +71,34 @@ class Cab:
         raw = self.f.read(packed)
         if not flags & 4:
             return raw
+        # two layouts of a compressed file, by the cabinet's version (see the top of the file); the other is tried if the first fails
+        order = (self._chunks, self._stream) if self.chunked else (self._stream, self._chunks)
+        for i, method in enumerate(order):
+            try:
+                out = method(raw)
+                if len(out) == exp:
+                    return out
+                err = "%d bytes unpacked, %d expected" % (len(out), exp)
+            except zlib.error as e:
+                err = str(e)
+        raise CabError("%s: %s" % (path, err))
+
+    @property
+    def chunked(self):
+        return (self.version >> 12) & 0xf >= 5
+
+    @staticmethod
+    def _chunks(raw):
         out, p = bytearray(), 0
         while p + 2 <= len(raw):
             (n,) = struct.unpack_from("<H", raw, p)
             out += zlib.decompress(raw[p + 2:p + 2 + n], -15)
             p += 2 + n
-        if len(out) != exp:
-            raise CabError("%s: %d bytes unpacked, %d expected" % (path, len(out), exp))
         return bytes(out)
+
+    @staticmethod
+    def _stream(raw):
+        return zlib.decompressobj(-15).decompress(raw)
 
 
 class _InIso:
