@@ -22,6 +22,15 @@
 #include "test_util.h"
 #include "msgbox.h"
 #include "wm.h"
+
+/* setenv/unsetenv for the tests, on Windows too (where _putenv_s with an empty value removes the variable) */
+#ifdef _WIN32
+static void test_setenv(const char *name, const char *value) { _putenv_s(name, value); }
+static void test_unsetenv(const char *name) { _putenv_s(name, ""); }
+#else
+static void test_setenv(const char *name, const char *value) { setenv(name, value, 1); }
+static void test_unsetenv(const char *name) { unsetenv(name); }
+#endif
 #include "winhelp.h"
 #include "yesno.h"
 
@@ -1521,20 +1530,22 @@ static void test_msgbox(void)
             const char *v = getenv(names[i]);
 
             saved[i] = v ? strdup(v) : NULL;
-            unsetenv(names[i]);
+            test_unsetenv(names[i]);
         }
         CHECK(!port_env_on("PORT_HEADLESS") && msgbox_mode() == MSGBOX_ASK);
-        setenv("PORT_HEADLESS", "1", 1);
+        test_setenv("PORT_HEADLESS", "1");
         CHECK(port_env_on("PORT_HEADLESS") && msgbox_mode() == MSGBOX_AUTO);
-        setenv("PORT_HEADLESS", "0", 1);
+        test_setenv("PORT_HEADLESS", "0");
         CHECK(!port_env_on("PORT_HEADLESS") && msgbox_mode() == MSGBOX_ASK);
-        setenv("PORT_HEADLESS", "", 1);
+#ifndef _WIN32                                              /* Windows cannot hold an empty variable: _putenv_s(name, "") removes it */
+        test_setenv("PORT_HEADLESS", "");
         CHECK(!port_env_on("PORT_HEADLESS") && msgbox_mode() == MSGBOX_ASK);
+#endif
         for (i = 0; i < 5; i++) {
             if (saved[i])
-                setenv(names[i], saved[i], 1);
+                test_setenv(names[i], saved[i]);
             else
-                unsetenv(names[i]);
+                test_unsetenv(names[i]);
             free(saved[i]);
         }
     }
