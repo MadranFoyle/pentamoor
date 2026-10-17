@@ -93,6 +93,11 @@ typedef struct ProfClues {
     int32_t count_ebp;      /* how many rows have a dungeon: the local at ebp + count_ebp */
 } ProfClues;
 
+/* The title menu (screens.c, main.c): its loop, the one screen where Escape leaves the game with no question */
+typedef struct ProfTitle {
+    ProfRange loop;
+} ProfTitle;
+
 /* The game's key queue, its (Y/N) questions and its text box (yesno.c, textfocus.c) */
 #define PROFILE_MAX_SITES 4
 typedef struct ProfKeys {
@@ -119,6 +124,7 @@ typedef struct BuildProfile {
     ProfTextMenu textmenu;
     ProfBuyCards buycards;
     ProfClues clues;
+    ProfTitle title;
     ProfKeys keys;
     ProfDisplay display;
 } BuildProfile;

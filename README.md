@@ -91,7 +91,7 @@ or Switch pad: anything SDL knows as a game controller, plugged in before or whi
 | A / B | left click (hold to drag) / right click |
 | X or Start | Enter |
 | Y | double click (on a card in a duel, the game pays its mana for you) |
-| Back | Escape (cancel; on some screens it asks to quit the game) |
+| Back | Escape (cancel; on the map it asks "Ready to Quit?"; at the title menu hold it half a second to leave the game, a tap does nothing there) |
 | LB / RB | Page Up / Page Down (lists, the deck builder's card row) |
 | Right trigger + left stick | walk on the map in the direction you push |
 | Right stick | arrow keys (castles, dungeons) |

@@ -1987,7 +1987,7 @@ static void test_screens(void)
     screen_w = 1024; screen_h = 768;
     CHECK(screens_kind(0.0) == SCREEN_NONE);
     screens_note(0x47a8f9, 0, SRC_TABLE, 1.0);                                              /* the title menu's loop */
-    CHECK(screens_kind(1.1) == SCREEN_TABLE && screens_kind(1.5) == SCREEN_NONE);           /* and a loop that has stopped passing is not on */
+    CHECK(screens_kind(1.1) == SCREEN_TITLE && screens_kind(1.5) == SCREEN_NONE);           /* and a loop that has stopped passing is not on (the title menu is told apart: Escape leaves the game there) */
     screens_note(0x4e78db, 0, SRC_SNAPSHOT, 2.0);                                           /* the overworld: the D-pad stays the arrow keys */
     CHECK(screens_kind(2.0) == SCREEN_NONE);
     screens_note(0x4e7900, 0, SRC_TABLE, 2.1);
