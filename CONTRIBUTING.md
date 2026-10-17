@@ -121,7 +121,7 @@ port a build:
 3. **Add one row per lifted file** to `PROFILES` in `src/port/profile.c`: a struct initialiser with the id (`#define ID_...` above it), `.build`, `.file`, `.program` (the program's `LIFT_PROGRAM`, `""` for a library, with `.base`), and the groups that file has, with its own addresses:
    `.lzw` (where its picture decompressor and the state behind it are; the lifter leaves it out, so without it the game stops at its first picture), `.pace`, `.buttons`, `.textmenu`, `.buycards`, `.clues`, `.title`, `.keys`, `.display`. A field left out is 0 and its hook is not installed;
    there is no code to change for an address. Find the addresses in the new build the way the old ones were found (`docs/notes/sota-comparison.md` shows how they were matched from 1.0, `tools/research/sotahooks.py`).
-4. **Lift and build it** as usual (`tools/install/install.py <disc> --build` lifts from the files in `sources/installed`); the module carries the new id.
+4. **Lift and build it** as usual (`tools/install/install.py <disc> --build` lifts from the files in `sources/installed`); the module carries the new id. For a Spells of the Ancients 2.15 folder (already merged from the discs and the patch with `tools/research/sotapatch.py` and `sotaoverlay.py`) it is `tools/install/install_sota.py FOLDER --build`, and `./pentamoor sota` runs it (`PENTAMOOR_SOTA` names the folder).
 5. **Add the test**: in `src/port/test_profile.c`, assert the new row's values against the addresses you found (the 1.0 test compares each field with the literal the sources had, which is what keeps a typo out), and that the row is selected by its id.
 6. Check what the profile does not cover (docs/PHASE_C.md lists it): the layout table `src/native/layout.c` and the record sizes `src/native/engine.h` are the engine's, per program and not per build, the geometry that `screens.c` assumes is the 640x480 layout, and `navwm.c` looks for the window classes by name.
 
@@ -183,8 +183,10 @@ All are environment variables. This table is the whole list of the ones the runt
 | `PORT_UNKNOWN_BUILD=1` | start a program whose build has no profile (`src/port/profile.c`) instead of refusing it (exit status 3), with every address-keyed hook, override and write off: for research, the game will probably stop at its first picture |
 | `PORT_TOUCH=1` / `0` | fingers are the mouse through `touch.c` (a tap is a left click, a long press or a two-finger tap is a right click, a drag drags; docs/notes/ios.md): on by default on iOS, off elsewhere (SDL's own touch-as-left-button stays) |
 | `PENTAMOOR_PROGRAM`, `PENTAMOOR_LOG` | iOS only: `magic` (default), `deck` or `duel` (else `Documents/program.txt`); `PENTAMOOR_LOG=console` keeps stderr on the console instead of `Documents/pentamoor.log` |
+| `PORT_SHM` | set by the runtime for a program it starts for another: the folder the named memory of the two (`CreateFileMappingA` with a name: the game's graphic pages) is handed over in, written by the one that starts, read by the new one, and written back when it ends (`src/port/process.h`) |
 | `PORT_FRAME_MS` | the overworld's frame time in ms (default 60) |
 | `PORT_OVERLAY` | where saves and other writes go |
+| `PORT_CMDLINE` | set by the runtime for a program it starts for another (`src/port/process.h`: shandalar.exe 2.15 starts `FaceMaker.exe /S`): the arguments after the program's name, which `GetCommandLineA` and the C runtime's `argv` show. The new process also gets `PORT_OVERLAY` and `PORT_RES` of the one that started it, its own `PORT_CONTROL` (the parent's name and `.facemaker`: a second pipe, made by the parent) and no `PORT_SCRIPT` |
 | `PORT_MSGBOX=ask` / `auto` | the game's `MessageBoxA`: `ask` shows the box and waits for an answer, `auto` answers at once with the default button (`IDOK`, `IDYES`, ...) and logs it. Unset: `auto` when `PORT_CONTROL`, `PORT_SCRIPT`, `PORT_HEADLESS` or `SDL_VIDEODRIVER=dummy` is in use (nobody can answer), else `ask` |
 | `PORT_FFMPEG=/path/to/ffmpeg` | which ffmpeg plays the Indeo clips (`none`: play as if there were none; default: the PATH, then the usual places) |
 | `PORT_TRACE_FN=0xADDR`, `PORT_FRAME_LOG=1`, `PORT_UI_LOG=1` | tracing: the arguments of each call of a lifted function; frames slower than the period; what each click did |
@@ -194,6 +196,7 @@ All are environment variables. This table is the whole list of the ones the runt
 | `PORT_AUDIO_DUMP=FILE` | write what the audio device was given (signed 16 bit stereo, 22,050 Hz) |
 | `PORT_COV=FILE`, `PORT_WATCH` | a coverage build only (`make -C src/port BUILD=build_cov EXTRA=-DLIFT_TRACE`): the lifted instructions that ran; every write to a stretch of guest memory (docs/PHASE_C.md) |
 | `PENTAMOOR_GAME`, `PENTAMOOR_RUN`, `PENTAMOOR_MODULE` | the launcher `./pentamoor`: the folder that holds `MAGIC.EXE` (default `sources/installed/Magic/Program`), another runtime binary, another game module |
+| `PENTAMOOR_SOTA` | the launcher `./pentamoor sota` (and `pentamoor.bat sota`): the folder that holds a Spells of the Ancients 2.15 `SHANDALAR.EXE` (default `sources/installed_sota/Program`); `tools/install/install_sota.py` checks such a folder and builds its modules |
 | `PENTAMOOR_CC` | the installer's C compiler (as `--compiler`), for the module build without `make` |
 | `PENTAMOOR_TEAM`, `PENTAMOOR_BUNDLE_ID`, `PENTAMOOR_DEVICE`, `PENTAMOOR_IOS_CONFIG` | `tools/ios/deploy.sh` only: the Apple team, the app's bundle id, the iPad, and the settings file that holds them (docs/notes/ios.md, "One command") |
 

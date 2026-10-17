@@ -282,6 +282,37 @@ def test_lift_steps_are_lift_all_sh():
     assert flat == expanded
 
 
+def test_the_2_15_lift_steps_name_each_program_its_libraries_and_their_bases(tmp_path):
+    for n in ("Shandalar.EXE", "facemaker.exe", "DECK.EXE", "STATWIN.DLL", "DeckDll.dll", "cardartlib.dll", "DrawCardLib.dll", "CdTools.DLL"):     # the install's names are not in one case
+        (tmp_path / n).write_bytes(b"MZ")
+    steps = liftrun.sota_steps(str(tmp_path), "gen")
+    assert list(steps) == ["shandalar", "facemaker", "sotadeck"]
+    flat = {m: [(script, args) for script, args in chain] for m, chain in steps.items()}
+    assert flat["shandalar"][0] == ("gen_handlers.py", ["--program", "shandalar", "--exe", str(tmp_path / "Shandalar.EXE"), "--out", "gen/lift_shandalar", "--all", "--no-handlers"])
+    libs = [(os.path.basename(args[1]), args[3]) for script, args in flat["shandalar"][1:-1]]
+    assert libs == [("STATWIN.DLL", "0x30000000"), ("DeckDll.dll", "0x32000000"), ("cardartlib.dll", "0x34000000"), ("DrawCardLib.dll", "0x36000000"), ("CdTools.DLL", "0x38000000")]
+    assert flat["shandalar"][-1] == ("gen_dll.py", ["--finish", "--out", "gen/lift_shandalar"])
+    assert flat["facemaker"] == [("gen_dll.py", ["--main", "--dll", str(tmp_path / "facemaker.exe"), "--out", "gen/lift_facemaker"])]       # no libraries: no module list
+    assert [a[1] for _, a in flat["sotadeck"][1:-1]] == [str(tmp_path / n) for n in ("DeckDll.dll", "cardartlib.dll", "DrawCardLib.dll", "CdTools.DLL")]
+    assert modbuild.SOTA_PROGRAMS == {"shandalar": "lift_shandalar", "facemaker": "lift_facemaker", "sotadeck": "lift_sotadeck"}     # the folders the lifter writes are the ones the build reads
+
+
+def test_a_2_15_install_is_checked_file_by_file(tmp_path, capsys):
+    import install_sota  # noqa: PLC0415
+    assert install_sota.find_program_folder(str(tmp_path)) is None
+    (tmp_path / "Program").mkdir()
+    assert install_sota.find_program_folder(str(tmp_path)) is None                         # no shandalar.exe there
+    (tmp_path / "Program" / "SHANDALAR.EXE").write_bytes(b"not the game")
+    assert install_sota.find_program_folder(str(tmp_path)) == str(tmp_path / "Program")
+    detected = install_sota.detect(str(tmp_path / "Program"))
+    assert {n for n, bid, known in detected if bid is None} == set(install_sota.builds.fingerprints("v2.15")) - {"shandalar.exe"}
+    assert [n for n, bid, known in detected if bid and not known] == ["shandalar.exe"]
+    assert not install_sota.report(str(tmp_path / "Program"), detected)
+    out = capsys.readouterr().out
+    assert "shandalar.exe: unknown build" in out and "deckdll.dll: missing" in out and "This is not Spells of the Ancients 2.15" in out
+    assert install_sota.main([str(tmp_path), "--check"]) == 1
+
+
 def test_lifter_runs_in_a_child_that_needs_no_pythonpath(tmp_path):
     helper = tmp_path / "helper"
     helper.mkdir()

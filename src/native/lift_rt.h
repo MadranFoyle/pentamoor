@@ -304,6 +304,49 @@ uint32_t lift_call(uint32_t target, uint32_t argp, uint32_t *cleanup);
 void lift_bad_jump(uint32_t from);
 #endif
 
+/* The game's setjmp and longjmp (_setjmp3 and longjmp of its C runtime). A lifted function that calls _setjmp3 (the lifter writes the call out as the code below, not as a call: x86lift.py,
+ * setjmp_site) keeps a C jmp_buf of its own, and longjmp (longjmp_site) leaves the C stack by that buffer, so the function goes on in its own frame, with the registers of the
+ * game's buffer. The guest's jmp_buf (a _JUMP_BUFFER of the Visual C++ runtime: Ebp, Ebx, Edi, Esi, Esp, Eip, then the exception registration, try level and three words the
+ * runtime does not use) holds the registers as the real one does, and, in two of its unused words, a magic number and the address of the C buffer. longjmp of a buffer no lifted
+ * setjmp filled stops the program (lift_bad_jump). */
+#include <setjmp.h>
+#ifdef _WIN32
+#define LIFT_SETJMP(jb) setjmp(jb)
+#else
+#define LIFT_SETJMP(jb) _setjmp(jb)
+#endif
+#define LIFT_JB_MAGIC 0x4a4d4c50u
+static inline void lift_jb_store(uint32_t buf, jmp_buf *jb, uint32_t ebp, uint32_t ebx, uint32_t edi, uint32_t esi, uint32_t esp, uint32_t eip)
+{
+    uint64_t p = (uint64_t)(uintptr_t)jb;
+
+    WR32(buf, ebp);
+    WR32(buf + 4u, ebx);
+    WR32(buf + 8u, edi);
+    WR32(buf + 12u, esi);
+    WR32(buf + 16u, esp);                  /* what Esp is after the call returns: the caller's, with the arguments still on it */
+    WR32(buf + 20u, eip);
+    WR32(buf + 24u, 0xFFFFFFFFu);          /* no exception registration */
+    WR32(buf + 28u, 0xFFFFFFFFu);          /* try level */
+    WR32(buf + 32u, LIFT_JB_MAGIC);
+    WR32(buf + 36u, (uint32_t)p);
+    WR32(buf + 40u, (uint32_t)(p >> 32));
+}
+static inline void lift_longjmp(uint32_t buf, uint32_t value) __attribute__((noreturn));
+static inline void lift_longjmp(uint32_t buf, uint32_t value)
+{
+    jmp_buf *jb;
+    uint64_t p;
+
+    if (RD32(buf + 32u) != LIFT_JB_MAGIC) {
+        lift_bad_jump(buf);
+        __builtin_trap();
+    }
+    p = (uint64_t)RD32(buf + 36u) | ((uint64_t)RD32(buf + 40u) << 32);
+    jb = (jmp_buf *)(uintptr_t)p;
+    longjmp(*jb, value ? (int)value : 1);          /* a value of 0 gives 1, as the C runtime's does */
+}
+
 /* Signed division of EDX:EAX by a 32-bit divisor, as IDIV does (the original faults on zero or overflow). */
 static inline void lift_idiv32(uint32_t *eax, uint32_t *edx, uint32_t divisor)
 {

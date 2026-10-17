@@ -131,7 +131,7 @@ void port_override(uint32_t addr, HostGuestFn fn, int nargs, uint32_t cleanup)
     overrides[noverrides++] = (Override){addr, fn, nargs, cleanup};
 }
 
-void port_hooks_reset(void) { nprehooks = noverrides = 0; }       /* the tests, between one profile and the next */
+void port_hooks_reset(void) { nprehooks = noverrides = 0; lzw_reset(); }       /* the tests, between one profile and the next */
 
 /* What the hook installers (pace.c, screens.c, yesno.c, textfocus.c, lzw.c) put in: the tests check that a build's profile gives exactly its addresses, and an unknown build none. */
 int port_hook_count(void) { return nprehooks + noverrides; }

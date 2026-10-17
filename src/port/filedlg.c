@@ -1006,7 +1006,29 @@ static uint32_t open_or_save(const uint32_t *a, int save)
 static uint32_t GetOpenFileNameA(const uint32_t *a) { return open_or_save(a, 0); }
 static uint32_t GetSaveFileNameA(const uint32_t *a) { return open_or_save(a, 1); }
 
+/* GetFileTitleA(path, buffer, size): the file name part of a path (after the last \, / or :). 0 when it fits, the size needed (with the NUL) when it does not, -1 for a path with no
+ * name (empty, or ending in a separator) or with a wildcard in it, as comdlg32's does. */
+static uint32_t GetFileTitleA(const uint32_t *a)
+{
+    const char *path = P(a[0]), *title = path, *p;
+    size_t n;
+
+    if (!path[0])
+        return 0xFFFFFFFFu;
+    for (p = path; *p; p++)
+        if (*p == '\\' || *p == '/' || *p == ':')
+            title = p + 1;
+    if (!*title || strpbrk(title, "*?"))
+        return 0xFFFFFFFFu;
+    n = strlen(title) + 1;
+    if (a[2] < n)
+        return (uint32_t)n;
+    memcpy(P(a[1]), title, n);
+    return 0;
+}
+
 const WinApi FILEDLG_APIS[] = {
+    {"comdlg32.dll", "GetFileTitleA", GetFileTitleA},
     {"comdlg32.dll", "GetOpenFileNameA", GetOpenFileNameA}, {"comdlg32.dll", "GetSaveFileNameA", GetSaveFileNameA},
     {0, 0, 0},
 };

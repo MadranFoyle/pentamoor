@@ -64,14 +64,18 @@ endif
 # dlopen is in libc on macOS and current glibc; older glibc wants -ldl. Windows: LoadLibrary (plat_win.c), nothing to link.
 DL_LIBS = $(if $(filter Linux,$(UNAME)),-ldl,)
 PLAT = plat_posix.c plat_win.c
-SRC = main.c $(PLAT) guest.c pe.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c lzw.c modules.c sound.c video.c movie.c pace.c gamemod.c pad.c nav.c navwm.c screens.c steamdeck.c display.c display_cfg.c textin.c textfocus.c yesno.c profile.c touch.c $(FRONT)
+SRC = main.c $(PLAT) guest.c pe.c call.c sched.c kernel32.c kernel32_rt.c winsys.c process.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c lzw.c modules.c sound.c video.c movie.c pace.c gamemod.c pad.c nav.c navwm.c screens.c steamdeck.c display.c display_cfg.c textin.c textfocus.c yesno.c profile.c touch.c $(FRONT)
 HEADERS = plat.h port.h profile.h wm.h gdi.h gdi_int.h sched.h front.h pad.h nav.h navwm.h screens.h steamdeck.h textin.h yesno.h filedlg.h winhelp.h msgbox.h ../native/lift_rt.h ../native/lift_tables.h padlog.h display.h touch.h iosboot.h
 RTFLAGS = -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native
 
-PROGRAMS = magic deck duel
+# magic, deck and duel are the retail disc's (1.0); shandalar, facemaker and sotadeck are Spells of the Ancients 2.15's (tools/lift/builds.py, SOTA_MODULES)
+PROGRAMS = magic deck duel shandalar facemaker sotadeck
 GEN_magic ?= ../../sources/generated/lift_magic_all
 GEN_deck ?= ../../sources/generated/lift_deck
 GEN_duel ?= ../../sources/generated/lift_duel
+GEN_shandalar ?= ../../sources/generated/lift_shandalar
+GEN_facemaker ?= ../../sources/generated/lift_facemaker
+GEN_sotadeck ?= ../../sources/generated/lift_sotadeck
 # The programs that have generated C to build a module from.
 AVAILABLE = $(foreach p,$(PROGRAMS),$(if $(wildcard $(GEN_$(p))/handlers_gen.c),$(p)))
 
@@ -157,7 +161,7 @@ $(IOS_BUILD)/%.o: %.c $(HEADERS)
 	$(IOS_CC) $(CFLAGS) $(IOS_FLAGS) -c -o $@ $<
 
 # The tests of the window manager and the graphics layer: host functions stand in for the game's window procedures, so no game files are needed.
-LIB_SRC = $(PLAT) nav.c navwm.c screens.c lzw.c guest.c call.c sched.c kernel32.c kernel32_rt.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c front.c yesno.c pace.c textfocus.c profile.c steamdeck.c display.c modules.c sound.c video.c movie.c
+LIB_SRC = $(PLAT) nav.c navwm.c screens.c lzw.c guest.c call.c sched.c kernel32.c kernel32_rt.c winsys.c process.c crt.c stdio.c cformat.c paths.c user32.c controls.c input.c filedlg.c winhelp.c msgbox.c menus.c gdi.c gdi_blit.c gdi_text.c font.c ui.c compose.c front.c yesno.c pace.c textfocus.c profile.c steamdeck.c display.c modules.c sound.c video.c movie.c
 TEST_DEPS = test_stubs.c $(LIB_SRC) display.h nav.h navwm.h screens.h port.h wm.h gdi.h gdi_int.h sched.h front.h filedlg.h winhelp.h msgbox.h yesno.h profile.h padlog.h
 
 $(BUILD)/test_wm$(EXE): test_wm.c $(TEST_DEPS)
@@ -210,6 +214,15 @@ $(BUILD)/test_profile$(EXE): test_profile.c $(TEST_DEPS)
 $(BUILD)/test_touch$(EXE): test_touch.c touch.c touch.h iosboot.c iosboot.h
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(WINFLAGS) -iquote . -o $@ test_touch.c touch.c iosboot.c $(WINLIBS)
+
+# The Windows and C runtime calls Spells of the Ancients adds (winsys.c, crt.c, filedlg.c), and the process model (process.c) run against the test program itself as the "runtime".
+$(BUILD)/test_win32$(EXE): test_win32.c $(TEST_DEPS)
+	mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native -o $@ test_win32.c test_stubs.c $(LIB_SRC) $(PTHREAD_LIBS) -lm $(WINLIBS)
+
+$(BUILD)/test_process$(EXE): test_process.c $(TEST_DEPS)
+	mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native -o $@ test_process.c test_stubs.c $(LIB_SRC) $(PTHREAD_LIBS) -lm $(WINLIBS)
 
 $(BUILD)/test_paths$(EXE): test_paths.c $(TEST_DEPS)
 	mkdir -p $(BUILD)
@@ -279,8 +292,10 @@ check-run: runtime module-stub
 	@echo "check-run: ok"
 
 
-test: $(BUILD)/test_touch$(EXE) $(BUILD)/test_profile$(EXE) $(BUILD)/test_steamdeck$(EXE) $(BUILD)/test_display$(EXE) $(BUILD)/test_wm$(EXE) $(BUILD)/test_gdi$(EXE) $(BUILD)/test_sound$(EXE) $(BUILD)/test_movie$(EXE) $(BUILD)/test_paths$(EXE) $(BUILD)/test_pad$(EXE) $(BUILD)/test_nav$(EXE) $(BUILD)/test_module$(EXE) module-stub
+test: $(BUILD)/test_touch$(EXE) $(BUILD)/test_win32$(EXE) $(BUILD)/test_process$(EXE) $(BUILD)/test_profile$(EXE) $(BUILD)/test_steamdeck$(EXE) $(BUILD)/test_display$(EXE) $(BUILD)/test_wm$(EXE) $(BUILD)/test_gdi$(EXE) $(BUILD)/test_sound$(EXE) $(BUILD)/test_movie$(EXE) $(BUILD)/test_paths$(EXE) $(BUILD)/test_pad$(EXE) $(BUILD)/test_nav$(EXE) $(BUILD)/test_module$(EXE) module-stub
 	$(BUILD)/test_touch$(EXE)
+	$(BUILD)/test_win32$(EXE)
+	$(BUILD)/test_process$(EXE)
 	$(BUILD)/test_profile$(EXE)
 	$(BUILD)/test_wm$(EXE)
 	$(BUILD)/test_pad$(EXE)

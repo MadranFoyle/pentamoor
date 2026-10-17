@@ -100,8 +100,12 @@ typedef struct Resolved { TTFont *f; double em; int own; } Resolved;
  * descent each rounded, ttf_cell) is not taller. MPZurich Cn BT, which the card text is set in: a cell of 10 is 8 ppem (cell 8 + 2), 11 is 9, 12 is 10. */
 int font_ppem_for_cell(const TTFont *f, int cell)
 {
+    static struct { const TTFont *f; int cell, ppem; } memo[64];      /* the search is up to 400 hinted cells long and Spells of the Ancients asks for each character it measures */
     int p, best = 1;
+    unsigned slot = (unsigned)(((uintptr_t)f >> 4) * 31u + (unsigned)cell) % 64u;
 
+    if (memo[slot].f == f && memo[slot].cell == cell)
+        return memo[slot].ppem;
     for (p = 1; p <= 400; p++) {
         int a, d;
 
@@ -110,6 +114,9 @@ int font_ppem_for_cell(const TTFont *f, int cell)
             break;
         best = p;
     }
+    memo[slot].f = f;
+    memo[slot].cell = cell;
+    memo[slot].ppem = best;
     return best;
 }
 
@@ -288,6 +295,66 @@ static uint32_t TextOutA(const uint32_t *a)
     return 1;
 }
 
+/* ExtTextOutA(hdc, x, y, options, &rect, string, count, &dx): TextOut with a rectangle. ETO_OPAQUE (2) fills the rectangle with the background colour first; ETO_CLIPPED (4) keeps the
+ * text inside it; `dx`, when given, is the advance after each character in logical units, instead of the font's own. The rectangle is in logical units, as the text is. */
+static uint32_t ExtTextOutA(const uint32_t *a)
+{
+    DC *dc = dc_of(a[0]);
+    uint32_t options = a[3], rect = a[4], count = a[6], dx = a[7], i;
+    int had_clip, saved_clip[4], saved_align;
+
+    if (!dc)
+        return 1;
+    if ((options & 2) && rect) {
+        uint8_t bg[3];
+
+        colorref_rgb(dc, dc->bkcolor, bg);
+        fill_rect_logical(dc, (int32_t)RD32(rect), (int32_t)RD32(rect + 4), (int32_t)RD32(rect + 8), (int32_t)RD32(rect + 12), bg);
+    }
+    if (!a[5] || !count)
+        return 1;
+    had_clip = dc->has_clip;
+    memcpy(saved_clip, dc->clip, sizeof(saved_clip));
+    if ((options & 4) && rect) {                               /* the text is cut at the rectangle: intersect it with the clip, in device pixels */
+        int x0 = lx(dc, (int32_t)RD32(rect)) + dc->org[0], y0 = ly(dc, (int32_t)RD32(rect + 4)) + dc->org[1];
+        int x1 = lx(dc, (int32_t)RD32(rect + 8)) + dc->org[0], y1 = ly(dc, (int32_t)RD32(rect + 12)) + dc->org[1];
+
+        if (dc->has_clip) {
+            if (x0 < dc->clip[0]) x0 = dc->clip[0];
+            if (y0 < dc->clip[1]) y0 = dc->clip[1];
+            if (x1 > dc->clip[2]) x1 = dc->clip[2];
+            if (y1 > dc->clip[3]) y1 = dc->clip[3];
+        }
+        dc->has_clip = 1;
+        dc->clip[0] = x0;
+        dc->clip[1] = y0;
+        dc->clip[2] = x1 > x0 ? x1 : x0;
+        dc->clip[3] = y1 > y0 ? y1 : y0;
+    }
+    if (!dx) {
+        draw_text_at(dc, (int32_t)a[1], (int32_t)a[2], P(a[5]), count, 1);
+    } else {
+        int x = (int32_t)a[1], total = 0;
+
+        for (i = 0; i < count; i++)
+            total += (int32_t)RD32(dx + 4 * i);
+        if ((dc->textalign & 6) == 6)
+            x -= total / 2;
+        else if ((dc->textalign & 6) == 2)
+            x -= total;
+        saved_align = dc->textalign;
+        dc->textalign &= ~6;                                    /* every character is placed by its own left edge now */
+        for (i = 0; i < count; i++) {
+            draw_text_at(dc, x, (int32_t)a[2], P(a[5]) + i, 1, 1);
+            x += (int32_t)RD32(dx + 4 * i);
+        }
+        dc->textalign = saved_align;
+    }
+    dc->has_clip = had_clip;
+    memcpy(dc->clip, saved_clip, sizeof(saved_clip));
+    return 1;
+}
+
 static uint32_t GetTextExtentPointA(const uint32_t *a)
 {
     DC *dc = dc_of(a[0]);
@@ -340,13 +407,26 @@ static uint32_t GetTextMetricsA(const uint32_t *a)
     return 1;
 }
 
+/* GetCharWidthA(hdc, first, last, &widths) and GetCharABCWidthsA(hdc, first, last, &abc): a width for each character from `first` to `last`, both as unsigned numbers. A range that
+ * ends at 0xFFFFFFFF (the game passes a character with its sign extended: 0xFF is 0xFFFFFFFF) must stop there, not wrap round for ever; one that runs backwards is an error, and so is
+ * one longer than the 65,536 characters a font has. */
+static int char_range(const uint32_t *a, uint32_t *count)
+{
+    if (a[2] < a[1] || a[2] - a[1] >= 0x10000u)
+        return 0;
+    *count = a[2] - a[1] + 1;
+    return 1;
+}
+
 static uint32_t GetCharWidthA(const uint32_t *a)
 {
     DC *dc = dc_of(a[0]);
-    uint32_t c, i = 0;
+    uint32_t n, i;
 
-    for (c = a[1]; c <= a[2]; c++, i++) {
-        char ch = (char)c;
+    if (!char_range(a, &n))
+        return 0;
+    for (i = 0; i < n; i++) {
+        char ch = (char)(a[1] + i);
 
         WR32(a[3] + 4 * i, dc ? (uint32_t)text_width(dc, &ch, 1, NULL) : 0);
     }
@@ -356,10 +436,12 @@ static uint32_t GetCharWidthA(const uint32_t *a)
 static uint32_t GetCharABCWidthsA(const uint32_t *a)
 {
     DC *dc = dc_of(a[0]);
-    uint32_t c, i = 0;
+    uint32_t n, i;
 
-    for (c = a[1]; c <= a[2]; c++, i++) {
-        char ch = (char)c;
+    if (!char_range(a, &n))
+        return 0;
+    for (i = 0; i < n; i++) {
+        char ch = (char)(a[1] + i);
 
         WR32(a[3] + 12 * i, 0);
         WR32(a[3] + 12 * i + 4, dc ? (uint32_t)text_width(dc, &ch, 1, NULL) : 0);
@@ -758,7 +840,7 @@ static uint32_t DrawTextA(const uint32_t *a)
 }
 
 const WinApi GDI32_TEXT_APIS[] = {
-    {"gdi32.dll", "TextOutA", TextOutA}, {"gdi32.dll", "GetTextExtentPointA", GetTextExtentPointA},
+    {"gdi32.dll", "TextOutA", TextOutA}, {"gdi32.dll", "ExtTextOutA", ExtTextOutA}, {"gdi32.dll", "GetTextExtentPointA", GetTextExtentPointA},
     {"gdi32.dll", "GetTextExtentPoint32A", GetTextExtentPointA}, {"gdi32.dll", "GetTextMetricsA", GetTextMetricsA},
     {"gdi32.dll", "GetCharWidthA", GetCharWidthA}, {"gdi32.dll", "GetCharABCWidthsA", GetCharABCWidthsA},
     {"user32.dll", "FillRect", FillRect}, {"user32.dll", "FrameRect", FrameRect}, {"user32.dll", "DrawFocusRect", one},

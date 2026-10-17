@@ -28,6 +28,7 @@ from x86lift import Lifter, Unsupported  # noqa: E402
 from import_signatures import signature  # noqa: E402
 from gen_handlers import KNOWN_IMPORTS  # noqa: E402
 from builds import file_build_id  # noqa: E402
+import libsigs  # noqa: E402
 
 PROLOGUES = (0x55, 0x53, 0x56, 0x57, 0x8B, 0x83, 0x81, 0xA1, 0x6A, 0x33, 0x31, 0xC3, 0xB8, 0x64, 0xFF, 0x68, 0xE9)
 
@@ -51,6 +52,7 @@ def main():
 
     pe = pefile.PE(args.dll)
     build_id = file_build_id(args.dll)
+    libsigs.register(pe, args.dll)       # the calling conventions of the game's own libraries that this one imports (from the same folder)
     old_base = pe.OPTIONAL_HEADER.ImageBase
     base = args.base if args.base is not None else old_base
     # the image as the loader will make it at `base`: the sections in place, then every base relocation applied

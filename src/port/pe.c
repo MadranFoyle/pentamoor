@@ -33,21 +33,6 @@ static const uint8_t *file_rva(const uint8_t *file, uint32_t nt, uint32_t rva)
 static uint32_t le32(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
 static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }
 
-static const WinApi *find_api(const char *dll, const char *name)
-{
-    const WinApi *tables[] = {KERNEL32_APIS, KERNEL32_RT_APIS, CRT_APIS, STDIO_APIS, USER32_APIS, CONTROLS_APIS, FILEDLG_APIS, WINHELP_APIS, MSGBOX_APIS, MENUS_APIS, GDI32_STATE_APIS, GDI32_BLIT_APIS, GDI32_TEXT_APIS, VIDEO_APIS};
-    size_t t;
-
-    for (t = 0; t < sizeof(tables) / sizeof(tables[0]); t++) {
-        const WinApi *a;
-
-        for (a = tables[t]; a->name; a++)
-            if (!strcmp(a->name, name) && !strcmp(a->dll, dll))
-                return a;
-    }
-    return NULL;
-}
-
 static void add_import(const char *dll, const char *name, uint32_t slot)
 {
     Import *im;
@@ -84,7 +69,7 @@ static void add_import(const char *dll, const char *name, uint32_t slot)
         im->cleanup = sig->cleanup;
     }
     {
-        const WinApi *api = find_api(dll, name);
+        const WinApi *api = port_find_api(dll, name);
 
         im->fn = api ? api->fn : NULL;
     }
@@ -97,13 +82,32 @@ Import *import_by_slot_or_stub(uint32_t addr)
 {
     if (addr >= STUB_BASE && addr < STUB_BASE + 16u * (uint32_t)nimports && !(addr & 15))
         return &imports[(addr - STUB_BASE) / 16];
-    /* slots are found by search: a call through the table names the slot, and there are a few hundred */
+    /* a call through the table names the slot: found through a hash of the slots (a program that measures every character it draws makes a hundred thousand such calls a second) */
     {
+        static int *index_table, indexed, mask;
         int i;
 
-        for (i = 0; i < nimports; i++)
-            if (imports[i].slot == addr)
-                return &imports[i];
+        if (indexed != nimports) {
+            int cap = 1;
+
+            while (cap < nimports * 2 + 2)
+                cap <<= 1;
+            free(index_table);
+            index_table = malloc((size_t)cap * sizeof(*index_table));
+            memset(index_table, 0xff, (size_t)cap * sizeof(*index_table));
+            mask = cap - 1;
+            for (i = 0; i < nimports; i++) {
+                int h = (int)((imports[i].slot >> 2) * 2654435761u >> 7) & mask;
+
+                while (index_table[h] >= 0)
+                    h = (h + 1) & mask;
+                index_table[h] = i;
+            }
+            indexed = nimports;
+        }
+        for (i = (int)((addr >> 2) * 2654435761u >> 7) & mask; index_table[i] >= 0; i = (i + 1) & mask)
+            if (imports[index_table[i]].slot == addr)
+                return &imports[index_table[i]];
     }
     return NULL;
 }

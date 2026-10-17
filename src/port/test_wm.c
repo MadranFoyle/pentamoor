@@ -245,6 +245,46 @@ static void test_queue_and_dispatch(void)
     CHECK(API("GetMessageA", msg, 0, 0, 0) == 0 && RD32(msg + 4) == WM_QUIT && RD32(msg + 8) == 5);
 }
 
+/* What Spells of the Ancients asks of the window layer that 1.0 did not: the part of a window that needs painting (as a rectangle and as a region), a number for a message by its name,
+ * and a display mode (always "set": the window is the screen). */
+static void test_update_calls(void)
+{
+    uint32_t top = create("TestClass", WS_VISIBLE | WS_POPUP, 0, 0, 100, 80, 0, 0), r = scratch(16), rgn, probe = scratch(16), a, b;
+    const WinApi *create_rgn = port_find_api("gdi32.dll", "CreateRectRgn"), *in_rgn = port_find_api("gdi32.dll", "RectInRegion");
+    uint32_t args[4] = {0, 0, 1, 1};
+
+    API("DefWindowProcA", top, WM_PAINT, 0, 0);                                                  /* painted: valid */
+    CHECK(API("GetUpdateRect", top, r, 0) == 0 && RD32(r + 8) == 0 && RD32(r + 12) == 0);          /* nothing to paint: an empty rectangle */
+    API("InvalidateRect", top, 0, 1);
+    CHECK(API("GetUpdateRect", top, r, 0) == 1 && RD32(r) == 0 && RD32(r + 4) == 0 && RD32(r + 8) == 100 && RD32(r + 12) == 80);
+    CHECK(API("GetUpdateRect", top, 0, 0) == 1);                                                   /* no rectangle asked for */
+    CHECK(create_rgn && in_rgn);
+    if (create_rgn && in_rgn) {
+        uint32_t two[2];
+
+        rgn = create_rgn->fn(args);
+        two[0] = rgn;
+        WR32(probe, 90); WR32(probe + 4, 70); WR32(probe + 8, 95); WR32(probe + 12, 75);
+        two[1] = probe;
+        CHECK(API("GetUpdateRgn", top, rgn, 0) == 2);                                              /* SIMPLEREGION: the client area */
+        CHECK(in_rgn->fn(two) == 1);
+        WR32(probe, 100); WR32(probe + 8, 110);
+        CHECK(in_rgn->fn(two) == 0);                                                               /* the right edge is outside */
+        API("DefWindowProcA", top, WM_PAINT, 0, 0);                                                  /* painted: valid */
+        CHECK(API("GetUpdateRgn", top, rgn, 0) == 1);                                              /* NULLREGION once it has been painted */
+        WR32(probe, 0); WR32(probe + 4, 0); WR32(probe + 8, 5); WR32(probe + 12, 5);
+        CHECK(in_rgn->fn(two) == 0);                                                               /* and the region is empty */
+    }
+    CHECK(API("GetUpdateRgn", top, 0x1234, 0) == 0 && API("GetUpdateRgn", 0x7777, 0x1234, 0) == 0);           /* not a region, not a window */
+    API("DefWindowProcA", top, WM_PAINT, 0, 0);                                                  /* painted: valid */
+    CHECK(API("GetUpdateRect", top, r, 0) == 0);
+    a = API("RegisterWindowMessageA", cstr("FindMagicWindow"));
+    b = API("RegisterWindowMessageA", cstr("OtherMessage"));
+    CHECK(a >= 0xC000 && b >= 0xC000 && a != b);
+    CHECK(API("RegisterWindowMessageA", cstr("findmagicwindow")) == a && API("RegisterWindowMessageA", cstr("OtherMessage")) == b);    /* the same name is the same number, whatever its case */
+    CHECK(API("ChangeDisplaySettingsA", 0, 0) == 0);
+}
+
 /* A window that draws in WM_ERASEBKGND and answers WM_PAINT without ever calling DefWindowProc (STATWIN.DLL's window: it was black). Windows
  * sends WM_ERASEBKGND ahead of the WM_PAINT that the pump hands out for a window marked for erasing, once, whatever the procedure then does. */
 static uint32_t eraseproc(const uint32_t *a)
@@ -2110,6 +2150,7 @@ int main(void)
     test_geometry_and_state();
     test_z_order();
     test_queue_and_dispatch();
+    test_update_calls();
     test_erase_before_paint();
     test_see_through_child();
     test_display_notice();

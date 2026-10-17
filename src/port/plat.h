@@ -99,4 +99,14 @@ FILE *plat_popen_read(const char *cmd);                                /* popen(
 int plat_pclose(FILE *f);
 int plat_system(const char *cmd);                                      /* system(cmd) (a command of the platform's shell) */
 
+/* Starting another program (the process model, process.c). The path of the running executable, so that a copy of the runtime can start another. */
+int plat_self_path(char *out, size_t cap);                             /* 1 and the path, or 0 */
+/* Start `argv[0]` with the arguments `argv` (NULL-terminated), its environment this process's with the `set` strings ("NAME=value") added or replaced and the `unset` names removed
+ * (both NULL-terminated arrays, either may be NULL). 0 and the child's id in *id on success, -1 if it could not be started (iOS: always). */
+int plat_spawn(const char *const *argv, const char *const *set, const char *const *unset, long *id);
+/* The state of a child plat_spawn started: 1 and its exit status when it has ended (reaped: ask once), 0 while it runs, -1 for an id that is not a child. */
+int plat_child_state(long id, int *exit_code);
+/* A named pipe for PORT_CONTROL at `path` (POSIX mkfifo; Windows: PORT_CONTROL names an ordinary file there, so an empty one is made). 0 on success or if it is there already. */
+int plat_make_control(const char *path);
+
 #endif

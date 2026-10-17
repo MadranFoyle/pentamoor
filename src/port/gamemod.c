@@ -102,6 +102,9 @@ static void *load_module(const char *path, char *err, size_t n) { return plat_dl
 static void *find_symbol(void *mod, const char *name) { return plat_dlsym(mod, name); }
 #endif
 
+static char module_loaded_from[1100];
+const char *gamemod_path(void) { return module_loaded_from; }
+
 void gamemod_load(const char *path)
 {
     char err[512] = "";
@@ -119,6 +122,7 @@ void gamemod_load(const char *path)
     mod = load_module(path, err, sizeof(err));
     if (!mod)
         port_fatal("cannot load the game module %s: %s", path, err);
+    snprintf(module_loaded_from, sizeof(module_loaded_from), "%s", path ? path : "");
     sym = find_symbol(mod, "pentamoor_game_init");
     if (!sym)
         port_fatal("%s is not a game module (no pentamoor_game_init)", path);

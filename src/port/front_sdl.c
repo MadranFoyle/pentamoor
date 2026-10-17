@@ -894,6 +894,19 @@ static void run_step(const Step *s)
             n = 1;
         for (i = 0; i < n && a + 4 * i < 0xFFFF0000ul; i++)
             fprintf(stderr, "  peek 0x%lx = %u (0x%x)\n", a + 4 * i, RD32(a + 4 * i), RD32(a + 4 * i));
+    } else if (!strcmp(s->cmd, "dump")) {          /* dump ADDR LENGTH FILE: write LENGTH bytes of guest memory from ADDR to FILE (a debugging aid: a picture's surface, a palette) */
+        char *end, file[512];
+        unsigned long a = strtoul(s->arg, &end, 0), n = strtoul(end, &end, 0);
+
+        if (sscanf(end, " %511s", file) == 1 && a < 0xFFFF0000ul && n <= 0x10000000ul && a + n <= 0xFFFF0000ul) {
+            FILE *f = fopen(file, "wb");
+
+            if (f) {
+                fwrite(G + a, 1, n, f);
+                fclose(f);
+                fprintf(stderr, "  dump 0x%lx..0x%lx -> %s\n", a, a + n, file);
+            }
+        }
     } else if (!strcmp(s->cmd, "trace")) {
         port_trace_imports = !strcmp(s->arg, "on");
     } else if (!strcmp(s->cmd, "calls")) {        /* calls on|off: every call between lifted functions, with its caller, on stderr (a few seconds of it, for finding what the engine does) */

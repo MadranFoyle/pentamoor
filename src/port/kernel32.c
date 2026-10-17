@@ -10,6 +10,7 @@
 
 #include "gdi_int.h"
 #include "plat.h"
+#include "process.h"
 #include "sched.h"
 #include "wm.h"
 
@@ -202,6 +203,9 @@ static uint32_t CloseHandle(const uint32_t *a)
 {
     Handle *h = get_handle(a[0]);
 
+    if (proc_handle_known(a[0]))
+        proc_handle_close(a[0]);
+
     if (h) {
         if (h->kind == H_FILE && h->fd >= 0)
             close(h->fd);
@@ -215,6 +219,9 @@ static int thread_done(void *p) { return sched_thread_done((GThread *)p); }
 static uint32_t WaitForSingleObject(const uint32_t *a)
 {
     Handle *h = get_handle(a[0]);
+
+    if (proc_handle_known(a[0]))                              /* a program this one started (process.h) */
+        return proc_handle_wait(a[0], a[1] == 0xFFFFFFFFu ? -1 : a[1] / 1000.0) ? 0 : 0x102;
 
     if (h && h->kind == H_THREAD) {
         GThread *t = h->thread;                                /* not h itself after the wait: another thread may grow the handle table meanwhile */
@@ -419,26 +426,121 @@ static uint32_t CopyFileA(const uint32_t *a)
     return 1;
 }
 
+/* Named memory (CreateFileMappingA with no file and a name): the same name is the same memory. Spells of the Ancients' programs keep their pictures in such "graphic pages"
+ * ("rpbips1" .. "rpbips5") and shandalar.exe and FaceMaker.exe, which it starts, share them: FaceMaker draws the portrait the player made into page 2 and the game reads it (and the
+ * name that goes with it) from there. Two runtime processes do not share memory, so the pages are handed over in files, at the two moments the programs are not both running (the
+ * game waits for FaceMaker): the program that starts another writes its named memory into a folder the new process is told of ($PORT_SHM), a named memory the new process makes is
+ * filled from the folder's file of that name, the new process writes its own back when it ends, and the first reads them again when it has ended (process.c). */
+typedef struct SharedMap { char name[64]; uint32_t base, size; } SharedMap;
+static SharedMap shared[16];
+static int nshared;
+
+static void shared_file(const char *dir, const char *name, char *out, size_t cap)
+{
+    size_t n = (size_t)snprintf(out, cap, "%s/", dir), i;
+
+    for (i = 0; name[i] && n + 2 < cap; i++)
+        out[n++] = (char)((name[i] >= 'a' && name[i] <= 'z') || (name[i] >= 'A' && name[i] <= 'Z') || (name[i] >= '0' && name[i] <= '9') ? name[i] : '_');
+    out[n] = 0;
+}
+
+/* the file's bytes into a mapping, as many as there are of either */
+static int shared_load(const char *dir, const SharedMap *m)
+{
+    char path[1300];
+    FILE *f;
+    size_t n;
+
+    shared_file(dir, m->name, path, sizeof(path));
+    f = fopen(path, "rb");
+    if (!f)
+        return 0;
+    plat_guest_commit(m->base, m->size);
+    n = fread(G + m->base, 1, m->size, f);
+    fclose(f);
+    port_trace("named memory '%s' (0x%08x, %u bytes): %zu bytes read from %s", m->name, m->base, m->size, n, path);
+    return n > 0;
+}
+
+void k32_shared_flush(const char *dir)
+{
+    int i;
+
+    for (i = 0; i < nshared; i++) {
+        char path[1300];
+        FILE *f;
+
+        shared_file(dir, shared[i].name, path, sizeof(path));
+        f = fopen(path, "wb");
+        if (!f)
+            continue;
+        plat_guest_commit(shared[i].base, shared[i].size);
+        fwrite(G + shared[i].base, 1, shared[i].size, f);
+        fclose(f);
+    }
+}
+
+void k32_shared_reload(const char *dir)
+{
+    int i;
+
+    for (i = 0; i < nshared; i++)
+        shared_load(dir, &shared[i]);
+}
+
+void k32_shared_remove(const char *dir)
+{
+    int i;
+
+    for (i = 0; i < nshared; i++) {
+        char path[1300];
+
+        shared_file(dir, shared[i].name, path, sizeof(path));
+        unlink(path);
+    }
+    rmdir(dir);
+}
+
+static void shared_at_exit(void)           /* a program that was started by another gives its named memory back */
+{
+    const char *dir = getenv("PORT_SHM");
+
+    if (dir && *dir)
+        k32_shared_flush(dir);
+}
+
 static uint32_t CreateFileMappingA(const uint32_t *a)
 {
     /* anonymous (hFile == -1) shared memory by name, or a view of a file */
-    static struct { char name[64]; uint32_t base; } named[16];
-    static int nnamed;
-
     if (a[0] == INVALID_HANDLE) {
         uint32_t size = a[4], base = 0;
         int i;
 
+        port_trace("CreateFileMappingA(anonymous, %u bytes, name '%s')", size, a[5] ? P(a[5]) : "");
         if (a[5])
-            for (i = 0; i < nnamed; i++)
-                if (!strcmp(named[i].name, P(a[5])))
-                    base = named[i].base;
+            for (i = 0; i < nshared; i++)
+                if (!strcmp(shared[i].name, P(a[5])))
+                    base = shared[i].base;
         if (!base) {
+            const char *dir = getenv("PORT_SHM");
+
             base = heap_alloc(size);
             guest_zero(base, size);
-            if (a[5] && nnamed < 16) {
-                snprintf(named[nnamed].name, sizeof(named[nnamed].name), "%s", P(a[5]));
-                named[nnamed++].base = base;
+            if (a[5] && nshared < 16) {
+                static int hooked;
+
+                snprintf(shared[nshared].name, sizeof(shared[nshared].name), "%s", P(a[5]));
+                shared[nshared].base = base;
+                shared[nshared].size = size;
+                if (dir && *dir) {                              /* started by another program: what it had in this memory */
+                    if (shared_load(dir, &shared[nshared]))
+                        port_trace("named memory '%s': filled from the program that started this one", shared[nshared].name);
+                    if (!hooked) {
+                        hooked = 1;
+                        atexit(shared_at_exit);
+                    }
+                }
+                nshared++;
             }
         }
         return new_handle((Handle){H_MAPPING, -1, NULL, base, size, NULL});
@@ -448,6 +550,15 @@ static uint32_t CreateFileMappingA(const uint32_t *a)
 
         return f && f->kind == H_FILE ? new_handle((Handle){H_MAPPING, f->fd, NULL, 0, 0, NULL}) : 0;
     }
+}
+
+/* The memory of a file mapping that is not a file's, at `offset`: what a DIB section made from the mapping (CreateDIBSection's hSection) has for its pixels, so that the section and the
+ * view of the mapping, and a program that has the same named mapping, see the same bytes. 0 for a handle that is no such mapping. */
+uint32_t k32_mapping_view(uint32_t handle, uint32_t offset)
+{
+    Handle *h = get_handle(handle);
+
+    return h && h->kind == H_MAPPING && h->fd < 0 && h->a ? h->a + offset : 0;
 }
 
 static uint32_t MapViewOfFile(const uint32_t *a)
@@ -650,17 +761,8 @@ void kernel32_init(void)
 
 static uint32_t timeBeginPeriod(const uint32_t *a) { (void)a; return 0; }
 
-/* ---- advapi32: the registry has nothing, and writes go nowhere ---------------------------------------------------------------------- */
-static uint32_t RegOpenKeyExA(const uint32_t *a) { (void)a; return 2; }       /* ERROR_FILE_NOT_FOUND: the game falls back to defaults */
-static uint32_t RegCreateKeyExA(const uint32_t *a)
-{
-    if (a[7])
-        WR32(a[7], new_handle((Handle){H_REGKEY, -1, NULL, 0, 0, NULL}));
-    if (a[8])
-        WR32(a[8], 1);
-    return 0;
-}
-static uint32_t two(const uint32_t *a) { (void)a; return 2; }
+/* (the registry is winsys.c's: nothing is stored, a few values of Windows' own are answered) */
+void k32_set_last_error(uint32_t code) { last_error_code = code; }
 
 const WinApi KERNEL32_APIS[] = {
     {"kernel32.dll", "GetVersion", GetVersion}, {"kernel32.dll", "GetCurrentProcess", GetCurrentProcess},
@@ -683,12 +785,11 @@ const WinApi KERNEL32_APIS[] = {
     {"kernel32.dll", "GetFileSize", GetFileSize}, {"kernel32.dll", "CopyFileA", CopyFileA},
     {"kernel32.dll", "CreateFileMappingA", CreateFileMappingA}, {"kernel32.dll", "MapViewOfFile", MapViewOfFile},
     {"kernel32.dll", "UnmapViewOfFile", one}, {"kernel32.dll", "CreateThread", CreateThread},
+    {"msvcrtd.dll", "_beginthreadex", CreateThread},         /* (security, stack size, start, argument, flags, &thread id): the arguments of CreateThread, and a handle back */
     {"kernel32.dll", "GetPrivateProfileIntA", GetPrivateProfileIntA}, {"kernel32.dll", "GetPrivateProfileStringA", GetPrivateProfileStringA},
     {"kernel32.dll", "FindResourceA", FindResourceA}, {"kernel32.dll", "LoadResource", identity}, {"kernel32.dll", "LockResource", LockResource},
     {"winmm.dll", "timeBeginPeriod", timeBeginPeriod}, {"winmm.dll", "timeEndPeriod", zero}, {"winmm.dll", "timeSetEvent", timeSetEvent},
     {"winmm.dll", "timeKillEvent", timeKillEvent},
-    {"advapi32.dll", "RegOpenKeyExA", RegOpenKeyExA}, {"advapi32.dll", "RegCreateKeyExA", RegCreateKeyExA},
-    {"advapi32.dll", "RegQueryValueExA", two}, {"advapi32.dll", "RegSetValueExA", zero}, {"advapi32.dll", "RegFlushKey", zero},
-    {"advapi32.dll", "RegCloseKey", zero}, {"shell32.dll", "SHAppBarMessage", zero}, {"comctl32.dll", "#17", zero},
+    {"shell32.dll", "SHAppBarMessage", zero}, {"comctl32.dll", "#17", zero},
     {0, 0, 0},
 };

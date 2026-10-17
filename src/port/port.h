@@ -36,7 +36,16 @@ typedef struct WinApi {
 } WinApi;
 
 /* Every implemented function of a module, ending with {0}. */
-extern const WinApi KERNEL32_APIS[], KERNEL32_RT_APIS[], CRT_APIS[], STDIO_APIS[], VIDEO_APIS[];
+extern const WinApi KERNEL32_APIS[], KERNEL32_RT_APIS[], WINSYS_APIS[], PROCESS_APIS[], CRT_APIS[], STDIO_APIS[], VIDEO_APIS[];
+
+void k32_set_last_error(uint32_t code);                 /* SetLastError for the calls of other files (kernel32.c) */
+uint32_t k32_mapping_view(uint32_t handle, uint32_t offset);   /* the memory of a named or anonymous file mapping, for a DIB section made from it (gdi.c) */
+void k32_shared_flush(const char *dir);                 /* named memory (CreateFileMappingA with a name) handed over to a program that is started, and back (process.c) */
+void k32_shared_reload(const char *dir);
+void k32_shared_remove(const char *dir);
+
+/* The implementation of an import by (library, function), or NULL (modules.c; msvcrt.dll is found in msvcrtd.dll's table). */
+const WinApi *port_find_api(const char *dll, const char *name);
 
 /* The imports of the loaded program: where the loader put each one, and what the function behind it is. */
 typedef struct Import {
@@ -81,6 +90,7 @@ extern __thread uint32_t port_sp;
 
 /* the game: the lifted code's tables, from the game module (gamemod.c) */
 extern const LiftGame *lift_game;
+const char *gamemod_path(void);               /* the path the game module was loaded from ("" for a module linked in) */
 void gamemod_load(const char *path);          /* path may be NULL: the module linked into the executable (the single-executable build), or $PENTAMOOR_MODULE */
 int gamemod_static_pick(const char *spec, const char *const names[], int n);   /* which of the linked-in programs ("magic", "deck", "duel") a module or program name means: -1 if none (iOS, gamemod.c) */
 LiftThreadState lift_thread_initial(void);
@@ -101,6 +111,8 @@ uint32_t guest_call(uint32_t target, int nargs, const uint32_t *args);
 int c_format(char *out, size_t cap, const char *fmt, uint32_t va);
 void paths_init(const char *root, const char *overlay);
 const char *paths_overlay_default(void);                       /* $PORT_OVERLAY or "port_overlay" */
+const char *paths_root(void);                                  /* the game folder and the overlay folder of this run, as paths_init was given them (the process model starts a program with the same) */
+const char *paths_overlay(void);
 void paths_normalize(const char *path, char *out, size_t cap);
 int port_glob(const char *pattern, const char *name);                                       /* fnmatch(pattern, name, 0): * ? [set] (controls.c) */
 void paths_mkdirs(const char *host);                                                  /* mkdir -p of a host path */
@@ -121,6 +133,7 @@ void textfocus_install(void);    /* when the game waits for typed text (textfocu
 void screens_install(void);      /* which screen of the game is on, for the D-pad (screens.c) */
 void yesno_install(void);        /* when the game asks a (Y/N) question (yesno.c) */
 void lzw_install_library(const struct BuildProfile *lib, uint32_t base);     /* a library's copy, when it is mapped at `base` (modules.c) */
+void lzw_reset(void);            /* forget the copies installed (the tests, with port_hooks_reset) */
 void port_hooks_reset(void);     /* forget them all (the tests) */
 int port_hook_count(void);      /* how many pre-call hooks and overrides are installed (the tests; an unknown build must have none) */
 int port_hook_at(int i, uint32_t *addr, int *is_override);      /* the i'th of them, pre-call hooks first, then overrides, in the order they were installed */

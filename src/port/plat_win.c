@@ -182,4 +182,126 @@ int plat_system(const char *cmd)
 }
 
 int plat_pclose(FILE *f) { return _pclose(f); }
+
+/* ---- starting another program ------------------------------------------------------------------------------------------------------ */
+int plat_self_path(char *out, size_t cap)
+{
+    DWORD n = GetModuleFileNameA(NULL, out, (DWORD)cap);
+
+    return n > 0 && n < cap;
+}
+
+/* One argument as CreateProcess's command line wants it: in quotes when it is empty or holds a space or a quote (a quote inside is escaped). */
+static size_t quote_arg(char *out, size_t cap, const char *arg)
+{
+    size_t n = 0;
+    int quote = !*arg || strpbrk(arg, " \t\"") != NULL;
+
+    if (quote && n + 1 < cap)
+        out[n++] = '"';
+    for (; *arg && n + 2 < cap; arg++) {
+        if (*arg == '"')
+            out[n++] = '\\';
+        out[n++] = *arg;
+    }
+    if (quote && n + 1 < cap)
+        out[n++] = '"';
+    out[n] = 0;
+    return n;
+}
+
+static HANDLE children[64];
+
+int plat_spawn(const char *const *argv, const char *const *set, const char *const *unset, long *id)
+{
+    char cmd[8192], *block, *e, *w;
+    size_t n = 0, size = 0, i, j;
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    char *env = GetEnvironmentStringsA();
+    int slot;
+
+    for (slot = 0; slot < 64 && children[slot]; slot++)
+        ;
+    if (slot == 64 || !env)
+        return -1;
+    cmd[0] = 0;
+    for (i = 0; argv[i] && n + 4 < sizeof(cmd); i++) {
+        if (i)
+            cmd[n++] = ' ';
+        n += quote_arg(cmd + n, sizeof(cmd) - n, argv[i]);
+    }
+    for (e = env; *e; e += strlen(e) + 1)
+        size += strlen(e) + 1;
+    for (i = 0; set && set[i]; i++)
+        size += strlen(set[i]) + 1;
+    block = malloc(size + 2);
+    if (!block) {
+        FreeEnvironmentStringsA(env);
+        return -1;
+    }
+    w = block;
+    for (e = env; *e; e += strlen(e) + 1) {          /* this process's environment, less what is unset or replaced (a name is compared without regard to case, as Windows does) */
+        int drop = 0;
+
+        for (j = 0; unset && unset[j]; j++)
+            if (!_strnicmp(e, unset[j], strlen(unset[j])) && e[strlen(unset[j])] == '=')
+                drop = 1;
+        for (j = 0; set && set[j]; j++) {
+            const char *eq = strchr(set[j], '=');
+
+            if (eq && !_strnicmp(e, set[j], (size_t)(eq - set[j])) && e[eq - set[j]] == '=')
+                drop = 1;
+        }
+        if (!drop) {
+            strcpy(w, e);
+            w += strlen(e) + 1;
+        }
+    }
+    for (i = 0; set && set[i]; i++) {
+        strcpy(w, set[i]);
+        w += strlen(set[i]) + 1;
+    }
+    *w = 0;
+    FreeEnvironmentStringsA(env);
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    fflush(NULL);
+    if (!CreateProcessA(argv[0], cmd, NULL, NULL, FALSE, 0, block, NULL, &si, &pi)) {
+        free(block);
+        return -1;
+    }
+    free(block);
+    CloseHandle(pi.hThread);
+    children[slot] = pi.hProcess;
+    *id = slot + 1;
+    return 0;
+}
+
+int plat_child_state(long id, int *exit_code)
+{
+    DWORD code = 0;
+    HANDLE h;
+
+    if (id < 1 || id > 64 || !children[id - 1])
+        return -1;
+    h = children[id - 1];
+    if (WaitForSingleObject(h, 0) != WAIT_OBJECT_0)
+        return 0;
+    GetExitCodeProcess(h, &code);
+    CloseHandle(h);
+    children[id - 1] = NULL;
+    *exit_code = (int)code;
+    return 1;
+}
+
+int plat_make_control(const char *path)
+{
+    FILE *f = fopen(path, "ab");
+
+    if (!f)
+        return -1;
+    fclose(f);
+    return 0;
+}
 #endif

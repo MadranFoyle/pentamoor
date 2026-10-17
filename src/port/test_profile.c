@@ -24,6 +24,15 @@ int pe_find_resource(uint32_t hinst, uint32_t type, uint32_t name, uint32_t *add
 #define ID_DECKDLL "a21f714bea465077c4fabe4a407ff7503b0ce5f9bb1a277826e74276e35c2c18"
 #define ID_STATWIN "95bd14de41e8fff84217cdf627a48392da5e7be9c3d064a68e04ed1455334bd7"
 #define ID_MAGSND "6f6d51cd2b8a5800b0b3c994e3ee8217f7b40ba2621f9738783387f3250a9882"
+/* Spells of the Ancients 2.15 */
+#define ID_S_SHANDALAR "e4e46718c451974756b66e7666ac0bf1cc9ebdbc5897eb04a87b8ea2a02353e7"
+#define ID_S_FACEMAKER "b4f3d19614dcd825da846d097baa3cd9badc0c9852492bc27a8ba62c1741a493"
+#define ID_S_DECK "c7ec116aecdcde9ab976cc97cba81482fc4219278f8042edf667456ede3dd8ef"
+#define ID_S_DECKDLL "ce741d1f5547c143fd8494bbe09c26e918b892a3d9fc3c3761babb3c8268a667"
+#define ID_S_CARDARTLIB "689be4a86ca843e76057172543cfa3516d8ccbc2efb1699e7c7935b6dc3ead11"
+#define ID_S_DRAWCARDLIB "c7747313d59b6fa48ec56b479dce9ed5d90f8a95fc47e93990c4369bbd2fa1f8"
+#define ID_S_CDTOOLS "0d0c2bfa87de02499f1f73f21f34824b1c2572f3e6ae0b5dca7ca343ddf1b77d"
+#define ID_S_STATWIN "c1ca59496afa786f22fcd97b94052b937910a613f9321399b4ef4dd5dec76940"
 
 static int hex_ok(const char *s)
 {
@@ -97,7 +106,7 @@ static void test_v10_values(void)
     const BuildProfile *m = profile_find(ID_MAGIC), *d = profile_find(ID_DUEL), *k = profile_find(ID_DECK), *dd = profile_find(ID_DECKDLL), *sw = profile_find(ID_STATWIN);
     char name[64];
 
-    CHECK(profile_count() == 5);
+    CHECK(profile_count() == 13);                /* five rows of 1.0, eight of Spells of the Ancients 2.15 (test_v215_values) */
     CHECK(m && d && k && dd && sw);
     if (!m || !d || !k || !dd || !sw)
         return;
@@ -171,6 +180,63 @@ static void test_v10_values(void)
         }
     }
     CHECK(!profile_find(ID_MAGSND));            /* a library the port provides itself is not in the table */
+}
+
+/* Spells of the Ancients 2.15: every row, with the values tools/research/sotalzw.py and tools/lift/builds.py give, and the rule that a row with no verified hooks holds none. */
+static int has_hook_fields(const BuildProfile *p)
+{
+    return p->pace.tick_fn || p->pace.ticks || p->pace.frame_ret || p->pace.map_loop.hi || p->buttons.pass || p->buttons.mouse_var || p->buttons.snapshot || p->buttons.ctx_cur ||
+           p->buttons.ctx_count || p->buttons.ctx_ptrs || p->textmenu.loop.hi || p->textmenu.left || p->textmenu.count || p->buycards.loop.hi || p->buycards.ids ||
+           p->clues.loop.hi || p->title.loop.hi || p->keys.wait || p->keys.pop || p->keys.wait_loop_ret || p->keys.nsites || p->keys.name_loop.hi || p->display.width || p->display.height;
+}
+
+static void test_v215_values(void)
+{
+    static const struct { const char *id, *file, *program; uint32_t base; } rows[] = {
+        {ID_S_SHANDALAR, "shandalar.exe", "SHANDALAR", 0}, {ID_S_FACEMAKER, "FaceMaker.exe", "FACEMAKER", 0}, {ID_S_DECK, "DECK.EXE", "DECK", 0},
+        {ID_S_DECKDLL, "deckdll.dll", "", 0x32000000u}, {ID_S_CARDARTLIB, "cardartlib.dll", "", 0x34000000u}, {ID_S_DRAWCARDLIB, "drawcardlib.dll", "", 0x36000000u},
+        {ID_S_CDTOOLS, "CdTools.dll", "", 0x38000000u}, {ID_S_STATWIN, "STATWIN.DLL", "", 0x30000000u},
+    };
+    size_t i, n = 0;
+    char name[64];
+    const BuildProfile *sh = profile_find(ID_S_SHANDALAR), *fm = profile_find(ID_S_FACEMAKER), *dd = profile_find(ID_S_DECKDLL), *dc = profile_find(ID_S_DRAWCARDLIB);
+
+    for (i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        const BuildProfile *p = profile_find(rows[i].id);
+
+        CHECK(p != NULL);
+        if (!p)
+            continue;
+        profile_name(p, name, sizeof(name));
+        CHECK(!strcmp(p->build, "v2.15") && !strcmp(p->file, rows[i].file) && !strcmp(p->program, rows[i].program) && p->base == rows[i].base);
+        CHECK(!p->hooks_verified && !has_hook_fields(p));
+    }
+    for (i = 0; i < profile_count(); i++)
+        if (!profile_at(i)->hooks_verified)
+            CHECK(!has_hook_fields(profile_at(i)));         /* a build whose hooks were not ported holds none of their addresses, whichever build it is */
+        else
+            n++;
+    CHECK(n == 1);                                          /* MAGIC.EXE 1.0 is the one row with verified hooks */
+    CHECK(sh && fm && dd && dc);
+    if (!sh || !fm || !dd || !dc)
+        return;
+    /* the picture decompressor of each copy: shandalar.exe 0x91e000, FaceMaker.exe 0x428000, deckdll.dll and drawcardlib.dll at their bases (the section of each library at its own offset) */
+    CHECK(sh->lzw.header == 0x91e000u && sh->lzw.read == 0x91e484u && sh->lzw.read2 == 0x91e1fcu && sh->lzw.block == 0x582070u);
+    CHECK(sh->lzw.in_ptr == 0x915cd0u && sh->lzw.in_end == 0x581fc0u && sh->lzw.refill == 0x726b1cu && sh->lzw.callback == 0x55d9e0u);
+    CHECK(fm->lzw.header == 0x428000u && fm->lzw.read == 0x428484u && fm->lzw.read2 == 0x4281fcu && fm->lzw.block == 0x40d340u);
+    CHECK(fm->lzw.in_ptr == 0x422110u && fm->lzw.in_end == 0x40d294u && fm->lzw.refill == 0x422320u && fm->lzw.callback == 0x407720u);
+    CHECK(dd->lzw.header == 0x32000000u + 0x1e9000u && dd->lzw.read == dd->lzw.header + 0x484u && dd->lzw.read2 == dd->lzw.header + 0x1fcu && dd->lzw.block == 0x3203505cu);
+    CHECK(dd->lzw.in_ptr == 0x3210420cu && dd->lzw.in_end == 0x3203955cu && dd->lzw.refill == 0x32104410u && dd->lzw.callback == 0x3202c598u);
+    CHECK(dc->lzw.header == 0x36000000u + 0x155000u && dc->lzw.read == dc->lzw.header + 0x484u && dc->lzw.read2 == dc->lzw.header + 0x1fcu && dc->lzw.block == 0x36022104u);
+    CHECK(dc->lzw.in_ptr == 0x3612548cu && dc->lzw.in_end == 0x360220e8u && dc->lzw.refill == 0x36125690u && dc->lzw.callback == 0x36005915u);
+    CHECK(!profile_find(ID_S_DECK)->lzw.header && !profile_find(ID_S_CARDARTLIB)->lzw.header && !profile_find(ID_S_CDTOOLS)->lzw.header && !profile_find(ID_S_STATWIN)->lzw.header);
+    /* the block of the state is the same distance from the dictionary in every copy: the same offsets as 1.0's (profile.h, LZW_*) fit, e.g. the code width byte */
+    CHECK(sh->lzw.block + LZW_WIDTH == 0x582070u + 0x4016u && dd->lzw.block + LZW_STACK_BASE == 0x3203505cu + 0x442bu);
+    /* what shandalar.exe may start: FaceMaker.exe, DECK.EXE and itself; the others start nothing */
+    CHECK(!strcmp(sh->programs[0].file, "facemaker.exe") && !strcmp(sh->programs[0].module, "game_facemaker"));
+    CHECK(!strcmp(sh->programs[1].file, "deck.exe") && !strcmp(sh->programs[1].module, "game_sotadeck"));
+    CHECK(!strcmp(sh->programs[2].file, "shandalar.exe") && !strcmp(sh->programs[2].module, "game_shandalar") && !sh->programs[3].file);
+    CHECK(!fm->programs[0].file && !dd->programs[0].file && !profile_find(ID_MAGIC)->programs[0].file);
 }
 
 /* The hooks a profile installs: the addresses, in the order the sources installed them. */
@@ -248,6 +314,32 @@ static void test_hooks(void)
     CHECK(port_hook_count() == 0);
     lzw_install_library(dd, 0x32000000u);
     CHECK(hooks_are(none, 0, deckdll_over, 3));
+    /* Spells of the Ancients 2.15: no hook of any kind, the picture decompressor of each file that has one; two libraries have a copy and both are overridden */
+    {
+        static const uint32_t shandalar_over[] = {0x91e000, 0x91e484, 0x91e1fc};
+        static const uint32_t facemaker_over[] = {0x428000, 0x428484, 0x4281fc};
+        static const uint32_t both_over[] = {0x321e9000, 0x321e9484, 0x321e91fc, 0x36155000, 0x36155484, 0x361551fc};
+
+        profile = profile_find(ID_S_SHANDALAR);
+        install_all();
+        CHECK(hooks_are(none, 0, shandalar_over, 3));
+        CHECK(!yesno_site(0x4a3296) && !yesno_site(0x4f0b96) && !yesno_site(0x509e4a));
+        CHECK(profile_write_screen_size(800, 600) == 0);
+        profile = profile_find(ID_S_FACEMAKER);
+        install_all();
+        CHECK(hooks_are(none, 0, facemaker_over, 3));
+        profile = profile_find(ID_S_DECK);
+        install_all();
+        CHECK(port_hook_count() == 0);
+        profile = profile_find(ID_S_SHANDALAR);
+        port_hooks_reset();
+        lzw_install_library(profile_find(ID_S_CARDARTLIB), 0x34000000u);       /* a library with no copy of the decompressor overrides nothing */
+        lzw_install_library(profile_find(ID_S_CDTOOLS), 0x38000000u);
+        CHECK(port_hook_count() == 0);
+        lzw_install_library(profile_find(ID_S_DECKDLL), 0x32000000u);
+        lzw_install_library(profile_find(ID_S_DRAWCARDLIB), 0x36000000u);
+        CHECK(hooks_are(none, 0, both_over, 6));
+    }
     profile = &PROFILE_NONE;
     port_hooks_reset();
 }
@@ -358,10 +450,12 @@ static void test_verdicts(void)
     /* what is printed */
     profile_message(msg, sizeof(msg), PROFILE_UNKNOWN, "MAGIC.EXE", "MAGIC", ID_FAKE, ID_FAKE);
     CHECK(!strcmp(msg, "pentamoor: MAGIC.EXE is build " ID_FAKE ", which this version does not support (supported: v1.0 MAGIC.EXE)"));
-    profile_message(msg, sizeof(msg), PROFILE_UNKNOWN, "shandalar.exe", "SHANDALAR", ID_FAKE, ID_FAKE);      /* a program no row is for: every row is listed */
-    CHECK(strstr(msg, "shandalar.exe is build " ID_FAKE ", which this version does not support (supported: v1.0 MAGIC.EXE, v1.0 DUEL.EXE, v1.0 DECK.EXE, v1.0 DECKDLL.DLL, v1.0 STATWIN.DLL)") != NULL);
+    profile_message(msg, sizeof(msg), PROFILE_UNKNOWN, "nosuch.exe", "NOSUCH", ID_FAKE, ID_FAKE);            /* a program no row is for: every row is listed */
+    CHECK(strstr(msg, "nosuch.exe is build " ID_FAKE ", which this version does not support (supported: v1.0 MAGIC.EXE, v1.0 DUEL.EXE, v1.0 DECK.EXE, v1.0 DECKDLL.DLL, v1.0 STATWIN.DLL, v2.15 shandalar.exe, v2.15 FaceMaker.exe, v2.15 DECK.EXE") != NULL);
+    profile_message(msg, sizeof(msg), PROFILE_UNKNOWN, "shandalar.exe", "SHANDALAR", ID_FAKE, ID_FAKE);       /* a program of 2.15: its own row */
+    CHECK(strstr(msg, "shandalar.exe is build " ID_FAKE ", which this version does not support (supported: v2.15 shandalar.exe)") != NULL);
     profile_message(msg, sizeof(msg), PROFILE_UNKNOWN, "deckdll.dll", NULL, ID_FAKE, ID_FAKE);               /* a library: the rows for that file */
-    CHECK(strstr(msg, "deckdll.dll is build " ID_FAKE ", which this version does not support (supported: v1.0 DECKDLL.DLL)") != NULL);
+    CHECK(strstr(msg, "deckdll.dll is build " ID_FAKE ", which this version does not support (supported: v1.0 DECKDLL.DLL, v2.15 deckdll.dll)") != NULL);
     profile_message(msg, sizeof(msg), PROFILE_NO_MODULE_ID, "MAGIC.EXE", "MAGIC", ID_MAGIC, NULL);
     CHECK(strstr(msg, "MAGIC.EXE is build " ID_MAGIC ", which this version does not support") != NULL && strstr(msg, "no build id") != NULL);
     profile_message(msg, sizeof(msg), PROFILE_FILE_MISMATCH, "MAGIC.EXE", "MAGIC", ID_FAKE, ID_MAGIC);
@@ -425,6 +519,7 @@ int main(void)
     guest_init();
     test_sha256();
     test_v10_values();
+    test_v215_values();
     test_hooks();
     test_second_profile();
     test_verdicts();

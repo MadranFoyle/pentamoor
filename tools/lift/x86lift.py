@@ -66,6 +66,7 @@ class Lifter:
         self.allow_register_args = False   # True: a function may read eax/ecx/edx it is entered with (a C++ method's `this`); the lifted callers pass them
         self.uses_x87 = False
         self.uses_df = False
+        self.setjmp_sites = 0     # calls of _setjmp3 in the function just lifted: each has a C jmp_buf of its own (setjmp_site)
         self._intrinsic_cache = {}
 
     def intrinsic(self, target, getbytes=None):
@@ -283,6 +284,21 @@ class Lifter:
             cnt = "1u" if n == 1 else (f"{ops[1].imm & 0x1f}u" if ops[1].type == X.X86_OP_IMM else "(LO8(R_ecx) & 0x1fu)")
             step = "n_ = a_ & 1u; a_ = (a_ >> 1) | (CF << 31); CF = n_;" if mn == "rcr" else "n_ = a_ >> 31; a_ = (a_ << 1) | CF; CF = n_;"
             return [f"{{ uint32_t a_ = {self.read(i, ops[0])}, c_ = {cnt}, n_;", f"while (c_--) {{ {step} }}", self.write(i, ops[0], "a_"), "}"]
+        if mn in ("rol", "ror"):
+            # a rotate of 8, 16 or 32 bits. The count is masked to five bits first, then taken modulo the width; with a count of zero nothing changes, flags included.
+            # CF is the bit rotated last (the low bit of the result for rol, the high bit for ror); OF, defined only for a count of one, is the high bit of the result
+            # xor CF (rol) or xor the bit below it (ror); the other flags are not touched.
+            bits = self.bits(i, ops[0])
+            cnt = "1u" if n == 1 else (f"{ops[1].imm & 0x1f}u" if ops[1].type == X.X86_OP_IMM else "(LO8(R_ecx) & 0x1fu)")
+            a = self.read(i, ops[0])
+            if mn == "rol":
+                body = (f"k_ = c_ % {bits}u; r_ = k_ ? ((v_ << k_) | (v_ >> ({bits}u - k_))) & MASK({bits}) : v_; "
+                        f"CF = r_ & 1u; OF = ((r_ >> ({bits}u - 1u)) & 1u) ^ CF;")
+            else:
+                body = (f"k_ = c_ % {bits}u; r_ = k_ ? ((v_ >> k_) | (v_ << ({bits}u - k_))) & MASK({bits}) : v_; "
+                        f"CF = (r_ >> ({bits}u - 1u)) & 1u; OF = CF ^ ((r_ >> ({bits}u - 2u)) & 1u);")
+            return [f"{{ uint32_t a_ = {a}, c_ = {cnt}, v_ = a_ & MASK({bits}), k_, r_;",
+                    f"if (c_) {{ {body} {self.write(i, ops[0], 'r_')} }} }}"]
         if mn in ("bt", "bts", "btr", "btc"):
             need(2)
             if self.bits(i, ops[0]) != 32:
@@ -346,6 +362,11 @@ class Lifter:
             nxt = i.address + i.size
             push = ["R_esp -= 4;", f"WR32(R_esp, 0x{nxt:x}u);", "LIFT_CALL_REGS();"]
             after = ["R_ecx = 0xcdcdcdcdu; R_edx = lift_ret_edx;"]
+            kind = self.jump_import(ops[0])
+            if kind == "setjmp":
+                return self.setjmp_site(nxt)
+            if kind == "longjmp":
+                return ["lift_longjmp(RD32(R_esp), RD32(R_esp + 4u));"]      # (buffer, value): the caller's arguments, as they stand at the call
             if ops[0].type == X.X86_OP_IMM and self.intrinsic(ops[0].imm):
                 kind = self.intrinsic(ops[0].imm)
                 if kind == "chkstk":      # esp -= eax (the pages on the way are touched; nothing to do here); eax is left holding the return address
@@ -378,6 +399,37 @@ class Lifter:
                         "{ uint32_t cl_ = 0; R_eax = lift_call(tgt_, R_esp + 4u, &cl_); R_esp += 4u + cl_; }", after[0], "}"]
             raise Unsupported("indirect call")
         raise Unsupported(f"instruction {mn}")
+
+    # ---- setjmp and longjmp -----------------------------------------------------------------------------------
+    def jump_import(self, op):
+        """'setjmp' or 'longjmp' if the call operand is the C runtime's _setjmp3 (or _setjmp) or longjmp: through its import slot (`call [slot]`) or through the one-instruction thunk
+        the linker puts in front of it (`call thunk` with `jmp [slot]` at the thunk). These two are not calls: they return twice and leave the C stack, which a call into the
+        runtime cannot do for a frame of the lifted function, so the lifter writes them out inline (setjmp_site, and lift_rt.h's lift_longjmp)."""
+        names = {"_setjmp3": "setjmp", "_setjmp": "setjmp", "setjmp": "setjmp", "longjmp": "longjmp"}
+        slot = None
+        if op.type == X.X86_OP_IMM:
+            try:
+                code = self.getbytes(op.imm, 6) if self.getbytes else b""
+            except Exception:   # noqa: BLE001  (not readable: not a thunk)
+                code = b""
+            if len(code) >= 6 and code[0] == 0xFF and code[1] == 0x25:
+                slot = int.from_bytes(code[2:6], "little")
+        elif op.type == X.X86_OP_MEM:
+            m = op.mem
+            if not m.base and not m.index and m.segment in (0, X.X86_REG_INVALID):
+                slot = m.disp & 0xFFFFFFFF
+        return names.get(self.imports.get(slot)) if slot is not None else None
+
+    def setjmp_site(self, nxt):
+        """`call _setjmp3` as the function's own code: the registers the game's buffer keeps are stored, a C setjmp is taken in this frame, and a return by longjmp puts them back and
+        gives EAX the value. The call's cleanup is the caller's (cdecl: the arguments stay on the stack, as they did), EAX is 0 on the first return, ECX and EDX are scratch."""
+        k = self.setjmp_sites
+        self.setjmp_sites += 1
+        return ["{ uint32_t jb_ = RD32(R_esp), v_;",
+                f"lift_jb_store(jb_, &cjb_[{k}], R_ebp, R_ebx, R_edi, R_esi, R_esp, 0x{nxt:x}u);",
+                f"if ((v_ = (uint32_t)LIFT_SETJMP(cjb_[{k}])) == 0u) {{ R_eax = 0u; }}",
+                "else { R_ebp = RD32(jb_); R_ebx = RD32(jb_ + 4u); R_edi = RD32(jb_ + 8u); R_esi = RD32(jb_ + 12u); R_esp = RD32(jb_ + 16u); R_eax = v_; }",
+                "R_ecx = 0xcdcdcdcdu; R_edx = lift_ret_edx; }"]
 
     def x87(self, i):
         """The x87 instructions the C runtime and the game use: loads and stores of floats, doubles and integers, the arithmetic of two operands, compares, the
@@ -700,6 +752,7 @@ class Lifter:
         if stray and not self.allow_register_args:
             raise Unsupported("reads " + ", ".join(stray) + " on entry (a register argument)")
         self.dynamic_sites = []
+        self.setjmp_sites = 0
         order = sorted(insns)
         lo, hi = order[0], order[-1] + insns[order[-1]].size
         body, targets = [], set()
@@ -718,6 +771,8 @@ class Lifter:
                 "    uint32_t ZF = 0, SF = 0, CF = 0, OF = 0;"]
         if self.uses_df:
             decl.append("    uint32_t DF = 0;")
+        if self.setjmp_sites:
+            decl.append(f"    jmp_buf cjb_[{self.setjmp_sites}];")
         if order[0] != addr:       # code before the entry (jumped back into): start at the entry
             body.insert(0, f"    goto L_{addr:08x};")
         src = (f"/* {name} @ 0x{addr:08x}, 0x{lo:x}-0x{hi:x}, {len(order)} instructions */\n"

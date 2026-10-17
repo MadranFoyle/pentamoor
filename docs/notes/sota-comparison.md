@@ -452,6 +452,36 @@ the profile says `verified: false`.
 - **The resolution switch**: the shell lays itself out for 800x600; shandalar.exe has 1.0's three layouts (the three screen-size globals at `0x57a7d0` and `0x57a7d4` for 2.15), so `PORT_RES` keeps working for it; magic.exe's screen size is not found (its uses of the 1.0 address did not align).
 - **CD checks**: the CdTools library (`CheckOriginalCD`, `CheckSotaCD`, `IsCDDrive`, and in ManaLink 3.0's copy `CheckDoPCD`, called by the installer's script and by the programs) asks the drive type and the volume label; the port answers "fixed disk" to `GetDriveTypeA` and has no `GetVolumeInformationA`, so a check that wants the disc would fail. Whether the programs refuse to run without it was not reached.
 
+## Milestone 1: shandalar.exe 2.15 from the title screen to the overworld
+
+Milestone 1 of the port of 2.15 was: `shandalar.exe` 2.15 plays from the title screen through Start New Game (colour, name and face) to the overworld and walking, on the runtime as it is, with a profile row per file and nothing that changes 1.0. What follows is what ran and what did not, as it was seen on this machine (macOS, SDL dummy drivers, 640x480, the pictures looked at by eye and not kept). The Windows and Linux hosts were not run with a 2.15 module; the new platform code (`plat_win.c`) is compiled by CI only.
+
+**What runs** (the real 2.15 files, all lifted from the machine code: `shandalar.exe` and the real `FaceMaker.exe`; the libraries `STATWIN.DLL`, `deckdll.dll`, `cardartlib.dll`, `drawcardlib.dll`, `CdTools.dll` as modules at their bases):
+
+1. the title screen draws, and Start New Game brings up "Select Your Color";
+2. choosing a colour makes the game call `_spawnl(_P_WAIT, FaceMaker.exe, "/S")`: the runtime starts a second copy of itself with the module of that program (the profile's `programs` list), the **real lifted FaceMaker** runs, draws the portrait, ends, and the game goes on;
+3. the name screen shows the true portrait (the earlier note's noisy or garbage name screen was the portrait memory not shared between the two programs: the game's "graphic pages" are named file mappings, which the programs now hand over to each other, see below) with the name box;
+4. typing a name and Return brings up the overworld; the player can walk about, and meeting a Sorceress on the map brings up her encounter dialog.
+
+**What does not, or was not tried:**
+
+- **Duels** inside `shandalar.exe` were not tried (stretch goal). The deck builder (`DECK.EXE` stub with the 2.15 libraries) lifts and builds with the installer's steps and the library part runs as in the earlier experiment, but it was not run again in this milestone. `magic.exe` (the Magic Shell) and ManaLink 3.0 are out of scope and unchanged: not lifted by the installer, not run.
+- **Hooks are off for every 2.15 row** (`hooks_verified = 0`): no pacing hook, no controller navigation, no text-menu or yes/no hooks, no title hook. The game runs at whatever speed its own busy loops give (it spins a CPU core; the 1.0 hooks are what calm that); the 54 addresses are not re-verified.
+- The display globals of 2.15 are not wired (no `.display` row), so 800x600 or 1024x768 scaling is not shown to work with 2.15: only 640x480 was used.
+- No soak or random play on 2.15. A save, load and the rest of the overworld (shops, towns, the dungeons) were not visited beyond the one dialog.
+- Saved settings: the registry writes go nowhere, as in 1.0.
+
+**What was built** (all with tests; none of it changes what 1.0 runs: the lifter's output for 1.0 is byte-identical before and after, and 1.0 still starts a new game on the new runtime):
+
+- Lifter: `rol` and `ror` (all widths, flags as the CPU sets them); `_setjmp3` and `longjmp` modelled (a guest `jmp_buf` that keeps the registers, with a host `jmp_buf` behind it; found also through a thunk), because the overworld uses them; the 47 import signatures, now **read from the executables** where they are the game's own libraries (`libsigs.py`: `ret imm16` is stdcall, plain `ret` is cdecl) and from a table for the system's, checked against the call sites (`tools/research/sotaimports.py --sigs` compares each signature with the pushes before it and the `add esp` after it); the master table found by its pattern (`mastertable.py`, no address in a table); a `builds.py` row per 2.15 file with bases `0x30000000` STATWIN, `0x32000000` deckdll, `0x34000000` cardartlib, `0x36000000` drawcardlib, `0x38000000` CdTools.
+- Runtime: a profile row per file (ids, program names, bases, `.lzw`), more library slots in `lzw.c`, the `msvcrt.dll` name as an alias of the table's `msvcrtd.dll`, and the 21 missing Win32 and C runtime calls as implementations with tests (`winsys.c`, `crt.c`, `test_win32.c`), among them the registry, TLS, locale, volume and disk calls, `qsort` with the game's own comparison, and `_findfirst`. Two bugs of the runtime's own calls were found and fixed on the way: the character-width calls looped forever on a large range, and device contexts taken with `GetDC` and not given back were leaked until memory ran out.
+- **The registry check.** At start-up the game (and `deckdll.dll`) reads two values of `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion`, `FirstInstallDateTime` (4 bytes) and `ProductId` (a string), and derives a machine identifier from them. `winsys.c` answers with a fixed pair of plausible values and says in a comment what they are: **values the game asks Windows for**, which a Windows that is not there cannot give. They are not a bypass of any check of the game's, and nothing is known to depend on them beyond that identifier. The wording is a decision for the owner (see the report).
+- **The process model** (`process.c`): `_spawnl`, `WinExec` and `CreateProcessA` start another `pentamoor-run` for the program the profile names (the game's folder, overlay, display settings, command line and a control pipe of its own passed on), `_P_WAIT` and `GetExitCodeProcess` wait. It is correct for **sequential use** only (the parent waits): named memory is handed over in files (`PORT_SHM`: the parent writes its named mappings before starting, the child reads them when it creates a mapping of the same name and writes them back when it ends, the parent reads them again when it sees the child finished), which is what FaceMaker needs; two programs running at once and sharing memory are not modelled, and neither is a shared window (the child makes its own).
+- A DIB section made from a file mapping is that memory (not a copy), which is how FaceMaker's drawing reaches the name screen.
+- Installer: `liftrun.py` and `modbuild.py` know the 2.15 programs, and `tools/install/install_sota.py` checks a 2.15 folder file by file, lifts and builds the modules (`./pentamoor sota`, `PENTAMOOR_SOTA` names the folder). It does **not** make the folder: that is still `sotapatch.py` and `sotaoverlay.py` from the research tools applied to 1.0's install, the 2.0 cabinet and the six patch files.
+
+**Left from this note's earlier list**, now superseded: `liftsota.py` and `sotamaster.py` are replaced by the lifter's own program row and `mastertable.py` (they stay as research tools); `sota-runtime-experiment.patch` is obsolete: all of it is in `src/port`.
+
 ## Effort (hours of agent work, rough)
 
 The first column is the estimate of the first version of this note, the second what the work found since (the profile mechanism has been built; the lifter wrapper and the runtime experiment exist as scratch work; ManaLink 3.0 is new). 2.15 is the target; ManaLink 3.0 is a separate block.
@@ -466,8 +496,10 @@ The first column is the estimate of the first version of this note, the second w
 | The shell page (magic.exe black screen), the CD checks | 8 to 20 | 8 to 20: still black; `WM_PAINT` order is not it; the "garbage name screen" of the first note is replaced by the FaceMaker item above |
 | Porting the hooks (pace, screens, yes/no, name box, controller navigation) to 2.15: read the 19 changed sites against 1.0's, re-verify all 54, find the sell site, adapt `navwm.c` to the movable windows and the shell's pages | 10 to 16 | 10 to 16 (not touched here) |
 | Tests, a soak on both programs, CI (a SotA job cannot use the discs: only the profile logic, the cabinet reader on a made-up cabinet, and the patch reader on a made-up archive) | 8 to 12 | 6 to 10: the cabinet and patch readers, `cards.dat` reader and overlay have tests on made-up files (`tools/research/test_research.py`, in CI) |
-| **Shandalar alone, without the screen hooks (title, new game, overworld, duels with the mouse)** | about 40 to 60 | **about 36 to 55** (title, colour choice and deck builder are shown to work; FaceMaker is the new unknown) |
-| **Everything above for 2.15** | about 90 to 140 | **about 85 to 130** |
+| **Shandalar alone, without the screen hooks (title, new game, overworld, duels with the mouse)** | about 40 to 60 | **about 36 to 55 before Milestone 1; Milestone 1 (title to overworld, walking) took roughly 20 to 28 of it** (an estimate: the agent's time was not metered). Left for duels, pacing hooks, resolutions and a soak: about 15 to 30 |
+| **Everything above for 2.15** | about 90 to 140 | **about 85 to 130** (Milestone 1 is inside it: the lifter, the Win32 additions, the process model and FaceMaker, and the installer's lift steps are done; the shell page, the hooks, the engine and the installer's folder-making remain) |
+
+What Milestone 1 did against the rows above: the lifter row (`rol`/`ror`, `setjmp`, signatures, master table, builds) and the Win32 row (the 21 calls, registry, TLS) are **done**; the process model row is done for sequential use with FaceMaker lifted for real (it took less than the 4 to 8 estimated for FaceMaker, because it lifted without changes beyond `setjmp`); the installer row is half done (lift and build; not the folder); the shell page, the hooks, the engine and the soak are **not started**.
 | **ManaLink 3.0 on top of 2.15**: profile rows and bases for 6 files (1 to 2); `ManalinkInterface.dll` provided by the host as 16 "no network" functions (3 to 5), or the two unsupported instructions lifted (2 to 4); the 14 more Win32 and C calls (3 to 5); the shell's new pages (multi-duel, screen names, credits) and `MultiOptions` (3 to 6); installer: a second, optional, add-on cabinet in the other layout and the overlay (2 to 3); the 722-card table and 151-slot duel need nothing in the lifted code | -- | **about 15 to 25** (the shell's black screen is shared with 2.15 and counted there) |
 | Not counted: the tutorial; the hand-written engine for SotA (new strides and offsets, and the functions with no counterpart: now **three** layouts, 1.0's, SotA's and ManaLink's); a clean-C pass over the changed parts | 40 and more | 40 and more |
 
@@ -531,7 +563,7 @@ All in `tools/research/`, each documented at the top, none holding game data (th
 | `sotaoverlay.py` | copies one extracted install over another as Windows does (names compared ignoring case; `--only Program`); counts replaced, identical and added |
 | `sotapeinfo.py` | build identity of programs and libraries: link time, versions, sections, imports, the debug directory and its PDB path, the version resource, the source paths in the strings; `--table` for hashes |
 | `sotacmptable.py` | the rows of the two comparison tables above for any pairs of builds, as Markdown |
-| `sotamaster.py` | finds the master card table in a program and counts its records |
+| `sotamaster.py` | finds the master card table in a program and counts its records (the lifter now does this itself: `tools/lift/mastertable.py`) |
 | `sotacards.py` | the structure of `CARDS.DAT` and the differences between builds, as counts |
 | `sotastride.py` | which structure sizes a program multiplies by (the duel slot and the slots a player), from the compiler's multiplication sequences |
 | `sotastrings.py` | strings one build has that another lacks, only the technical kinds (command-line switches, registry paths, window classes, file names, source paths) |
@@ -540,10 +572,10 @@ All in `tools/research/`, each documented at the top, none holding game data (th
 | `sotacmp.py` | matches the functions of two builds of a program and reports the counts; `--json`, `--map` |
 | `sotahooks.py` | finds the addresses `src/port` is keyed to in another build, with the old and new call sites of the hooked functions |
 | `sotalayout.py` | the same for `src/native/layout.c` |
-| `sotaimports.py` | imports of a build against the port's tables and the lifter's signatures | (run it with `--libs` naming the game's own libraries)
+| `sotaimports.py` | imports of a build against the port's tables and the lifter's signatures (run it with `--libs` naming the game's own libraries; `--sigs` checks each signature against the call sites' pushes and `add esp`) |
 | `sotalzw.py` | the picture decompressor's state in another build |
-| `liftsota.py` | runs the lifter on another build, with its constants replaced (`liftsota.py dll ...` for the libraries) |
-| `sota-runtime-experiment.patch` | the scratch changes to `src/port` of the first version of the experiment. **It no longer applies** to `lzw.c`, `modules.c` and `port.h` (the profile refactor rewrote them: replace its decompressor hunks by a `.lzw` row per file in `profile.c`, as described under "Running it"); its `crt.c`, `gdi_text.c`, `kernel32.c`, `pe.c` and `user32.c` hunks still apply with `git apply --include=...` |
+| `liftsota.py` | runs the lifter on another build, with its constants replaced (`liftsota.py dll ...` for the libraries). **Superseded** by the lifter's own 2.15 support (Milestone 1): `tools/install/install_sota.py` does the lifting for a 2.15 folder |
+| `sota-runtime-experiment.patch` | the scratch changes to `src/port` of the first version of the experiment. **Obsolete since Milestone 1**: its content is in `src/port` as real, tested code (profile rows, the `msvcrt.dll` alias, the Win32 calls, the process model); kept only as a record |
 
 Reproduce (the paths are the ones this note uses; `sources/` is git-ignored):
 

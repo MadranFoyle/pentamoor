@@ -25,6 +25,8 @@ from x86lift import Lifter, Unsupported  # noqa: E402
 from import_signatures import signature  # noqa: E402
 from fnscan import scan_pe  # noqa: E402
 from builds import file_build_id  # noqa: E402
+import libsigs  # noqa: E402
+import mastertable  # noqa: E402
 
 # Imports a handler may call, as (argument count, bytes the callee pops). Anything else is refused.
 KNOWN_IMPORTS = {"Sleep": (1, 4), "_assert": (3, 0), "_itoa": (3, 0), "rand": (0, 0), "memcpy": (3, 0), "memset": (3, 0),      # the last two: the C runtime DLL's (cdecl), which MAGIC.EXE imports where DUEL.EXE carries its own copies
@@ -35,11 +37,13 @@ STUB_STRIDE = 0x20       # last section's code, in a page the executable maps
 
 # C runtime functions the program carries itself that take a variable number of arguments (`_sprintf`, `_fscanf`, `_sscanf`, `_fprintf` of DUEL.EXE; MAGIC.EXE
 # imports its own from the C runtime's DLL): a call out passes a fixed count, so a function that calls one is not lifted.
-VARIADIC = {"duel": {0x4D9720, 0x4DCEE0, 0x4DD040, 0x4DE4F0}, "magic": set()}
+VARIADIC = {"duel": {0x4D9720, 0x4DCEE0, 0x4DD040, 0x4DE4F0}, "magic": set(), "shandalar": set()}
 
 PROGRAMS = {  # master card table base, the code range its handler pointers fall in
     "duel": dict(master=0x004FF590, code=(0x401000, 0x4F0000)),
     "magic": dict(master=0x0051AEB8, code=(0x401000, 0x510000)),
+    # Spells of the Ancients 2.15 (shandalar.exe, the successor of MAGIC.EXE): records of 0x48 bytes, found by their pattern (mastertable.py) in the program's own code range
+    "shandalar": dict(master=None, stride=0x48, code=None),
 }
 
 
@@ -47,6 +51,8 @@ def native_entries(program):
     """Addresses of the program's native functions (src/native/layout.c)."""
     import re  # noqa: PLC0415
     text = open(os.path.join(ROOT, "src", "native", "layout.c")).read()
+    if f"const Layout LAYOUT_{program.upper()} = {{" not in text:
+        return set()          # a build the hand-written engine has no layout for
     block = text.split(f"const Layout LAYOUT_{program.upper()} = {{", 1)[1].split("\n};", 1)[0]
     return {int(m.group(1), 16) for m in re.finditer(r"\[FN_[A-Z_0-9]+\] = (0x[0-9a-fA-F]+)", block)} - {0}
 
@@ -85,6 +91,7 @@ def main():
     pe = pefile.PE(args.exe)
     build_id = file_build_id(args.exe)
     base = pe.OPTIONAL_HEADER.ImageBase
+    libsigs.register(pe, args.exe)       # the calling conventions of the game's own libraries that this program imports (from the same folder)
     lifter = Lifter()
     import_dll = {}
     for dll in getattr(pe, "DIRECTORY_ENTRY_IMPORT", []):
@@ -103,7 +110,13 @@ def main():
         raise Unsupported(f"0x{va:x} is not in the image")
 
     mps_code = [(s.VirtualAddress + base, s.VirtualAddress + base + max(s.Misc_VirtualSize, s.SizeOfRawData)) for s in pe.sections if s.Name.rstrip(b"\0") == b"MPS_CODE"]
-    handlers = handler_addresses(pe, cfg["master"], cfg["code"])
+    if cfg["master"] is None:        # a build whose master table is found by its pattern
+        cfg = dict(cfg)
+        cfg["master"] = mastertable.find(pe, cfg["stride"])[0]
+        cfg["code"] = mastertable.code_range(pe)
+        handlers = mastertable.handler_addresses(pe, cfg["master"], cfg["stride"]) if cfg["master"] else []
+    else:
+        handlers = handler_addresses(pe, cfg["master"], cfg["code"])
     extra = [int(x, 16) for x in args.extra.split(",") if x]
     if args.extra_file:
         for line in open(args.extra_file):

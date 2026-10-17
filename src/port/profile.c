@@ -23,9 +23,28 @@
 #define ID_V10_DECKDLL "a21f714bea465077c4fabe4a407ff7503b0ce5f9bb1a277826e74276e35c2c18"
 #define ID_V10_STATWIN "95bd14de41e8fff84217cdf627a48392da5e7be9c3d064a68e04ed1455334bd7"
 
+/* Spells of the Ancients 2.15 (the expansion's 2.0 install with the six files of the 2.15 patch over it; docs/notes/sota-comparison.md). Every address of 1.0 is different here, and
+ * none of the port's hooks (frame pacing, the controller's reading of the screens, the (Y/N) questions, the name box) has been ported to it: the rows hold their picture decompressor
+ * (`lzw`: the game cannot show a picture without it) and, for the game itself, the programs it starts, and nothing else. `.hooks_verified = 0` says so. The `lzw` values are the
+ * decompressor's state in each copy of its code (tools/research/sotalzw.py reads them from the files: `block` is 1.0's dictionary block 0x532860 plus the delta it prints). The
+ * libraries are lifted at the bases of tools/lift/builds.py (LIBRARY_BASES).
+ *   shandalar.exe    the game: overworld, towns, duels, and the deck builder (deckdll.dll) in the same process
+ *   FaceMaker.exe    the portrait editor it starts when a colour is chosen
+ *   DECK.EXE         the stand-alone deck builder: a stub that starts the deck builder of deckdll.dll
+ *   deckdll.dll, cardartlib.dll, drawcardlib.dll, CdTools.dll, STATWIN.DLL   the libraries; deckdll.dll and drawcardlib.dll carry a copy of the picture decompressor
+ * (magic.exe, the "Magic Shell", is not a build the port runs. MAGSND.DLL and MAGVID.DLL are provided by the port itself, as in 1.0.) */
+#define ID_V215_SHANDALAR "e4e46718c451974756b66e7666ac0bf1cc9ebdbc5897eb04a87b8ea2a02353e7"
+#define ID_V215_FACEMAKER "b4f3d19614dcd825da846d097baa3cd9badc0c9852492bc27a8ba62c1741a493"
+#define ID_V215_DECK "c7ec116aecdcde9ab976cc97cba81482fc4219278f8042edf667456ede3dd8ef"
+#define ID_V215_DECKDLL "ce741d1f5547c143fd8494bbe09c26e918b892a3d9fc3c3761babb3c8268a667"
+#define ID_V215_CARDARTLIB "689be4a86ca843e76057172543cfa3516d8ccbc2efb1699e7c7935b6dc3ead11"
+#define ID_V215_DRAWCARDLIB "c7747313d59b6fa48ec56b479dce9ed5d90f8a95fc47e93990c4369bbd2fa1f8"
+#define ID_V215_CDTOOLS "0d0c2bfa87de02499f1f73f21f34824b1c2572f3e6ae0b5dca7ca343ddf1b77d"
+#define ID_V215_STATWIN "c1ca59496afa786f22fcd97b94052b937910a613f9321399b4ef4dd5dec76940"
+
 static const BuildProfile PROFILES[] = {
     {
-        .id = ID_V10_MAGIC, .build = "v1.0", .file = "MAGIC.EXE", .program = "MAGIC",
+        .id = ID_V10_MAGIC, .build = "v1.0", .file = "MAGIC.EXE", .program = "MAGIC", .hooks_verified = 1,
         .lzw = {.header = 0x70d000, .read = 0x70d484, .read2 = 0x70d1fc, .block = 0x532860,
                 .in_ptr = 0x706500, .in_end = 0x5327b0, .refill = 0x67f43c, .callback = 0x50e8b0},
         .pace = {.tick_fn = 0x5016f9, .ticks = 0x530da0, .frame_ret = 0x4e7873, .map_loop = {0x4e73a0, 0x4e7936}},
@@ -56,6 +75,39 @@ static const BuildProfile PROFILES[] = {
     },
     {
         .id = ID_V10_STATWIN, .build = "v1.0", .file = "STATWIN.DLL", .program = "", .base = 0x30000000,
+    },
+    {
+        .id = ID_V215_SHANDALAR, .build = "v2.15", .file = "shandalar.exe", .program = "SHANDALAR",
+        .programs = {{"facemaker.exe", "game_facemaker"}, {"deck.exe", "game_sotadeck"}, {"shandalar.exe", "game_shandalar"}},
+        .lzw = {.header = 0x91e000, .read = 0x91e484, .read2 = 0x91e1fc, .block = 0x582070,
+                .in_ptr = 0x915cd0, .in_end = 0x581fc0, .refill = 0x726b1c, .callback = 0x55d9e0},
+    },
+    {
+        .id = ID_V215_FACEMAKER, .build = "v2.15", .file = "FaceMaker.exe", .program = "FACEMAKER",
+        .lzw = {.header = 0x428000, .read = 0x428484, .read2 = 0x4281fc, .block = 0x40d340,
+                .in_ptr = 0x422110, .in_end = 0x40d294, .refill = 0x422320, .callback = 0x407720},
+    },
+    {
+        .id = ID_V215_DECK, .build = "v2.15", .file = "DECK.EXE", .program = "DECK",
+    },
+    {
+        .id = ID_V215_DECKDLL, .build = "v2.15", .file = "deckdll.dll", .program = "", .base = 0x32000000,
+        .lzw = {.header = 0x321e9000, .read = 0x321e9484, .read2 = 0x321e91fc, .block = 0x3203505c,
+                .in_ptr = 0x3210420c, .in_end = 0x3203955c, .refill = 0x32104410, .callback = 0x3202c598},
+    },
+    {
+        .id = ID_V215_CARDARTLIB, .build = "v2.15", .file = "cardartlib.dll", .program = "", .base = 0x34000000,
+    },
+    {
+        .id = ID_V215_DRAWCARDLIB, .build = "v2.15", .file = "drawcardlib.dll", .program = "", .base = 0x36000000,
+        .lzw = {.header = 0x36155000, .read = 0x36155484, .read2 = 0x361551fc, .block = 0x36022104,
+                .in_ptr = 0x3612548c, .in_end = 0x360220e8, .refill = 0x36125690, .callback = 0x36005915},
+    },
+    {
+        .id = ID_V215_CDTOOLS, .build = "v2.15", .file = "CdTools.dll", .program = "", .base = 0x38000000,
+    },
+    {
+        .id = ID_V215_STATWIN, .build = "v2.15", .file = "STATWIN.DLL", .program = "", .base = 0x30000000,
     },
 };
 
