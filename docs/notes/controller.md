@@ -5,7 +5,7 @@ touched. Everything goes through `front_push_mouse` and `front_push_key` (`front
 (`click-one-pass.md`) apply to a pad as they do to a mouse: A pressed and let go quickly is a down and an up that `front_hold_rule` spaces out, a click on a village's "Buy 10 food" bought once (250 gold ->
 235, food 49 -> 59) and a held A past 400 ms repeats like a held mouse button.
 
-Files: `pad.c` / `pad.h` (the logic: no SDL, no game, unit tested: `test_pad.c`, about 430 checks), and the glue in `front_sdl.c` (controller events in, the cursor drawn, the `pad` steps of `PORT_CONTROL`). The D-pad's
+Files: `pad.c` / `pad.h` (the logic: no SDL, no game, unit tested: `test_pad.c`, about 450 checks), and the glue in `front_sdl.c` (controller events in, the cursor drawn, the `pad` steps of `PORT_CONTROL`). The D-pad's
 navigation is `nav.c` (which target next: pure, `test_nav.c`) and `navwm.c` (the targets, read off the window tree), described in `controller-nav.md`; on the game's own screens the targets are read from the game's button table by `screens.c`, described in `controller-screens.md`.
 `PORT_NOPAD=1` turns it all off. With no controller nothing changes: the pad is "active" only after it has been used, and the real mouse takes over again the moment it moves.
 

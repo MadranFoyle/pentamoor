@@ -36,7 +36,7 @@ middle of other functions). They were harmless (nothing real calls them) but the
 * `gen_dll.py --index`, which took a decompiler-made function table and reported every row the closure had not lifted and whether anything live named it (a `call`/`jmp`/pointer),
   is gone with the table: `fnscan.py` finds the functions in the code now (the first run of it was compared with that table: the same reachable functions, and
   the functions nothing reaches differ).
-* Tests in `test_lift.py` (46 now): the nop-split function lifted whole and run against its machine code (4 inputs), the head found from the tail,
+* Tests in `test_lift.py` (46 when this was written, 56 test functions now): the nop-split function lifted whole and run against its machine code (4 inputs), the head found from the tail,
   the `e8`-inside-an-instruction not taken for a call (and the real call beside it taken), `constants`, and the index report.
 
 ## The other programs

@@ -10,8 +10,19 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "lift_rt.h"
 #include "lift_tables.h"
+
+/* A switch set in the environment: set, not empty and not "0" (PORT_HEADLESS=0 means off, like PORT_HEADLESS unset). */
+static inline int port_env_on(const char *name)
+{
+    const char *v = getenv(name);
+
+    return v && *v && strcmp(v, "0") != 0;
+}
 
 extern uint8_t *G;
 

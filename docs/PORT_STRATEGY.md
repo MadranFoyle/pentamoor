@@ -2,6 +2,8 @@
 
 *(Written while the upstream project's decompiled C was in this repository, which is why it speaks of it in the present tense. That tree has been removed; see the README, "History". The decision below stands; the port runs the game's machine code through the lifter.)*
 
+*(Status, documentation audit 2026-10: this is the plan as it was made on 2026-09-26, and its statements of progress are from then: "Nothing here is built yet beyond a feasibility spike", "There is no sound yet", "dialogs made with `DialogBoxParam` are not implemented", "Phase C ... has not been started" and the `src/platform` shim. All of that is done or gone: Phase C is the native program in `src/port`, which [PHASE_C.md](PHASE_C.md) describes, and the Python emulator (`tools/emu_spike`) is now the specification its C layer follows, no longer the way the game is played.)*
+
 **Decision (proposed, 2026-09-26): host the original x86 code in a CPU emulator, supply the Windows and
 C-runtime imports natively, and replace engine functions with clean native code one at a time, each checked
 against the original code still running underneath.** Nothing here is built yet beyond a feasibility spike.

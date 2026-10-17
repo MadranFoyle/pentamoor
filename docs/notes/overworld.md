@@ -60,14 +60,15 @@ Walking is a held button: `down X Y`, wait, `up` (X Y is where on the map; the p
 
 ## Found, not fixed
 
-- **One click on a town's button repeats.** In a village, "Buy 10 food for 15 gold" fired 27 times from one `click` (405 gold, +270 food). The town's loop
+- **One click on a town's button repeats.** *Correction (documentation audit, 2026-10): fixed since: a click is one pass of the game's loop, see [click-one-pass.md](click-one-pass.md). What follows is how it was found.*
+   In a village, "Buy 10 food for 15 gold" fired 27 times from one `click` (405 gold, +270 food). The town's loop
   (the `while (DAT_006265fc == 0)` at 0x508cd7's caller, `FUN_0041f3ea` in `magic_all.c`) runs the button's handler on every pass while the button is
   down, and each pass is only a redraw, so the number of repeats is the press's length (`HOLD_MS` 70 in `front.c`) over the time of one pass (about 2.6 ms
   here). The original did the same (each pass loaded and drew a village picture, which was slower, so a click gave a few). A fix would end a press when the
   game has pumped its window's messages once after the button-down message was delivered, rather than after 70 ms (the overworld's frame wants exactly that
   too), or pace this loop like `pace.c` paces the map's. Not done: the press's length is shared with the other screens.
-- **Card text at 1024x768** (the encounter screen's cards): lines run through the text boxes of the two cards, which they do not at 640x480. Not looked into.
-- Not walked: castles, dungeons, the Journal and the Done button of the stats screen, buying cards (the Buy Cards screen was not opened),
+- **Card text at 1024x768** (the encounter screen's cards): lines run through the text boxes of the two cards, which they do not at 640x480. Not looked into. *Correction (documentation audit, 2026-10): fixed since, the metrics the game wraps by were not the original's: [card-text-metrics.md](card-text-metrics.md).*
+- Not walked here (the later notes did: [castle-dungeon-stats.md](castle-dungeon-stats.md), [journal-done.md](journal-done.md), [resolution.md](resolution.md)): castles, dungeons, the Journal and the Done button of the stats screen, buying cards (the Buy Cards screen was not opened),
   the status screen of a town at 800x600 and 1024x768, and walking with a held mouse at the larger sizes beyond a first step. The scripts cost most of the time
   on the map: each screenshot needs the monsters held off and the party to stay put, and the first encounter chain cannot be skipped without paying or conceding.
 

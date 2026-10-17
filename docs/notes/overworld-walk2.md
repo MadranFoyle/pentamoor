@@ -2,7 +2,7 @@
 
 Short session, 640x480, new game, monsters poked out (every ~170 ms; encounters still came in through the poke gaps and were paid).
 
-- **Village food button**: one `click` on "Buy 10 food for 15 gold" now costs 45 gold and gives +30 food, i.e. 3 purchases (was 27). Measured twice
+- **Village food button** *Superseded (documentation audit, 2026-10): a click is one purchase now, [click-one-pass.md](click-one-pass.md); the numbers below are from before that fix.*: one `click` on "Buy 10 food for 15 gold" now costs 45 gold and gives +30 food, i.e. 3 purchases (was 27). Measured twice
   (gold 4860/44 -> 4815/74 -> 4770/104). Not yet exactly one: a press is HOLD_MS 70 ms (`front.c`) and the UI pass is paced 60 ms (`pace.c`), so a press
   sees the immediate pass plus one or two paced ones. Exactly one needs the press to end after the first pass of 0x41f3ea that sees the button down,
   rather than after a fixed time.
