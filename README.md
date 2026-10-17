@@ -55,6 +55,12 @@ Not tried on a real Steam Deck yet: it has been checked on a virtual 1280x800 sc
 What to expect: the game starts full screen, at its own 1024x768 with a thin border on the 1280x800 screen. The left stick moves the cursor, A and B click, the buttons are in the table below, and the trackpads
 and the touch screen are the mouse. Steam + X brings up Steam's keyboard for typing a name. There is no sound, speed or battery information from a Deck yet.
 
+### iOS (experimental, sideload only)
+
+An iPad build exists as a proof of concept: the game's code is compiled into an app that you build yourself with Xcode, from your own game files, for your own iPad. It has run in the iOS Simulator on an iPad Pro (title screen, a new game, the
+overworld, duels, touch with a long press for the right button), and **has not been run on a real iPad yet**. It is not a download and cannot be: the app contains code made from your copy of the game, so it is never published (not on the App Store,
+not on TestFlight) and never to be given to anyone. What it needs, how to build it and what is known to be missing: [docs/notes/ios.md](docs/notes/ios.md).
+
 ### From source
 
 You need Python 3, a C compiler, `make` and SDL2 (`brew install sdl2` on macOS, `libsdl2-dev` on Debian).
@@ -138,6 +144,7 @@ coin toss movie. The title screen matches the original running in an emulator pi
 | Linux (x86-64) | tested: install, build, tests, title screen and a new game into a duel, on CachyOS with gcc, but headless (no real display or speakers). Other distributions and architectures are untried |
 | Windows (x86-64) | the runtime builds with MSYS2 MinGW-w64 and its unit tests pass in CI; CI also builds the release archive (own Python, own compiler) and has it build a stub game module and load it; the game itself has not been run there yet (`pentamoor.bat` is the launcher) |
 | Steam Deck | the download, the window installer, adding to Steam, full screen and typed text are built and checked by CI and were run on a virtual 1280x800 screen with a real pointer and keyboard and the real disc; **no real Deck** has run it ([docs/notes/steamdeck.md](docs/notes/steamdeck.md) lists what is unchecked) |
+| iOS / iPadOS | experimental: builds as an iPad app for your own devices (Xcode), runs in the Simulator on an iPad Pro with the real game and touch; **no real iPad** has run it ([docs/notes/ios.md](docs/notes/ios.md)) |
 | Releases | the four archives are built and checked by CI on every push (Windows, Linux, the Steam Deck's, macOS arm64 and x86-64 in one file); the installer from a release folder, with the real disc, is tested on macOS (arm64) and Linux; the x86-64 half of the macOS build has only been compiled |
 
 After you win a duel against a wizard's creature the game plays two short clips on a black screen and then waits for a click or a key on a black screen ("Click or press a key to continue" is
