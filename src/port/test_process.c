@@ -15,6 +15,11 @@
 #include "sched.h"
 #include "test_util.h"
 
+#ifdef _WIN32                                                                              /* MinGW's C library has no setenv or unsetenv */
+#define setenv(name, value, overwrite) _putenv_s((name), (value))
+#define unsetenv(name) _putenv_s((name), "")
+#endif
+
 int pe_find_resource(uint32_t hinst, uint32_t type, uint32_t name, uint32_t *addr, uint32_t *size) { (void)hinst; (void)type; (void)name; (void)addr; (void)size; return 0; }
 extern Image main_image;
 
