@@ -188,6 +188,28 @@ int main(int argc, char **argv)
 #endif
     }
 
+    /* the heap says no to what cannot be met (a negative size that arrived unsigned, a product that wrapped) and stays as it was: it used to give a block of 16 bytes for a size that rounded
+     * to 0, and to move its top backwards for one that wrapped round the end of the address space, so the blocks after it overlapped the live ones */
+    {
+        uint32_t p1 = heap_alloc(100), p2, p3, args[3];
+
+        CHECK(p1 != 0);
+        CHECK(heap_alloc(0xffffffd0u) == 0 && heap_alloc(0xfffffff5u) == 0 && heap_alloc(0xffffffffu) == 0 && heap_alloc(0x80000000u) == 0);
+        p2 = heap_alloc(100);
+        CHECK(p2 > p1 && p2 >= p1 + 100);                         /* the next block is after the first, not on it */
+        args[0] = 0x10000u; args[1] = 0x10001u; args[2] = 0;       /* 0x100010000 wraps to 0x10000 in 32 bits */
+        CHECK(crt_api("calloc")(args) == 0);
+        args[0] = 3; args[1] = 4;
+        p3 = crt_api("calloc")(args);
+        CHECK(p3 != 0 && RD32(p3) == 0 && RD32(p3 + 8) == 0);
+        memcpy(G + p1, "keep me", 8);
+        args[0] = p1; args[1] = 0xffffffd0u;
+        CHECK(crt_api("realloc")(args) == 0);                      /* no room: NULL, the old block is untouched (it was freed, and copied to address 0) */
+        CHECK(!memcmp(G + p1, "keep me", 8) && heap_size(p1) >= 100);
+        args[0] = p1; args[1] = 200;
+        CHECK(crt_api("realloc")(args) != 0);
+    }
+
     printf("test_module: %d checks, %d failed\n", checks, failures);
     return failures != 0;
 }

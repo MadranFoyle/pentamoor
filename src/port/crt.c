@@ -92,10 +92,11 @@ static uint32_t crt_onexit(const uint32_t *a) { return a[0]; }
 static uint32_t crt_malloc(const uint32_t *a) { return heap_alloc(a[0]); }
 static uint32_t crt_calloc(const uint32_t *a)
 {
-    uint32_t p = heap_alloc(a[0] * a[1]);
+    uint64_t n = (uint64_t)a[0] * a[1];                      /* a product that does not fit in 32 bits is a request that cannot be met, not a small one */
+    uint32_t p = n > 0xffffffffu ? 0 : heap_alloc((uint32_t)n);
 
     if (p)
-        guest_zero(p, a[0] * a[1]);
+        guest_zero(p, (uint32_t)n);
     return p;
 }
 static uint32_t crt_free(const uint32_t *a) { heap_free(a[0]); return 0; }
@@ -104,6 +105,8 @@ static uint32_t crt_realloc(const uint32_t *a)
 {
     uint32_t q = heap_alloc(a[1]), old = a[0] ? heap_size(a[0]) : 0;
 
+    if (!q)
+        return 0;                                            /* no room: NULL, and the old block stays as it was (it was copied to guest address 0 and freed) */
     if (a[0]) {
         memcpy(P(q), P(a[0]), old < a[1] ? old : a[1]);
         heap_free(a[0]);
