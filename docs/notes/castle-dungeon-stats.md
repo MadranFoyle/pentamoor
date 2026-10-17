@@ -99,3 +99,7 @@ dungeon it visits. Slot 5 entered that way at 640x480 (and, as a check, by walki
 The runtime now says what happened instead of dying with a bare SIGSEGV: `memcpy`, `memmove` and `memset` with a length of 2 GiB or more (a negative length that arrived unsigned, which in a 4 GiB address space can only fault) end with
 `port: memcpy of 4294967248 bytes (-48 as a signed number) called from the guest's 0x0050dfea: the game passed a negative size` and exit status 2 (`crt.c`, `crt_length_check`). The same poke without the map's
 invalidation at 640x480 shows that line.
+
+Found reading the same code path (the same family: a size that is negative as a signed number), **not seen in any game run**: the guest heap (`guest.c`, `heap_alloc`) rounded a size up to 16 and added it to the heap's top in 32 bits. A size of
+0xffffffd0 passed the "does it fit" test by wrapping round the end of the address space and moved the top backwards (every block made after it lay on top of live ones); a size of 0xfffffff5 and up rounded to 0 and became a block of 16 bytes.
+`calloc` multiplied its two arguments in 32 bits, and `realloc` with no room copied the old block to guest address 0 and freed it. They all answer "no" (NULL) now, as the C library and `HeapAlloc` do, and leave the heap as it was (checks in `test_module.c`).
