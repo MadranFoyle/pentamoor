@@ -11,6 +11,7 @@ It needs none of the game's files, so it runs the same on a fork. A third job, `
 5. `python -m pytest tools/install`: the installer (disc reader, archive, decompressor).
    `python -m pytest tools/steamdeck` (Linux and macOS jobs; not Windows, the scripts need `sh`): the Steam shortcut writer against a hand-built `shortcuts.vdf`, the installer's progress, `install-gui.sh`'s dialogs with stand-ins, the controller layout.
 6. `python -m pytest tools/lift/test_lift.py`: the lifter; compiles small harnesses with `cc`.
+   `python -m pytest tools/soak`: the soak scripts' control-pipe helpers (a teleport of the party tells the map to redraw), on a pipe, no game.
 
 What CI cannot do: build a real game module or run the game, because that needs the lifted C, which is made from the game files and is never committed. It does build the runtime, which is the part to be published.
 

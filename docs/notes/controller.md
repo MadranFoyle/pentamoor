@@ -137,5 +137,5 @@ pressed. Everything else keeps Back as a tap (dialogs, menus, duels, "Ready to Q
 Tested: `test_pad` (+9: the tap, a short hold, a hold with no repeat, a release in the middle, the guard asked at the press, no guard installed), `test_profile` (the range), `test_wm` (the title loop is `SCREEN_TITLE`, a table screen for the D-pad), and
 `tools/soak/back_guard.py` (640x480, headless, controller commands: at the title menu a tap and a 0.3 s hold do nothing and a 0.9 s hold ends the game; a tap on the difficulty screen goes back; on the map a tap opens
 "Ready to Quit?" and a second closes it).
-Not checked: with a real controller (the hold's feel: 0.5 s is a guess; nothing on the screen says "hold"), the dungeon of the saved game's entry 5 (the process crashed on entering it, with or without this change: `-11`, see
-`castle-dungeon-stats.md`), the encounter menu's Escape, the Load Saved Game dialog's.
+Not checked: with a real controller (the hold's feel: 0.5 s is a guess; nothing on the screen says "hold"), the dungeon of the saved game's entry 5 (the crash seen on a teleport onto it was the script's, not the dungeon's: see
+`castle-dungeon-stats.md`, "Teleporting by poke"), the encounter menu's Escape, the Load Saved Game dialog's.

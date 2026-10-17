@@ -136,6 +136,7 @@ make -C src/port test                          # window manager, graphics, sound
 python3 -m pytest tools/lift/test_lift.py      # the lifter, and the scan that finds the game's functions; the build id; no game address in src/port outside profile.c
 python3 -m pytest tools/install                # the installer: disc reader, archive, decompressor; compiler choice, module build commands, Zig download, lifter command lines, release layout, launcher
 python3 -m pytest tools/steamdeck              # the Steam Deck tools (Linux and macOS): the Steam shortcut writer on a hand-built shortcuts.vdf, the window installer's dialogs, the controller layout
+python3 -m pytest tools/soak                   # the control-pipe helpers of the soak scripts (the party teleport that must tell the map), on a pipe
 make -C src/port check-front                # the SDL front end builds and its checks pass
 make -C src/port check-module               # the runtime loads a game module (a nearly empty one made here), no game files needed
 make -C src/port check-run                  # the SDL window starts on SDL's dummy drivers, with that module

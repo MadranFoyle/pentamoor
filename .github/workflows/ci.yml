@@ -91,6 +91,9 @@ jobs:
       - name: Steam Deck tools tests (the Steam shortcut writer, the installer's windows and progress, the controller layout)
         run: python -m pytest tools/steamdeck
 
+      - name: Soak tools tests (the control-pipe helpers, on a pipe: no game)
+        run: python -m pytest tools/soak
+
   # The release archives (Windows, Linux, macOS), built the way a release builds them (package.yml) and checked: unpacked in an empty folder, the installer's own Python and compiler
   # step builds a small stub game module and the archive's runtime loads it. No game files are needed, and none are in the archives. A tag (release.yml) publishes the same ones.
   package:
