@@ -100,8 +100,12 @@ typedef struct Resolved { TTFont *f; double em; int own; } Resolved;
  * descent each rounded, ttf_cell) is not taller. MPZurich Cn BT, which the card text is set in: a cell of 10 is 8 ppem (cell 8 + 2), 11 is 9, 12 is 10. */
 int font_ppem_for_cell(const TTFont *f, int cell)
 {
+    static struct { const TTFont *f; int cell, ppem; } memo[64];      /* the search is up to 400 hinted cells long and Spells of the Ancients asks for each character it measures */
     int p, best = 1;
+    unsigned slot = (unsigned)(((uintptr_t)f >> 4) * 31u + (unsigned)cell) % 64u;
 
+    if (memo[slot].f == f && memo[slot].cell == cell)
+        return memo[slot].ppem;
     for (p = 1; p <= 400; p++) {
         int a, d;
 
@@ -110,6 +114,9 @@ int font_ppem_for_cell(const TTFont *f, int cell)
             break;
         best = p;
     }
+    memo[slot].f = f;
+    memo[slot].cell = cell;
+    memo[slot].ppem = best;
     return best;
 }
 
@@ -400,13 +407,26 @@ static uint32_t GetTextMetricsA(const uint32_t *a)
     return 1;
 }
 
+/* GetCharWidthA(hdc, first, last, &widths) and GetCharABCWidthsA(hdc, first, last, &abc): a width for each character from `first` to `last`, both as unsigned numbers. A range that
+ * ends at 0xFFFFFFFF (the game passes a character with its sign extended: 0xFF is 0xFFFFFFFF) must stop there, not wrap round for ever; one that runs backwards is an error, and so is
+ * one longer than the 65,536 characters a font has. */
+static int char_range(const uint32_t *a, uint32_t *count)
+{
+    if (a[2] < a[1] || a[2] - a[1] >= 0x10000u)
+        return 0;
+    *count = a[2] - a[1] + 1;
+    return 1;
+}
+
 static uint32_t GetCharWidthA(const uint32_t *a)
 {
     DC *dc = dc_of(a[0]);
-    uint32_t c, i = 0;
+    uint32_t n, i;
 
-    for (c = a[1]; c <= a[2]; c++, i++) {
-        char ch = (char)c;
+    if (!char_range(a, &n))
+        return 0;
+    for (i = 0; i < n; i++) {
+        char ch = (char)(a[1] + i);
 
         WR32(a[3] + 4 * i, dc ? (uint32_t)text_width(dc, &ch, 1, NULL) : 0);
     }
@@ -416,10 +436,12 @@ static uint32_t GetCharWidthA(const uint32_t *a)
 static uint32_t GetCharABCWidthsA(const uint32_t *a)
 {
     DC *dc = dc_of(a[0]);
-    uint32_t c, i = 0;
+    uint32_t n, i;
 
-    for (c = a[1]; c <= a[2]; c++, i++) {
-        char ch = (char)c;
+    if (!char_range(a, &n))
+        return 0;
+    for (i = 0; i < n; i++) {
+        char ch = (char)(a[1] + i);
 
         WR32(a[3] + 12 * i, 0);
         WR32(a[3] + 12 * i + 4, dc ? (uint32_t)text_width(dc, &ch, 1, NULL) : 0);

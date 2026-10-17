@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "port.h"
+#include "process.h"
 #include "sched.h"
 
 #define P(a) ((char *)(G + (a)))
@@ -19,7 +20,10 @@ static int crt_ready;
 
 static void crt_init(void)
 {
-    uint32_t arg0, arr;
+    char line[700], *tok[16];
+    uint32_t arr, strings;
+    int n = 0, i;
+    size_t len;
 
     if (crt_ready)
         return;
@@ -33,14 +37,39 @@ static void crt_init(void)
     argc_cell = heap_alloc(4);
     environ_cell = heap_alloc(4);
     acmdln_cell = heap_alloc(4);
-    arg0 = heap_alloc(48);
-    strcpy(P(arg0), "C:\\Magic\\Program\\MAGIC.EXE");
-    arr = heap_alloc(8);
-    WR32(arr, arg0);
+    proc_command_line(line, sizeof(line));                    /* the program's path and the arguments the program that started it gave (process.h) */
+    len = strlen(line);
+    strings = heap_alloc((uint32_t)len + 1);
+    strcpy(P(strings), line);
+    for (i = 0; line[i] && n < 16;) {                         /* split on blanks, a quoted word as one */
+        while (line[i] == ' ')
+            i++;
+        if (!line[i])
+            break;
+        if (line[i] == '"') {
+            tok[n++] = line + ++i;
+            while (line[i] && line[i] != '"')
+                i++;
+        } else {
+            tok[n++] = line + i;
+            while (line[i] && line[i] != ' ')
+                i++;
+        }
+        if (line[i])
+            line[i++] = 0;
+    }
+    arr = heap_alloc(4u * ((uint32_t)n + 1));
+    for (i = 0; i < n; i++) {
+        uint32_t s = heap_alloc((uint32_t)strlen(tok[i]) + 1);
+
+        strcpy(P(s), tok[i]);
+        WR32(arr + 4u * (uint32_t)i, s);
+    }
+    WR32(arr + 4u * (uint32_t)n, 0);
     WR32(argv_cell, arr);
-    WR32(argc_cell, 1);
+    WR32(argc_cell, (uint32_t)n);
     WR32(environ_cell, heap_alloc(8));
-    WR32(acmdln_cell, arg0);
+    WR32(acmdln_cell, strings);
     WR32(mb_cur_max_cell, 1);
 }
 
@@ -61,7 +90,7 @@ static uint32_t crt_errno(const uint32_t *a) { (void)a; return cell(&errno_cell)
 static uint32_t getmainargs(const uint32_t *a)
 {
     crt_init();
-    WR32(a[0], 1);
+    WR32(a[0], RD32(argc_cell));
     WR32(a[1], RD32(argv_cell));
     WR32(a[2], RD32(environ_cell));
     return 0;
@@ -451,7 +480,38 @@ static uint32_t crt_findclose(const uint32_t *a)
     return 0xFFFFFFFFu;
 }
 
+/* _spawnl(mode, path, arg0, arg1, ..., NULL): start a program (process.h). _P_WAIT (0) returns its exit code, _P_NOWAIT (1, 3: the id is the handle) and _P_DETACH (4) return a handle at once,
+ * _P_OVERLAY (2) is a start, a wait and the end of this program with the code. -1 and errno ENOENT for a program that cannot be started. */
+static uint32_t crt_spawnl(const uint32_t *a)
+{
+    char line[600] = "";
+    uint32_t mode = a[0], k;
+    long id;
+    int err, code;
+
+    for (k = 2; k < 14 && a[k]; k++) {
+        if (line[0])
+            strncat(line, " ", sizeof(line) - strlen(line) - 1);
+        strncat(line, P(a[k]), sizeof(line) - strlen(line) - 1);
+    }
+    err = proc_start(P(a[1]), line, &id);
+    if (err) {
+        WR32(cell(&errno_cell), err == 2 ? 2u : 12u);              /* ENOENT, ENOMEM */
+        return 0xFFFFFFFFu;
+    }
+    if (mode == 0 || mode == 2) {
+        code = proc_wait(id);
+        if (mode == 2) {
+            fflush(NULL);
+            exit(code);
+        }
+        return (uint32_t)code;
+    }
+    return proc_handle_new(id);
+}
+
 const WinApi CRT_APIS[] = {
+    {"msvcrtd.dll", "_spawnl", crt_spawnl},
     {"msvcrtd.dll", "qsort", crt_qsort}, {"msvcrtd.dll", "strcoll", crt_strcoll}, {"msvcrtd.dll", "_isctype", crt_isctype},
     {"msvcrtd.dll", "_findfirst", crt_findfirst}, {"msvcrtd.dll", "_findnext", crt_findnext}, {"msvcrtd.dll", "_findclose", crt_findclose},
     {"msvcrtd.dll", "__set_app_type", zero}, {"msvcrtd.dll", "_controlfp", controlfp}, {"msvcrtd.dll", "__setusermatherr", zero},

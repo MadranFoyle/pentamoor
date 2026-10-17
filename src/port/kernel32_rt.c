@@ -10,6 +10,7 @@
 
 #include "plat.h"
 #include "port.h"
+#include "process.h"
 
 #define P(a) ((char *)(G + (uint32_t)(a)))
 
@@ -76,15 +77,11 @@ static uint32_t GetCommandLineA(const uint32_t *a)
 {
     (void)a;
     if (!cmdline) {
-        char path[300];
-        size_t i;
+        char line[700];
 
-        snprintf(path, sizeof(path), "C:\\Magic\\Program\\%s", plat_basename(main_image.path));
-        for (i = 0; path[i]; i++)
-            if (path[i] >= 'a' && path[i] <= 'z')
-                path[i] = (char)(path[i] - 32);
-        cmdline = heap_alloc((uint32_t)strlen(path) + 1);
-        strcpy(P(cmdline), path);
+        proc_command_line(line, sizeof(line));           /* the program's path and the arguments the program that started this one gave (process.h) */
+        cmdline = heap_alloc((uint32_t)strlen(line) + 1);
+        strcpy(P(cmdline), line);
     }
     return cmdline;
 }
@@ -100,8 +97,13 @@ static uint32_t GetEnvironmentStrings(const uint32_t *a)           /* an empty b
 
 static uint32_t SetCurrentDirectoryA(const uint32_t *a)
 {
-    char norm[300];
+    char norm[300], host[1200];
+    struct stat st;
 
+    if (paths_host(P(a[0]), 0, host, sizeof(host)) && !stat(host, &st) && !S_ISDIR(st.st_mode)) {
+        k32_set_last_error(267);                                /* ERROR_DIRECTORY: a file is not a place to stand (FaceMaker.exe passes its own path, and goes on where it was) */
+        return 0;
+    }
     paths_normalize(P(a[0]), norm, sizeof(norm));
     snprintf(guest_cwd, sizeof(guest_cwd), "%s", norm);
     return 1;

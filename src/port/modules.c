@@ -16,7 +16,7 @@
  * name (Spells of the Ancients' programs import msvcrt.dll). */
 const WinApi *port_find_api(const char *dll, const char *name)
 {
-    static const WinApi *const tables[] = {KERNEL32_APIS, KERNEL32_RT_APIS, WINSYS_APIS, CRT_APIS, STDIO_APIS, USER32_APIS, CONTROLS_APIS, FILEDLG_APIS, WINHELP_APIS, MSGBOX_APIS, MENUS_APIS,
+    static const WinApi *const tables[] = {KERNEL32_APIS, KERNEL32_RT_APIS, WINSYS_APIS, PROCESS_APIS, CRT_APIS, STDIO_APIS, USER32_APIS, CONTROLS_APIS, FILEDLG_APIS, WINHELP_APIS, MSGBOX_APIS, MENUS_APIS,
                                            GDI32_STATE_APIS, GDI32_BLIT_APIS, GDI32_TEXT_APIS, VIDEO_APIS};
     size_t t;
     int pass;

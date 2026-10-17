@@ -36,7 +36,9 @@ typedef struct WinApi {
 } WinApi;
 
 /* Every implemented function of a module, ending with {0}. */
-extern const WinApi KERNEL32_APIS[], KERNEL32_RT_APIS[], WINSYS_APIS[], CRT_APIS[], STDIO_APIS[], VIDEO_APIS[];
+extern const WinApi KERNEL32_APIS[], KERNEL32_RT_APIS[], WINSYS_APIS[], PROCESS_APIS[], CRT_APIS[], STDIO_APIS[], VIDEO_APIS[];
+
+void k32_set_last_error(uint32_t code);                 /* SetLastError for the calls of other files (kernel32.c) */
 
 /* The implementation of an import by (library, function), or NULL (modules.c; msvcrt.dll is found in msvcrtd.dll's table). */
 const WinApi *port_find_api(const char *dll, const char *name);
@@ -84,6 +86,7 @@ extern __thread uint32_t port_sp;
 
 /* the game: the lifted code's tables, from the game module (gamemod.c) */
 extern const LiftGame *lift_game;
+const char *gamemod_path(void);               /* the path the game module was loaded from ("" for a module linked in) */
 void gamemod_load(const char *path);          /* path may be NULL: the module linked into the executable (the single-executable build), or $PENTAMOOR_MODULE */
 int gamemod_static_pick(const char *spec, const char *const names[], int n);   /* which of the linked-in programs ("magic", "deck", "duel") a module or program name means: -1 if none (iOS, gamemod.c) */
 LiftThreadState lift_thread_initial(void);
@@ -104,6 +107,8 @@ uint32_t guest_call(uint32_t target, int nargs, const uint32_t *args);
 int c_format(char *out, size_t cap, const char *fmt, uint32_t va);
 void paths_init(const char *root, const char *overlay);
 const char *paths_overlay_default(void);                       /* $PORT_OVERLAY or "port_overlay" */
+const char *paths_root(void);                                  /* the game folder and the overlay folder of this run, as paths_init was given them (the process model starts a program with the same) */
+const char *paths_overlay(void);
 void paths_normalize(const char *path, char *out, size_t cap);
 int port_glob(const char *pattern, const char *name);                                       /* fnmatch(pattern, name, 0): * ? [set] (controls.c) */
 void paths_mkdirs(const char *host);                                                  /* mkdir -p of a host path */

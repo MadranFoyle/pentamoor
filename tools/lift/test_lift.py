@@ -128,6 +128,16 @@ FUNCTIONS["Test_RolOF"] = (0x8860, bytes.fromhex("8b442404" "d1c0" "0f90c0" "0fb
 FUNCTIONS["Test_RorOF"] = (0x8870, bytes.fromhex("8b442404" "d1c8" "0f90c0" "0fb6c0" "c3"))
 FUNCTIONS["Test_RolZero"] = (0x8880, bytes.fromhex("8b542404" "8b4c2408" "31c0" "83f801" "d3c2" "b800000000" "83d000" "c3"))
 FUNCTIONS["Test_RolMem16"] = (0x88a0, bytes.fromhex("8b4c2404" "66d101" "0fb701" "c3"))      # rol word [ecx],1; movzx eax,word [ecx]
+# setjmp and longjmp of the C runtime, as the game's functions call them: a thunk `jmp [_setjmp3]` the linker made, and `call [longjmp]` direct.
+# Test_Setjmp(value): ebx = 0x1111; setjmp(buf); the first time, Test_Jump(buf, value) sets ebx to 0xdead and longjmps; the second time (EAX = value, or 1 for 0) it returns
+# value | (ebx << 16): ebx must be what it was at the setjmp, not what Test_Jump left, and the stack must be the caller's.
+SETJMP_SLOT, LONGJMP_SLOT = 0x7010, 0x7014
+FUNCTIONS["Helper_SjThunk"] = (0x8a00, bytes.fromhex("ff25") + SETJMP_SLOT.to_bytes(4, "little"))
+FUNCTIONS["Test_Jump"] = (0x8980, bytes.fromhex("53" "bbadde0000" "8b442408" "8b4c240c" "51" "50" "ff15") + LONGJMP_SLOT.to_bytes(4, "little")
+                          + bytes.fromhex("83c408" "5b" "31c0" "c3"))
+FUNCTIONS["Test_Setjmp"] = (0x8900, bytes.fromhex("53" "bb11110000" "83ec40" "6a00" "8d442404" "50") + _call(0x8910, 0x8a00)
+                            + bytes.fromhex("83c408" "85c0" "751a" "8b8c2448000000" "51" "8d442404" "50") + _call(0x8929, 0x8980)
+                            + bytes.fromhex("83c408" "b8ffffffff" "c1e310" "09d8" "83c440" "5b" "c3"))
 CALLEE = 0x5100
 IMPORT_SLOT = 0x7000
 
@@ -147,6 +157,8 @@ def harness(tmp_path_factory):
     out = tmp_path_factory.mktemp("lift")
     lifter, sources, lifted = Lifter(), [], []
     lifter.imports[IMPORT_SLOT] = "Sleep"
+    lifter.imports[SETJMP_SLOT] = "_setjmp3"
+    lifter.imports[LONGJMP_SLOT] = "longjmp"
     for name, (addr, code) in FUNCTIONS.items():
         if name == "Test_BadJump" or name.startswith("Helper_"):
             continue
@@ -486,6 +498,26 @@ def test_a_rotate_sets_the_carry_and_the_overflow_and_a_rotate_by_zero_sets_noth
     assert run(tmp_path, harness, vector("Test_RolZero", [0x12345678, 0], 1))[0] == "PASS"
     assert run(tmp_path, harness, vector("Test_RolZero", [0x12345678, 32], 1))[0] == "PASS"
     assert run(tmp_path, harness, vector("Test_RolZero", [0, 1], 0))[0] == "PASS"
+
+
+def test_longjmp_goes_on_after_the_setjmp_with_the_registers_it_had_and_the_value(tmp_path, harness):
+    for value, want in ((7, 7), (0x1234, 0x1234), (0, 1)):          # a value of 0 comes back as 1
+        status, messages, _ = run(tmp_path, harness, vector("Test_Setjmp", [value], _s32(0x11110000 | want)))
+        assert status == "PASS", (value, messages)
+
+
+def test_a_call_of_setjmp_is_written_out_in_the_function_and_makes_no_call():
+    lifter = Lifter()
+    lifter.imports[SETJMP_SLOT] = "_setjmp3"
+    lifter.imports[LONGJMP_SLOT] = "longjmp"
+    src, targets, _, _ = lifter.lift_function(getbytes, 0x8900, "Test_Setjmp", frozenset())
+    assert "LIFT_SETJMP(cjb_[0])" in src and "jmp_buf cjb_[1];" in src and "lift_jb_store" in src
+    assert targets == {0x8980}                      # the call of Test_Jump; not the thunk
+    src, targets, _, _ = lifter.lift_function(getbytes, 0x8980, "Test_Jump", frozenset())
+    assert "lift_longjmp(RD32(R_esp), RD32(R_esp + 4u));" in src and not targets
+    other = Lifter()                                # with no import named _setjmp3 the thunk is only a function
+    src, targets, _, _ = other.lift_function(getbytes, 0x8900, "Test_Setjmp", frozenset())
+    assert "LIFT_SETJMP" not in src and 0x8a00 in targets
 
 
 def test_bts_with_a_register_index_reaches_the_next_dword(tmp_path, harness):

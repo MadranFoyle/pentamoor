@@ -185,6 +185,7 @@ All are environment variables. This table is the whole list of the ones the runt
 | `PENTAMOOR_PROGRAM`, `PENTAMOOR_LOG` | iOS only: `magic` (default), `deck` or `duel` (else `Documents/program.txt`); `PENTAMOOR_LOG=console` keeps stderr on the console instead of `Documents/pentamoor.log` |
 | `PORT_FRAME_MS` | the overworld's frame time in ms (default 60) |
 | `PORT_OVERLAY` | where saves and other writes go |
+| `PORT_CMDLINE` | set by the runtime for a program it starts for another (`src/port/process.h`: shandalar.exe 2.15 starts `FaceMaker.exe /S`): the arguments after the program's name, which `GetCommandLineA` and the C runtime's `argv` show. The new process also gets `PORT_OVERLAY` and `PORT_RES` of the one that started it, its own `PORT_CONTROL` (the parent's name and `.facemaker`: a second pipe, made by the parent) and no `PORT_SCRIPT` |
 | `PORT_MSGBOX=ask` / `auto` | the game's `MessageBoxA`: `ask` shows the box and waits for an answer, `auto` answers at once with the default button (`IDOK`, `IDYES`, ...) and logs it. Unset: `auto` when `PORT_CONTROL`, `PORT_SCRIPT`, `PORT_HEADLESS` or `SDL_VIDEODRIVER=dummy` is in use (nobody can answer), else `ask` |
 | `PORT_FFMPEG=/path/to/ffmpeg` | which ffmpeg plays the Indeo clips (`none`: play as if there were none; default: the PATH, then the usual places) |
 | `PORT_TRACE_FN=0xADDR`, `PORT_FRAME_LOG=1`, `PORT_UI_LOG=1` | tracing: the arguments of each call of a lifted function; frames slower than the period; what each click did |

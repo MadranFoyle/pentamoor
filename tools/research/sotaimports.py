@@ -23,7 +23,7 @@ from import_signatures import signature  # noqa: E402
 
 ENTRY = re.compile(r'\{\s*"([A-Za-z0-9_.]+\.dll|#?\w*)"\s*,\s*"([^"]+)"\s*,\s*[A-Za-z_0-9]+\s*\}')
 # the tables pe.c searches (find_api); the host libraries (MAGSND.DLL, MAGVID.DLL) are separate tables and count as provided by name
-TABLE_FILES = ("kernel32.c", "kernel32_rt.c", "winsys.c", "crt.c", "stdio.c", "user32.c", "controls.c", "filedlg.c", "winhelp.c", "msgbox.c", "menus.c", "gdi.c", "gdi_blit.c", "gdi_text.c", "video.c")
+TABLE_FILES = ("kernel32.c", "kernel32_rt.c", "winsys.c", "process.c", "crt.c", "stdio.c", "user32.c", "controls.c", "filedlg.c", "winhelp.c", "msgbox.c", "menus.c", "gdi.c", "gdi_blit.c", "gdi_text.c", "video.c")
 
 
 def port_table(port):

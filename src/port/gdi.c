@@ -15,8 +15,19 @@ typedef struct Obj { int kind; void *p; } Obj;
 static Obj *objs;
 static int nobjs, capobjs;
 
+/* The slots of device contexts that were released (ReleaseDC, DeleteDC) are used again by the next one, as Windows hands a handle out again: a program that measures a character with
+ * GetDC, SelectObject, GetCharABCWidths and ReleaseDC (Spells of the Ancients does it for every character it draws) would otherwise take a slot and a context for each. */
+static uint32_t *free_dcs;
+static int nfree_dcs, capfree_dcs;
+
 uint32_t obj_new(int kind, void *p)
 {
+    if (kind == O_DC && nfree_dcs) {
+        uint32_t i = free_dcs[--nfree_dcs];
+
+        objs[i] = (Obj){kind, p};
+        return OBJ_BASE + 4u * i;
+    }
     if (nobjs == capobjs) {
         capobjs = capobjs ? capobjs * 2 : 512;
         objs = realloc(objs, (size_t)capobjs * sizeof(*objs));
@@ -55,6 +66,27 @@ void obj_free(uint32_t h)
 
     if (o)
         o->kind = 0;
+}
+
+/* ReleaseDC and DeleteDC: the context goes (with the copies SaveDC made) and its handle can be given out again. A handle that is not a context, or has been released, is left alone. */
+void gdi_release_dc(uint32_t h)
+{
+    Obj *o = slot(h);
+    DC *d, *next;
+
+    if (!o || o->kind != O_DC)
+        return;
+    for (d = o->p; d; d = next) {
+        next = d->saved;
+        free(d);
+    }
+    o->kind = 0;
+    o->p = NULL;
+    if (nfree_dcs == capfree_dcs) {
+        capfree_dcs = capfree_dcs ? capfree_dcs * 2 : 64;
+        free_dcs = realloc(free_dcs, (size_t)capfree_dcs * sizeof(*free_dcs));
+    }
+    free_dcs[nfree_dcs++] = (h - OBJ_BASE) / 4;
 }
 
 /* The window manager's names for the same table (cursors, icons, accelerators: opaque handles). */
@@ -1207,7 +1239,7 @@ static uint32_t SelectObject(const uint32_t *a)
 }
 
 static uint32_t DeleteObject(const uint32_t *a) { obj_free(a[0]); return 1; }
-static uint32_t DeleteDC(const uint32_t *a) { obj_free(a[0]); return 1; }
+static uint32_t DeleteDC(const uint32_t *a) { gdi_release_dc(a[0]); return 1; }
 
 /* A control asked its parent for its colours (WM_CTLCOLOR...): a fresh device context to hand over, and what the answer set on it and which brush it returned. */
 uint32_t gdi_color_query_dc(void)

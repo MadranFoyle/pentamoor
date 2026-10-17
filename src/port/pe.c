@@ -82,13 +82,32 @@ Import *import_by_slot_or_stub(uint32_t addr)
 {
     if (addr >= STUB_BASE && addr < STUB_BASE + 16u * (uint32_t)nimports && !(addr & 15))
         return &imports[(addr - STUB_BASE) / 16];
-    /* slots are found by search: a call through the table names the slot, and there are a few hundred */
+    /* a call through the table names the slot: found through a hash of the slots (a program that measures every character it draws makes a hundred thousand such calls a second) */
     {
+        static int *index_table, indexed, mask;
         int i;
 
-        for (i = 0; i < nimports; i++)
-            if (imports[i].slot == addr)
-                return &imports[i];
+        if (indexed != nimports) {
+            int cap = 1;
+
+            while (cap < nimports * 2 + 2)
+                cap <<= 1;
+            free(index_table);
+            index_table = malloc((size_t)cap * sizeof(*index_table));
+            memset(index_table, 0xff, (size_t)cap * sizeof(*index_table));
+            mask = cap - 1;
+            for (i = 0; i < nimports; i++) {
+                int h = (int)((imports[i].slot >> 2) * 2654435761u >> 7) & mask;
+
+                while (index_table[h] >= 0)
+                    h = (h + 1) & mask;
+                index_table[h] = i;
+            }
+            indexed = nimports;
+        }
+        for (i = (int)((addr >> 2) * 2654435761u >> 7) & mask; index_table[i] >= 0; i = (i + 1) & mask)
+            if (imports[index_table[i]].slot == addr)
+                return &imports[index_table[i]];
     }
     return NULL;
 }

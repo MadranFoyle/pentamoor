@@ -35,6 +35,9 @@ void paths_init(const char *root, const char *overlay)
     snprintf(overlay_root, sizeof(overlay_root), "%s", overlay);
 }
 
+const char *paths_root(void) { return game_root; }
+const char *paths_overlay(void) { return overlay_root; }
+
 /* An absolute guest path (backslashes, no dot segments, upper-case drive) from a possibly relative one. */
 void paths_normalize(const char *path, char *out, size_t cap)
 {

@@ -10,6 +10,7 @@
 
 #include "gdi_int.h"
 #include "plat.h"
+#include "process.h"
 #include "sched.h"
 #include "wm.h"
 
@@ -202,6 +203,9 @@ static uint32_t CloseHandle(const uint32_t *a)
 {
     Handle *h = get_handle(a[0]);
 
+    if (proc_handle_known(a[0]))
+        proc_handle_close(a[0]);
+
     if (h) {
         if (h->kind == H_FILE && h->fd >= 0)
             close(h->fd);
@@ -215,6 +219,9 @@ static int thread_done(void *p) { return sched_thread_done((GThread *)p); }
 static uint32_t WaitForSingleObject(const uint32_t *a)
 {
     Handle *h = get_handle(a[0]);
+
+    if (proc_handle_known(a[0]))                              /* a program this one started (process.h) */
+        return proc_handle_wait(a[0], a[1] == 0xFFFFFFFFu ? -1 : a[1] / 1000.0) ? 0 : 0x102;
 
     if (h && h->kind == H_THREAD) {
         GThread *t = h->thread;                                /* not h itself after the wait: another thread may grow the handle table meanwhile */

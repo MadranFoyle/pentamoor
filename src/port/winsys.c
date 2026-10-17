@@ -23,8 +23,6 @@
 #define ERROR_INSUFFICIENT_BUFFER 122
 #define ERROR_MORE_DATA 234
 
-void k32_set_last_error(uint32_t code);
-
 static uint32_t zero(const uint32_t *a) { (void)a; return 0; }
 
 /* ---- the version and the folders --------------------------------------------------------------------------------------------------- */

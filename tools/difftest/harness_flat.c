@@ -244,6 +244,12 @@ uint32_t lift_call(uint32_t target, uint32_t argp, uint32_t *cleanup)
         row = &dyn;
     }
     if (!row) {
+        for (i = 0; i < LIFTED_COUNT; i++)
+            if (LIFTED[i].entry == target) {                 /* a lifted function of the same file: it runs (setjmp and longjmp across two of them are tested this way) */
+                *cleanup = 0;
+                lift_in = lift_out;
+                return LIFTED[i].fn(argp - 4u);
+            }
         snprintf(error_text, sizeof(error_text), "call to 0x%08x, which the generated table does not know", target);
         longjmp(bail, 1);
     }
