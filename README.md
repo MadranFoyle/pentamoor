@@ -46,13 +46,13 @@ Not tried on a real Steam Deck yet: it has been checked on a virtual 1280x800 sc
 
 1. In desktop mode (Steam button, Power, Switch to Desktop), download `pentamoor-<version>-steamdeck.tar.gz` from the [releases](https://github.com/MadranFoyle/pentamoor/releases) and extract it
    where it can stay, for example in a `Games` folder in your home folder.
-2. Double-click **Install Pentamoor**. A window asks for your disc image (the `.iso` of your own *Magic: The Gathering* CD, version 1.0) and shows the progress. It takes 2 to 15 minutes and about 1 GB of
-   space, and downloads a C compiler (about 100 MB) into that folder, because SteamOS has none. Nothing else on the Deck is changed.
+2. Double-click **Install Pentamoor**. A window asks for your disc image (the `.iso` of your own *Magic: The Gathering* CD, version 1.0) and shows the progress. It takes 2 to 15 minutes, needs about 1.2 GB of free
+   space while it works, and downloads a C compiler (about 100 MB) into that folder, because SteamOS has none. Nothing else on the Deck is changed.
 3. Say yes to **Add Pentamoor to Steam**. (If Steam is running it asks to close it first.) Switch back to Gaming Mode: Pentamoor is in your Library.
 4. Open Pentamoor's page, press the controller button, and choose the **Gamepad** layout (Steam's own "Gamepad with Mouse Trackpad" works well: the right trackpad is the mouse). The Pentamoor layout offered
    in step 3 is an alternative that nobody has loaded in Steam yet. The Steam steps are in [docs/notes/steamdeck.md](docs/notes/steamdeck.md).
 
-What to expect: the game starts full screen, at its own 1024x768 with a thin border on the 1280x800 screen. The left stick moves the cursor, A and B click, the buttons are in the table below, and the trackpads
+What to expect: the game starts full screen, at its own 1024x768 in the middle of the 1280x800 screen (black bars 128 pixels wide at the sides and 16 above and below). The left stick moves the cursor, A and B click, the buttons are in the table below, and the trackpads
 and the touch screen are the mouse. Steam + X brings up Steam's keyboard for typing a name. There is no sound, speed or battery information from a Deck yet.
 
 ### iOS (experimental, sideload only)
@@ -64,7 +64,7 @@ not on TestFlight) and never to be given to anyone. What it needs, how to build 
 ### From source
 
 You need Python 3, a C compiler, `make` and SDL2 (`brew install sdl2` on macOS, `libsdl2-dev` on Debian).
-`ffmpeg` is optional: it plays the ending movie and the spell and wizard clips.
+`ffmpeg` is optional: it plays the ending movie and the spell and wizard clips. (Windows: an MSYS2 MINGW64 shell with `make`, gcc and SDL2; CONTRIBUTING.md, "Building by hand".)
 
 ```bash
 python3 -m pip install pefile capstone
@@ -92,13 +92,14 @@ or Switch pad: anything SDL knows as a game controller, plugged in before or whi
 
 | Controller | |
 |---|---|
-| Left stick | move the cursor (hold the left trigger to go slowly, press the right stick in to go fast) |
+| Left stick | move the cursor (hold the left trigger to go slowly, hold the right stick pressed in to go fast) |
 | D-pad | in a duel, a dialog or a menu, and on the game's own screens (title, new game, village and shops, world map, clues, wizard stats, the encounter boxes, the deck builder's cards and buttons): jump the cursor to the next card, button or row in that direction (hold to keep going); on the map, in castles and dungeons the arrow keys that walk (repeating while held) |
 | A / B | left click (hold to drag) / right click |
 | X or Start | Enter |
 | Y | double click (on a card in a duel, the game pays its mana for you) |
 | Back | Escape (cancel; on the map it asks "Ready to Quit?"; at the title menu hold it half a second to leave the game, a tap does nothing there) |
 | LB / RB | Page Up / Page Down (lists, the deck builder's card row) |
+| Left stick pressed in (L3) | Space (stops the party on the map when it is walking by the arrow keys) |
 | Right trigger + left stick | walk on the map in the direction you push |
 | Right stick | arrow keys (castles, dungeons) |
 
@@ -107,7 +108,7 @@ Typing a name needs a keyboard (on a Steam Deck, Steam's keyboard: Steam + X). `
 
 ### Display
 
-The game's picture is scaled to the window or the screen with its shape kept, and the mouse follows it, on every system (a Retina Mac and a scaled Windows display get the full resolution of the screen).
+The game's picture is scaled to the window or the screen with its shape kept, and the mouse follows it, on every system. A Retina Mac gets the full resolution of its screen; the same is asked of Windows when its display is scaled, but that has not been seen on a real Windows machine.
 The window starts at the largest whole-number multiple of the game's size that fits about 90% of your screen, can be dragged to any size (not below the picture's own size), and is called Pentamoor.
 
 | Keys | |
@@ -152,7 +153,7 @@ written at the bottom); the reward screen follows. If something else seems stuck
 (`PORT_UI_LOG=1 ./pentamoor 2> pentamoor.log` adds what each click did).
 
 Little of it has been played for long with a real mouse and keyboard yet, so expect rough edges and
-please report them. Known gaps: the in-game Help and About, and the parts of the game nobody has
+please report them. Known gaps: the in-game Help (the game's help file is in a format Pentamoor cannot show, so the menu item says so), and the parts of the game nobody has
 played through yet (for example winning a Gauntlet, or every castle event).
 
 ## Contributing

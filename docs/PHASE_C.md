@@ -1,5 +1,7 @@
 # Phase C: from the emulator to a native program
 
+*(Written in stages as the work went. Where an early section gives a count or a state ("to come", "not yet", "N checks"), a later section or a note in `docs/notes/` supersedes it: for the window and the display [notes/display.md](notes/display.md), for dialogs "Dialogs as Windows 98 draws them" below, for Windows the section "Windows", for what is run on which system [notes/ci.md](notes/ci.md) and the README. Counts of checks are as of writing; `make -C src/port test` prints today's. Documentation audit 2026-10.)*
+
 Phase A runs the original executables in an emulator (Python Win32 layer, Unicorn). Phase B put native C into that run: the
 engine functions written by hand, and everything the lifter (`tools/lift`) could turn into C from the machine code, hosted
 inside the emulated game. Phase C removes the emulator: the whole program becomes C, the Win32 calls become a C layer over SDL2,
@@ -23,7 +25,7 @@ and the Python layer retires.
 2. **A standalone host.** A C program that maps the PE images into a guest address space, sets up the first thread, and runs the
    lifted entry point. Every import goes to a C function by name; one that does not exist yet reports itself and stops, so the
    run itself orders the work list.
-3. **The Win32 layer in C** (`src/winlayer`, to come): kernel32 and the C runtime first (the start-up code needs them), then user32
+3. **The Win32 layer in C** (`src/port`; it was `src/winlayer`, to come, when this was planned): kernel32 and the C runtime first (the start-up code needs them), then user32
    (window classes, windows, message queues, dialogs), gdi32 (device contexts, bitmaps, palettes, `BitBlt`), winmm and the two
    sound/video libraries, over SDL2. The Python layer (`tools/emu_spike/winemu`, 8,500 lines) is the specification: every rule in
    it was found by playing the game. Each function is checked by recording the calls the Python layer receives in a play session
@@ -93,7 +95,7 @@ Opening a library and finding a function are the two small functions `load_modul
 ### Windows
 
 The runtime builds and its tests run on Windows x86-64 with MSYS2's MinGW-w64 (gcc, winpthreads, SDL2 from pacman): CI's `windows` job runs `make -C src/port test`, `check-front`,
-`all`, `check-module`, `check-run` and `check-program` in an MSYS2 MINGW64 shell, and the build is also checked from macOS with `x86_64-w64-mingw32-gcc` and with `zig cc -target x86_64-windows-gnu`
+`all`, `check-module`, `check-run`, `check-program` and `check-build` in an MSYS2 MINGW64 shell (and `pytest tools/install` with a native Windows Python), and the build is also checked from macOS with `x86_64-w64-mingw32-gcc` and with `zig cc -target x86_64-windows-gnu`
 (`python -m ziglang cc`). Nothing has been run on a real Windows machine with the game: the game's files are not in CI, so the title screen, input, sound and so on on Windows are
 not verified; what is verified is the build, the unit tests (they make windows, draw, mix sound, read and write files, load the stub module and run lifted-style functions
 in it), the SDL window starting on SDL's dummy drivers, and `check-program`: `stubgame/mkpe.c` writes a 1.5 KB PE32 program (no game code in it), `pentamoor-run.exe` maps it,
@@ -212,6 +214,7 @@ Now each build is a **profile**: a row of a table, found by the **build id** of 
   | `pace` | `tick_fn` (overridden), `ticks`, `frame_ret`, `map_loop` | `pace.c` |
   | `buttons` | `pass`, `mouse_var`, `snapshot`, `ctx_cur`, `ctx_count`, `ctx_ptrs`, the six offsets in a record | `pace.c`, `screens.c` |
   | `textmenu`, `buycards`, `clues` | the loops' code ranges, the text menu's seven globals, the cards' ids, the frame offsets of the loops' locals | `screens.c` |
+  | `title` | `loop` (the title menu's loop, the one screen where Escape leaves the game with no question) | `screens.c`, `main.c` (`pad_set_back_guard`) |
   | `keys` | `wait`, `pop`, `wait_loop_ret`, the (Y/N) `sites`, `name_loop` | `yesno.c`, `textfocus.c` |
   | `display` | `width`, `height` (the globals the screen size is written into) | `main.c` through `profile_write_screen_size` |
 
@@ -269,7 +272,7 @@ callback) and took them too: 1,954 of 2,018 functions. (It finds every function 
 
 ### The window and input (item 3, third part)
 
-`src/port` opens an SDL2 window (the screen's size, 1024x768 by default and made smaller to fit the display, resizable, the mouse in screen pixels whatever the size) and the game takes the mouse and keyboard
+`src/port` opens an SDL2 window (1024x768 by default; how it is sized, scaled and made full screen is [notes/display.md](notes/display.md); the mouse is in screen pixels whatever the size) and the game takes the mouse and keyboard
 from it. SDL wants the main thread for the window, so the game runs on a new thread and the window half (`front_sdl.c`) only queues what it
 sees; the guest half (`front.c`) serves the queue on whichever guest thread holds the baton, wherever the baton passes and wherever the game
 waits for a message, and publishes a composed frame up to 30 times a second. So the guest's state is touched by one thread at a time and the
@@ -333,7 +336,7 @@ memory, with the instruction that made it, found the stack collision) and a chec
   (`sound.c`, `video.c`; ports of winemu/magsnd.py and movie.py). Sound and video are real (next sections).
 
 With STATWIN loaded, "Resume Game" shows the saved encounter exactly as the emulator does, and "Duel a Sorcerer" starts a duel: the board, the coin
-toss, the mulligan and ante dialogs. (The dialogs are the compositor's plain stand-ins for the game's dialog templates, as in the emulator.)
+toss, the mulligan and ante dialogs. (The dialogs were the compositor's plain stand-ins for the game's dialog templates, as in the emulator; they are drawn the way Windows 98 draws them now, "Dialogs as Windows 98 draws them" below.)
 
 ### A duel, played through
 
@@ -356,7 +359,7 @@ Three bugs came out of it (this and the overworld's), none of them in the game:
   "assign attackers" panel stayed on top and covered the Done button and the creatures: the duel could not go on.
 - (Before it, in the overworld: the thread stacks.)
 
-Not yet: the rest of the lifter gaps (the five bogus addresses, the register-argument fragments).
+Not yet: the rest of the lifter gaps (the five bogus addresses, the register-argument fragments). (Done since: [notes/lifter-gaps.md](notes/lifter-gaps.md): the five were not functions, the others are covered another way.)
 
 ### Sound
 
@@ -372,8 +375,8 @@ instead, so a wait for a sound still ends when the sound would have. `PORT_AUDIO
 
 **There is no MIDI.** `PlayMidiFile` is an empty stub in MAGSND.DLL (it returns 0), nothing calls it, and no `.mid` file exists on the install or the disc. The music is
 **WAV files on the game CD** (`Sound\LOCMUS0..19.WAV` for the overworld, the castle themes, `DUELTUNE.WAV`, `WINGAME.WAV`, ...), which the retail install does not copy; the game
-opens them as `x:\sound\...` on the CD drive. `tools/emu_spike/install_cd_music.py --native` copies them from your disc image (it mounts the `.iso`, read only) into the
-native program's overlay, `port_overlay/Program/Sound`; without them the game runs silent and the music calls fail quietly. Played with them, the audio the device is given
+opens them as `x:\sound\...` on the CD drive. The installer (`tools/install/install.py`) copies them from your disc image (it reads the `.iso` without mounting it) into the game's folder, `Magic/Program/Sound`
+(`tools/emu_spike/install_cd_music.py --native` does it to `port_overlay/Program/Sound` for the emulator's sake); without them the game runs silent and the music calls fail quietly. Played with them, the audio the device is given
 holds the file's samples exactly (`PORT_AUDIO_DUMP`: the first 1,000 samples of `DUELTUNE.WAV` found in the dump with a ratio of 1.0 and no difference).
 
 What the DLL does, as read from its code, and `sound.c` now follows:

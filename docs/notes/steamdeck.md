@@ -78,7 +78,7 @@ What changed (`front_sdl.c`, `textin.c`, tests in `test_steamdeck.c` and `test_w
 
 ## When the pad does nothing in a duel: what to send
 
-Report from a Deck (Game mode, the archive of `main` at de0e03f): "the controller input isn't working at all", then "it kind of works for some things, but not in duels". Nothing in the program is known to be wrong
+Report from a Deck (Game mode, the archive of `main` at de0e03f, a commit of the maintainer's earlier repository: pull request numbers and commit ids in these notes refer to it, see the README, "History"): "the controller input isn't working at all", then "it kind of works for some things, but not in duels". Nothing in the program is known to be wrong
 (the next section lists what was run and what that found: nothing), so the program now writes down what it sees, and the log says which of the possible causes it is.
 
 **The switch** is `PORT_PAD_LOG=1`. It prints to stderr and writes the file `pentamoor-input.log` in the folder the program was started in (the game's own folder, the one with `pentamoor` in it; emptied at each start). `PORT_PAD_LOG=/some/file.log`

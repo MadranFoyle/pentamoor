@@ -1,5 +1,7 @@
 # Winning a duel: first attempt (not yet won)
 
+> *Correction (documentation audit, 2026-10): superseded. The first duel won in the port, and what the real life totals are (the poked address below is a copy), is in [duel-won.md](duel-won.md). This is kept as the record of the first try.*
+
 Goal: see the screens after a duel is WON (result dialog, reward / ante card, back to the map). Not reached in this session; what was learned:
 
 - `tools/soak/win_attempt.py` (run from the repo root with `S=<outdir>` set and the dummy SDL drivers) starts a game at 800x600, takes the

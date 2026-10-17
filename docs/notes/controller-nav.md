@@ -136,7 +136,7 @@ plays the duel to a board with lands and creatures on both sides; the life total
 - **The map**: `pad nav` says `none` and the D-pad, held, walks the party as the arrow key (`pad_play.py --only newgame`).
 - **`DUEL.EXE`**: the same duel code; the hand, A on a card (a Swamp played from the hand: the land became a target at once), and its setup dialog: 14 targets (radio buttons, two combo boxes, five push buttons), a combo
   box dropped with A (its rows are targets: `mode combo`), down twice and A chose the third deck.
-- Unit tests: `test_nav` (84 checks: grids, the user's examples in a layout of a hand, territories, phase icons and life totals, staggered rows, ties, an empty list, a pointer on nothing, scrolling lists, the wide bar),
+- Unit tests: `test_nav` (91 checks: grids, the user's examples in a layout of a hand, territories, phase icons and life totals, staggered rows, ties, an empty list, a pointer on nothing, scrolling lists, the wide bar),
   `test_wm` (the targets read off windows of a duel's classes laid out as at 1024x768: strips, the prompt bar over a card, the combat column, a dialog, a menu, a combo list), `test_pad` (a D-pad press is a request
   in a duel and a key elsewhere, for the whole hold; repeats; the answers).
 

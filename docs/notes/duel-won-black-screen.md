@@ -6,7 +6,7 @@ Report: after winning a duel the two clips played, then the screen stayed black 
 ## Cause
 
 After the "You won!" dialog the duel thread calls STATWIN's clip function (0x3000268a): the crystal ball clip, the wizard's hit clip, then a poll loop (0x3000105a, `PeekMessage(NULL)`
-on the duel thread's own queue) that ends on `WM_LBUTTONUP` or `WM_KEYDOWN`. Since PR #107 the clips' windows are *held* when the game calls `DrawVidBackground` (not drawn, still there) so that
+on the duel thread's own queue) that ends on `WM_LBUTTONUP` or `WM_KEYDOWN`. Since PR #107 (of the earlier repository) the clips' windows are *held* when the game calls `DrawVidBackground` (not drawn, still there) so that
 input has a window of that thread to arrive at. Keys were routed to the held window (`wm_key_target`), **mouse clicks were not**: they went to the window under the pointer, which is the main
 window of the first thread. Only a click inside the hit clip's undrawn rectangle (200x300 at (532,192) at 1024x768, (340,48) at 640x480) or inside the ball clip's reached it. The screen
 behind is black (the game itself fills the whole main window with black twice, right after a palette fade, before the clips: `FillRect` (0,0)-(1024,768), brush 0,0,0, from 0x50d5e7), so

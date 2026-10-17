@@ -15,6 +15,8 @@ in `src/port/test_gdi.c`. Checked with six runs at 1024x768 after the fix: no bl
 
 # "Sorcerer casts..." black panel at 640x480
 
+> *Correction (documentation audit, 2026-10): found and fixed, see [sorcerer-casts-dialog.md](sorcerer-casts-dialog.md).*
+
 Not found in the time given. A script that resumed the saved game, started the Sorcerer duel and pressed Return reached the duel board but did not
 get to the dialog within 80 s; the dialog needs the AI to cast a spell. Next step: play to the Sorcerer's first spell, dump the dialog's child
 windows (`windows`) and look for a static control with a bitmap or an owner-draw control that `controls.c` paints as black.

@@ -55,7 +55,7 @@ Combo boxes: opponent's (350,204), yours (350,311); click, then a row, or Up/Dow
 * Duel Options: layout Standard/Advanced, "Show cue cards", "abilities on small cards", "power/toughness", territory background radios all work with the clicks now; OK then a duel with the Advanced
   layout started and ran without a crash (the layout itself was not looked at).
 * Create Deck opens the same deck builder as `DECK.EXE` ("Deck Maker", "New Deck"); Exit comes back to the setup dialog.
-* "Help..." in the duel menu: nothing happens (no window, no crash; WinHelp is not implemented). "About..." not tried.
+* "Help..." in the duel menu: nothing happens (no window, no crash; WinHelp is not implemented). "About..." not tried. *Correction (documentation audit, 2026-10): `Help...` now shows a box saying the help file cannot be shown, and `About...` was run: [help-about.md](help-about.md).*
 * The result screen's window is 492 px high (screen 480): the bottom is clipped, the buttons are still in view.
 * Not done: a Gauntlet won (so "round 2" as the next *match*), Wizard/Apprentice levels, a deck picked with Create Deck and used in a duel, the file dialog's list scrolling with more
   than ~9 files (the list has no scroll bar of its own; Up/Down and the wheel are not wired into it), a unit test of `file_dialog` (it needs a guest thread; checked by hand as above).
