@@ -129,7 +129,7 @@ class Tree:
 
 class Game:
     def __init__(self, repo, res="640x480", workdir=None, exe="src/port/build/pentamoor-run", program="sources/installed/Magic/Program/MAGIC.EXE",
-                 extra_env=None, module=None):
+                 extra_env=None, module=None, overlay_seed="sources/emu_overlay", args=()):
         self.repo = repo
         self.res = res
         self.w, self.h = (int(v) for v in res.split("x"))
@@ -142,6 +142,8 @@ class Game:
         # module="none": the old single executable (make -C src/port static), which has the game linked in and takes no -m
         self.module = module or os.environ.get("PENTAMOOR_MODULE") or os.path.join(os.path.dirname(self.exe), "game_%s.%s" % (os.path.basename(program).split(".")[0].lower(), ext))
         self.extra_env = extra_env or {}
+        self.overlay_seed = overlay_seed          # a folder copied to be the run's overlay (saves, settings); None or "" starts with an empty one (Spells of the Ancients has no seed)
+        self.args = list(args)
         self.proc = None
         self.log_path = os.path.join(self.workdir, "game.log")
         self.ctl_path = os.path.join(self.workdir, "ctl")
@@ -152,7 +154,10 @@ class Game:
     def start(self):
         overlay = os.path.join(self.workdir, "overlay")
         shutil.rmtree(overlay, ignore_errors=True)
-        shutil.copytree(os.path.join(self.repo, "sources/emu_overlay"), overlay)
+        if self.overlay_seed:
+            shutil.copytree(os.path.join(self.repo, self.overlay_seed), overlay)
+        else:
+            os.makedirs(overlay)
         if os.path.exists(self.ctl_path):
             os.unlink(self.ctl_path)
         os.mkfifo(self.ctl_path)
@@ -165,7 +170,7 @@ class Game:
                 env[k] = v
         self._log = open(self.log_path, "wb")
         # start_new_session: our own process group, so nothing we do can reach anyone else's game
-        self.proc = subprocess.Popen([self.exe] + ([] if self.module == "none" else ["-m", self.module]) + [self.program], cwd=self.repo, env=env, stdout=self._log, stderr=subprocess.STDOUT,
+        self.proc = subprocess.Popen([self.exe] + ([] if self.module == "none" else ["-m", self.module]) + [self.program] + self.args, cwd=self.repo, env=env, stdout=self._log, stderr=subprocess.STDOUT,
                                      stdin=subprocess.DEVNULL, start_new_session=True)
         self.started = time.time()
         self._ctl = os.open(self.ctl_path, os.O_RDWR | os.O_NONBLOCK)

@@ -123,6 +123,23 @@ static uint32_t pace_ui_pass(const uint32_t *a)
     return 0;
 }
 
+/* The loops that wait for the player (a menu, the "Cards for Sale" page, a message that waits for a click or a key) take the mouse snapshot on every pass of a loop that has nothing
+ * else to do, and so used a whole core: nothing in them waits. The snapshot is the one call every such loop makes, so the wait is made here: a call that finds no button down naps
+ * pace.idle_ms (the window's events are served meanwhile, so a click is seen within that time). Not from the map's loop, which has its frame period, and not while a button is held,
+ * which a screen's pass already paces and a drag must not lose. */
+static uint32_t pace_idle_snapshot(const uint32_t *a)
+{
+    uint32_t ret = RD32(port_sp);
+
+    (void)a;
+    if (ret >= profile->pace.map_loop.lo && ret < profile->pace.map_loop.hi)
+        return 0;
+    if (RD32(profile->buttons.mouse_var) != 0)
+        return 0;
+    sched_sleep(profile->pace.idle_ms / 1000.0);
+    return 0;
+}
+
 void pace_install(void)
 {
     const char *ms = getenv("PORT_FRAME_MS");
@@ -135,6 +152,8 @@ void pace_install(void)
     ui_log = getenv("PORT_UI_LOG") != NULL;
     port_override(profile->pace.tick_fn, read_and_clear_ticks, 0, 0);
     port_prehook(profile->buttons.pass, pace_ui_pass);
+    if (profile->pace.idle_ms && profile->pace.idle_fn)
+        port_prehook(profile->pace.idle_fn, pace_idle_snapshot);
 }
 
 /* Is the overworld's loop running (it has made a frame in the last third of a second)? The touch screen holds the left button with a finger there (the party walks while it is held) and

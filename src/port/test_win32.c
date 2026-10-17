@@ -129,6 +129,24 @@ static void test_format_message(void)
     CHECK(n == strlen("Access is denied.") && RD32(ptr) != 0 && !strcmp(text(RD32(ptr)), "Access is denied."));
     CHECK(K32("FormatMessageA", 0x400, cstr("a string"), 0, 0, buf, 128, 0) == 8 && !strcmp(text(buf), "a string"));      /* FROM_STRING */
     CHECK(K32("FormatMessageA", 0, 0, 2, 0, buf, 128, 0) == 0);                               /* no source named */
+    /* the inserts, as the game's wrapper (a va_list in its own frame) and an argument array give them */
+    {
+        uint32_t argv = scratch(32), ap = scratch(4);
+
+        WR32(argv, cstr("Windlass")); WR32(argv + 4, cstr("Forge")); WR32(argv + 8, 15); WR32(argv + 12, 0xbeef);
+        WR32(ap, argv);                                                                       /* the va_list: the address of the arguments */
+        n = K32("FormatMessageA", 0x400, cstr("%1 Village"), 0, 0, buf, 128, ap);
+        CHECK(n == strlen("Windlass Village") && !strcmp(text(buf), "Windlass Village"));
+        n = K32("FormatMessageA", 0x400 | 0x2000, cstr("%2 of %1 (%3!d! gold, %4!04x!)"), 0, 0, buf, 128, argv);   /* an array, in any order, with printf conversions */
+        CHECK(!strcmp(text(buf), "Forge of Windlass (15 gold, beef)") && n == strlen(text(buf)));
+        n = K32("FormatMessageA", 0x400, cstr("100%% %1!s!!%n%2%0never"), 0, 0, buf, 128, ap);
+        CHECK(!strcmp(text(buf), "100% Windlass!\r\nForge") && n == strlen(text(buf)));    /* %%, an explicit !s!, a line break, %0 ends it */
+        n = K32("FormatMessageA", 0x400 | 0x200, cstr("%1 stays"), 0, 0, buf, 128, ap);      /* IGNORE_INSERTS */
+        CHECK(!strcmp(text(buf), "%1 stays"));
+        CHECK(K32("FormatMessageA", 0x400, cstr("%1 Village"), 0, 0, buf, 8, ap) == 0 && K32("GetLastError") == 122);      /* the result does not fit */
+        n = K32("FormatMessageA", 0x400 | 0x100, cstr("%3!5d!|"), 0, 0, ptr, 0, ap);                                         /* ALLOCATE_BUFFER with inserts: argument 3 as a number */
+        CHECK(RD32(ptr) != 0 && n == 6 && text(RD32(ptr))[5] == '|');
+    }
 }
 
 static void test_thread_times(void)

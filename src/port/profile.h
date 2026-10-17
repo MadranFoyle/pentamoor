@@ -60,6 +60,9 @@ typedef struct ProfPace {
     uint32_t ticks;         /* the tick counter */
     uint32_t frame_ret;     /* where the overworld loop's call of tick_fn returns to: the frame is paced there */
     ProfRange map_loop;     /* the overworld loop: the code that is the map, not a screen with buttons */
+    uint32_t idle_fn;       /* the mouse snapshot (the call every loop that waits for the player makes on each pass), and */
+    uint32_t idle_ms;       /* how long a call of it naps when no button is down (ms), so that a screen that waits does not use a whole core. 0 (and 0 for 1.0, unchanged: its menu loops spin a core): no nap.
+                             * idle_ms is a setting of the row, not an address; both are only allowed with HK_PACE */
 } ProfPace;
 
 /* The button table of the game's screens, and the mouse (pace.c, screens.c) */
@@ -116,6 +119,20 @@ typedef struct ProfDisplay { uint32_t width, height; } ProfDisplay;
 #define PROFILE_MAX_PROGRAMS 4
 typedef struct ProfProgram { const char *file; const char *module; } ProfProgram;
 
+/* The groups of hook addresses a row may hold, for `hooks_verified` (a bit mask): a group's addresses are in the row only when its bit is set, i.e. when they were checked against the
+ * running game (what verified means is written in docs/notes/sota-comparison.md: each was run and its effect seen). A group not verified is left out of the row and its hook is not installed. */
+enum {
+    HK_PACE = 1,            /* .pace, and of .buttons the table's pass and the mouse state (what pace.c uses: one pass a click, the frame period while a button is held) */
+    HK_BUTTONS = 2,         /* the rest of .buttons: the mouse snapshot and the contexts and records (screens.c: the controller's reading of the screens) */
+    HK_TEXTMENU = 4,        /* .textmenu */
+    HK_BUYCARDS = 8,        /* .buycards */
+    HK_CLUES = 16,          /* .clues */
+    HK_TITLE = 32,          /* .title */
+    HK_KEYS = 64,           /* .keys (wait for a key, the yes/no sites, the name box loop) */
+    HK_DISPLAY = 128,       /* .display */
+    HK_ALL = 255
+};
+
 /* One file of one build. */
 typedef struct BuildProfile {
     const char *id;         /* the build id: SHA-256 of the file, 64 lower-case hex characters */
@@ -123,8 +140,9 @@ typedef struct BuildProfile {
     const char *file;       /* "MAGIC.EXE" */
     const char *program;    /* the program this file is: "MAGIC", "DUEL", "DECK" (LIFT_PROGRAM); "" for a library */
     uint32_t base;          /* a library: the address it is lifted for and mapped at; 0 for a program */
-    int hooks_verified;     /* 1: the hook addresses below (pace, buttons, textmenu, buycards, clues, title, keys, display) were checked against the running game. 0: this build's hooks were
-                             * never ported, so the row holds none of them and every hook stays off (a test keeps the two together). `lzw` is not a hook: the game cannot show a picture without it. */
+    int hooks_verified;     /* a mask of HK_*: the groups of hook addresses below (pace, buttons, textmenu, buycards, clues, title, keys, display) that were checked against the running game
+                             * (HK_ALL for 1.0). A group that is not in the mask is not ported: the row holds none of its addresses and its hook stays off (a test keeps the two together).
+                             * `lzw` is not a hook: the game cannot show a picture without it. */
     ProfProgram programs[PROFILE_MAX_PROGRAMS];     /* what this program may start; {NULL, NULL} ends the list */
     ProfLzw lzw;
     ProfPace pace;

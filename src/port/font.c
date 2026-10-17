@@ -180,6 +180,17 @@ void ttf_text_metrics(const TTFont *f, double em, int *height, int *avg_width)
         *avg_width = 1;
 }
 
+/* The game's text is in Windows' ANSI code page (1252), where 0x80..0x9f are punctuation (the curly quotes of the Spells of the Ancients 2.15 card texts, 0x93 and 0x94, the dashes, the bullet);
+ * the fonts' cmap is Unicode, which has no glyph at U+0080..U+009F: they drew as a missing-glyph box. The five bytes Windows leaves undefined (0x81, 0x8d, 0x8f, 0x90, 0x9d) stay as they were. */
+unsigned int font_cp1252_to_unicode(unsigned int ch)
+{
+    static const unsigned short hi[32] = {
+        0x20ac, 0x0081, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008d, 0x017d, 0x008f,
+        0x0090, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x009d, 0x017e, 0x0178};
+
+    return ch >= 0x80 && ch <= 0x9f ? hi[ch - 0x80] : ch;
+}
+
 static int glyph_index(const TTFont *f, unsigned int ch)
 {
     int segx2, i;
@@ -187,6 +198,7 @@ static int glyph_index(const TTFont *f, unsigned int ch)
 
     if (!t)
         return 0;
+    ch = font_cp1252_to_unicode(ch);
     segx2 = u16(f, t + 6);
     for (i = 0; i < segx2; i += 2) {
         uint32_t end = u16(f, t + 14 + (size_t)i), start = u16(f, t + 16 + (size_t)segx2 + (size_t)i);
