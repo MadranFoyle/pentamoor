@@ -17,6 +17,7 @@ What it logs (<workdir>/events.jsonl, summary on stdout and in <workdir>/summary
   STDERR  a line on stderr that is not a window dump (the program is silent when all is well)
   SETUP   the way to a duel did not work (screenshot saved)
   NOTE    things worth knowing (a prompt cancelled with Esc that did not go away, ...)
+Not an event: <workdir>/rss.csv, the game process's resident memory once a minute (time in s, game number, pid, KiB; `ps -o rss=` for that exact pid), and the summary's "rss game N" lines.
 No game file is in this script; it needs the installed game (sources/installed) and the overlay (sources/emu_overlay), as the port does.
 """
 import argparse
@@ -39,8 +40,11 @@ from pentamoor_ctl import Game  # noqa: E402
 RESUME = {640: (330, 390), 800: (412, 487), 1024: (528, 624)}
 DUEL = {640: (290, 325), 800: (360, 388), 1024: (470, 486)}
 
-DUMP_PREFIXES = ("  win ", "  queue", "  popup", "  item ", "  peek", "  poke", "  hit ", "  pad:", "  nav:", "  target ")
-KNOWN_STDERR = (re.compile(r"^loaded .* at 0x"), re.compile(r"^build: v\d"), re.compile(r"^\d\d:\d\d:\d\d\.\d+ padlog: "), re.compile(r"^LoadLibraryA\((deckdll|statwin)\.dll\) -> mapped"))
+DUMP_PREFIXES = ("  win ", "  queue", "  popup", "  item ", "  peek", "  poke", "  hit ", "  pad:", "  nav:", "  target ",
+                 "  thread ", "    [import]", "    [fn]", "    [call]")                # what `threads`, `trace on` and `calls on` print when someone looks at a stuck game by hand
+KNOWN_STDERR = (re.compile(r"^loaded .* at 0x"), re.compile(r"^display \(\w+\): (window|full screen), window \d+x\d+ points"),re.compile(r"^build: v\d"), re.compile(r"^\d\d:\d\d:\d\d\.\d+ padlog: "), re.compile(r"^LoadLibraryA\((deckdll|statwin)\.dll\) -> mapped"),
+                 # the deck builder asks MAGIC.EXE for an export (ManaLink's has it) that 1.0's does not have (pefile: 15 exports, no szDeckName): Windows answers NULL too
+                 re.compile(r"^GetProcAddress\(0x400000, szDeckName\) -> not found$"))
 
 
 class Soak:
@@ -59,6 +63,11 @@ class Soak:
         self.log_off = 0
         self.nshots = 0
         self.in_title = False
+        self.rss = []
+        self.rss_last = 0.0
+        self.known_stderr = list(KNOWN_STDERR)
+        if os.path.basename(a.program).lower() == "deck.exe":          # DECK.EXE has no exports for the deck builder's ten lookups (docs/PHASE_C.md, "The deck builder"): it runs on an empty deck
+            self.known_stderr.append(re.compile(r"^GetProcAddress\(0x400000, \w+\) -> not found$"))
 
     # ---- logging ------------------------------------------------------------------------------------------------------
     def ev(self, kind, msg, **kw):
@@ -89,7 +98,7 @@ class Soak:
             if line.startswith("  win ") and not re.search(r"' \(-?\d+,-?\d+\)-\(-?\d+,-?\d+\) z=", line):
                 self.in_title = True
                 continue
-            if not line or line.startswith(DUMP_PREFIXES) or any(k.match(line) for k in KNOWN_STDERR):
+            if not line or line.startswith(DUMP_PREFIXES) or any(k.match(line) for k in self.known_stderr):
                 continue
             key = re.sub(r"\d+", "#", line)[:200]
             self.stderr_seen[key] += 1
@@ -114,14 +123,48 @@ class Soak:
         try:
             if sys.platform == "darwin":
                 subprocess.run(["sample", str(g.pid), "3", "-file", out], timeout=60, capture_output=True)
-            elif shutil.which("gdb"):
-                r = subprocess.run(["gdb", "-p", str(g.pid), "-batch", "-ex", "thread apply all bt"], timeout=60, capture_output=True)
-                open(out, "wb").write(r.stdout + r.stderr)
+            elif shutil.which("gdb") or os.path.isdir("/proc/%d/task" % g.pid):
+                text = b""
+                if shutil.which("gdb"):
+                    r = subprocess.run(["gdb", "-p", str(g.pid), "-batch", "-ex", "thread apply all bt"], timeout=60, capture_output=True)
+                    text = r.stdout + r.stderr
+                # gdb cannot attach to a process that is not its own child where ptrace_scope is 1 (most Linux): what /proc says is always there, twice, 2 s apart (busy or waiting?)
+                open(out, "wb").write(text + self.proc_threads().encode())
             else:
                 return None
             return out
         except Exception as e:  # noqa: BLE001
             return "thread dump failed: %s" % e
+
+    def engine_state(self):
+        """MAGIC.EXE 1.0's duel state worth having in a STUCK event (docs/notes/draw-phase-stuck.md): the two lives, the "game is over" flag 0x6a285c, the "ask again" flag 0x6ff380, the phase 0x6ff558."""
+        g = self.game
+        out = {"lives": g.peek(0x6a4a00, 2)}
+        for name, addr in (("over_flag", 0x6a285c), ("ask_again", 0x6ff380), ("phase", 0x6ff558), ("chain", 0x6a3f78)):
+            v = g.peek(addr, 1)
+            out[name] = v[0] if v else None
+        return out
+
+    def proc_threads(self):
+        """Linux: every thread of the game process (state, user and system ticks, what it waits in) twice, 2 s apart."""
+        pid, lines = self.game.pid, []
+        for rnd in (1, 2):
+            lines.append("-- /proc/%d/task sample %d (ticks are 1/100 s)" % (pid, rnd))
+            try:
+                for tid in sorted(os.listdir("/proc/%d/task" % pid), key=int):
+                    base = "/proc/%d/task/%s/" % (pid, tid)
+                    stat = open(base + "stat").read()
+                    f = stat[stat.rindex(")") + 2:].split()                  # after the "(comm)": state is f[0], utime f[11], stime f[12]
+                    try:
+                        wchan = open(base + "wchan").read().strip()
+                    except OSError:
+                        wchan = "?"
+                    lines.append("tid %s %s state %s utime %s stime %s wchan %s" % (tid, stat[stat.index("(") + 1:stat.rindex(")")], f[0], f[11], f[12], wchan))
+            except (OSError, ValueError, IndexError) as e:
+                lines.append("unreadable: %s" % e)
+            if rnd == 1:
+                time.sleep(2)
+        return "\n".join(lines) + "\n"
 
     def cpu_seconds(self):
         try:
@@ -129,6 +172,30 @@ class Soak:
             return out
         except Exception:  # noqa: BLE001
             return "?"
+
+    def sample_rss(self):
+        """The game process's resident set (KiB, `ps -o rss=` for its exact pid), once a minute, in <workdir>/rss.csv: time, game number, pid, KiB. The summary says how it moved."""
+        now = time.time()
+        if now - self.rss_last < 60 or not self.game or not self.game.alive():
+            return
+        self.rss_last = now
+        try:
+            out = subprocess.run(["ps", "-o", "rss=", "-p", str(self.game.pid)], capture_output=True, text=True, timeout=10).stdout.strip()
+            kib = int(out)
+        except (ValueError, OSError, subprocess.SubprocessError):
+            return
+        self.rss.append((round(now - self.t0), self.stats["games"], self.game.pid, kib))
+        open(os.path.join(self.workdir, "rss.csv"), "a").write("%d,%d,%d,%d\n" % self.rss[-1])
+
+    def rss_lines(self):
+        """One line per game process with at least two samples: first, last, largest, and the span between them."""
+        out = []
+        for n in sorted({r[1] for r in self.rss}):
+            rs = [r for r in self.rss if r[1] == n]
+            if len(rs) >= 2:
+                out.append("rss game %d: %d MiB at %d s, %d MiB at %d s, max %d MiB (%d samples)" % (n, rs[0][3] // 1024, rs[0][0], rs[-1][3] // 1024, rs[-1][0],
+                                                                                                  max(r[3] for r in rs) // 1024, len(rs)))
+        return out
 
     def check_alive(self, where):
         g = self.game
@@ -154,6 +221,7 @@ class Soak:
             return None
         t = g.windows(timeout=8)
         self.scan_stderr()
+        self.sample_rss()
         if t is not None:
             return t
         if not self.check_alive(where):
@@ -221,8 +289,14 @@ class Soak:
             b = buttons[0]
             g.click(*b.center)
             return "dialog '%s': %s -> %s" % (d.title or d.cls, texts[:80], b.title)
-        g.key("return")
-        return "dialog '%s': %s -> Return" % (d.title or d.cls, texts[:80])
+        # no button at all ("Sorcerer won", "You won!" and the two next draws): a click closes the page, Return does not (docs/notes/duel-won-black-screen.md); it was Return
+        # here, so each such page cost a 60 s STUCK and a restart of the game
+        self.stats["dialog_clicks"] += 1
+        if self.stats["dialog_clicks"] % 4 == 0:
+            g.key("return")
+            return "dialog '%s': %s -> Return" % (d.title or d.cls, texts[:80])
+        g.click(self.w // 2, self.h // 2)
+        return "dialog '%s': %s -> click" % (d.title or d.cls, texts[:80])
 
     # ---- the menu -----------------------------------------------------------------------------------------------------
     def concede(self):
@@ -356,7 +430,7 @@ class Soak:
         turns = 0
         seen_duel = False
         concede_after = self.rnd.randint(a.min_turns, a.max_turns)
-        conceded = False
+        next_concede = 0.0                          # when the next try to concede may be: a try that fails (a prompt or a menu in the way) used to be the only one, and a duel went on for 14 minutes
         last_kind = None
         while time.time() < end_wall:
             t = self.look("duel")
@@ -375,7 +449,7 @@ class Soak:
                 return "over"                        # the board is gone
             if stalled > a.stall_s:
                 self.ev("STUCK", "no change for %.0f s: bar=%r dialogs=%s last action %r" % (stalled, s[0], [d[0] for d in s[2]], last_kind),
-                        cpu=self.cpu_seconds(), shot=self.shot("stuck"), dump=self.thread_dump("stuck"))
+                        cpu=self.cpu_seconds(), engine=None if self.standalone() else self.engine_state(), shot=self.shot("stuck"), dump=self.thread_dump("stuck"))
                 self.stats["stuck"] += 1
                 if not self.concede():
                     return "restart"
@@ -388,8 +462,8 @@ class Soak:
             if s[0] and "discard phase" in s[0].lower() and ctx["n"] == 0:
                 turns += 1
                 self.stats["turns"] += 1
-            if in_duel and not conceded and (turns > concede_after or now - t_start > a.max_duel_s):
-                conceded = True
+            if in_duel and now >= next_concede and (turns > concede_after or now - t_start > a.max_duel_s):
+                next_concede = now + 20
                 ok = self.concede()
                 self.stats["concede_try"] += 1
                 last_kind = "concede(%s)" % ok
@@ -411,8 +485,15 @@ class Soak:
         return "restart"
 
     # ---- getting to a duel --------------------------------------------------------------------------------------------
+    def standalone(self):
+        """DUEL.EXE (--program .../DUEL.EXE): no title screen and no saved game; its setup dialog (OK) starts a duel, and comes back when the duel is over."""
+        return os.path.basename(self.a.program).lower() == "duel.exe"
+
     def to_ante(self):
         g = self.game
+        if self.standalone():
+            time.sleep(6)
+            return True
         time.sleep(9)
         g.click(*RESUME[self.w])
         time.sleep(9)
@@ -422,7 +503,8 @@ class Soak:
         """Click "Duel a Sorcerer" and click through the coin toss and mulligan dialogs to the first main phase. After a duel the saved game
         usually moves on (a second duel, then the overworld), so a later duel that does not come is not an error: the game is restarted."""
         g = self.game
-        g.click(*DUEL[self.w])
+        if not self.standalone():
+            g.click(*DUEL[self.w])
         t_end = time.time() + (75 if first else 30)
         while time.time() < t_end:
             time.sleep(2.0)
@@ -492,6 +574,7 @@ class Soak:
         lines.append("actions: " + ", ".join("%s %d" % (k[4:], v) for k, v in sorted(self.stats.items()) if k.startswith("act_")))
         for k, v in self.stderr_seen.most_common(20):
             lines.append("stderr x%d: %s" % (v, k))
+        lines += self.rss_lines()
         text = "\n".join(lines)
         print(text, flush=True)
         open(os.path.join(self.workdir, "summary.txt"), "w").write(text + "\n")

@@ -265,7 +265,7 @@ class Game:
         return None
 
     def shot(self, path):
-        """Screenshot to a PNG (needs PIL); returns path or None."""
+        """Screenshot to a PNG (needs PIL; else a PPM next to it); returns the path of the file made, or None."""
         ppm = os.path.join(self.workdir, "shot.ppm")
         if os.path.exists(ppm):
             os.unlink(ppm)
@@ -284,7 +284,7 @@ class Game:
             return path
         except Exception:
             shutil.copy(ppm, path.replace(".png", ".ppm"))
-            return None
+            return path.replace(".png", ".ppm")
 
     def peek(self, addr, n=1):
         off = self.log_size()
@@ -299,6 +299,19 @@ class Game:
 
     def poke(self, addr, val, nbytes=4):
         self.cmd("poke 0x%x %d %d" % (addr, val, nbytes))
+
+    def poke_many(self, pokes):
+        """Several pokes in one write to the pipe, so that the program reads them together (the game's frame cannot run between them): [(addr, val), ...]."""
+        self.cmd("\n".join("poke 0x%x %d 4" % (a, v) for a, v in pokes))
+
+    def teleport_party(self, tx, ty):
+        """Put the party on the middle of the world map's tile (tx, ty) the way the game's own teleports do (the function at 0x4e7f51 does it for a random tile and for a stored one,
+        then calls 0x4c05ba): the position, and the map told to redraw itself whole. Poking only the position makes the next frame scroll the map's picture by the whole distance,
+        and the game's scroll (0x4c06df: it copies the part that stays, width = the view's width minus the distance) has no case for a distance of more than the view's width: at 640x480
+        a jump of 688 pixels made a copy of -48 bytes, which is the process's SIGSEGV (docs/notes/castle-dungeon-stats.md). Needs the map on screen."""
+        self.poke_many([(0x52eff0, tx * 32 + 16), (0x52eff4, ty * 32 + 16), (0x641010, tx), (0x641014, ty),
+                        (0x558dc8, 0xffffffff), (0x52d774, 0xffffffff), (0x52d778, 1),     # 0x4c05ba's first lines: the map's cache is stale
+                        (0x641884, 0)])                                                    # ... and its last: "the map has not been drawn", so the next frame draws it all, no scroll
 
     # ---- a game controller (the `pad` steps of PORT_CONTROL; docs/notes/controller.md) --------------------------------------
     def pad(self, text):

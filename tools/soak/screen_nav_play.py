@@ -161,10 +161,7 @@ class Session:
         self.clear_monsters()
         g.poke(GOLD, 5000)
         g.poke(FOOD, 200)
-        g.poke(PARTY_X, tx * 32 + 16)
-        g.poke(PARTY_Y, ty * 32 + 16)
-        g.poke(0x641010, tx)
-        g.poke(0x641014, ty)
+        g.teleport_party(tx, ty)               # not four pokes: the map must be told, or a jump of more than the view's width crashes the game (see Game.teleport_party)
         g.poke(0x5659b0, 0)
         self.wait(3.5)
 

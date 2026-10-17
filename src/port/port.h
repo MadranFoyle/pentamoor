@@ -92,6 +92,7 @@ extern int screen_w, screen_h;
 #define SCREEN_MAX_W 1600
 #define SCREEN_MAX_H 1200
 void screen_set(int w, int h);
+extern int port_trace_calls;
 extern int port_trace_imports;
 uint32_t guest_call_on(uint32_t stack_top, uint32_t target, int nargs, const uint32_t *args);
 uint32_t guest_call(uint32_t target, int nargs, const uint32_t *args);

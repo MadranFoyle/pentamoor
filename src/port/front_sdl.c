@@ -896,6 +896,10 @@ static void run_step(const Step *s)
             fprintf(stderr, "  peek 0x%lx = %u (0x%x)\n", a + 4 * i, RD32(a + 4 * i), RD32(a + 4 * i));
     } else if (!strcmp(s->cmd, "trace")) {
         port_trace_imports = !strcmp(s->arg, "on");
+    } else if (!strcmp(s->cmd, "calls")) {        /* calls on|off: every call between lifted functions, with its caller, on stderr (a few seconds of it, for finding what the engine does) */
+        port_trace_calls = !strcmp(s->arg, "on");
+    } else if (!strcmp(s->cmd, "threads")) {      /* the guest threads, what each is waiting for and called last, to stderr (a debugging aid for a hang) */
+        sched_dump(stderr);
     } else if (!strcmp(s->cmd, "windows")) {      /* the window tree, to stderr (a debugging aid) */
         wm_dump(stderr);
         wm_popup_dump(stderr);

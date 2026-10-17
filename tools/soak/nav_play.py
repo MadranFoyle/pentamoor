@@ -48,7 +48,8 @@ class Player(soak.Soak):
     """soak's session helpers (start, Resume Game, Duel, dialogs) with a policy that builds a board and does not attack."""
 
     def __init__(self, a):
-        ns = argparse.Namespace(res=a.res, minutes=10, repo=REPO, exe="src/port/build/pentamoor-run", module=None, program="sources/installed/Magic/Program/MAGIC.EXE",
+        ns = argparse.Namespace(res=a.res, minutes=10, repo=REPO, exe="src/port/build/pentamoor-run", module=None,
+                                program="sources/installed/Magic/Program/%s.EXE" % ("DUEL" if getattr(a, "game", "magic") == "duel" else "MAGIC"),
                                 workdir=a.workdir, seed=a.seed, duels_per_game=1, min_turns=3, max_turns=9, max_duel_s=300, stall_s=60, tick_s=1.0, verbose=False)
         super().__init__(ns)
         self.shots = a.shots
@@ -78,7 +79,8 @@ class Player(soak.Soak):
             t = self.look("populate")
             if t is None:
                 return None
-            self.lives()
+            if not self.standalone():                                # the life totals' addresses are MAGIC.EXE's
+                self.lives()
             mine, theirs = self.my_permanents(t), self.their_permanents(t)
             if int(time.time() - t0) // 45 != last_report:
                 last_report = int(time.time() - t0) // 45
@@ -96,7 +98,10 @@ class Player(soak.Soak):
                 pass
             elif any(w in title for w in ("CASTING", "ACTIVATING", "PROCESSING")) or low.startswith(("pick", "select")):
                 prompt_n += 1
-                if cancel and prompt_n > 8:
+                if "discard" in low and self.hand_rows(t):      # lives are 60 and nobody attacks: the hand overflows; a discard is a card of the hand, not a permanent (seeds 5 and 6 sat in "Illegal target" for ever)
+                    hand = self.hand_rows(t)
+                    g.click(*hand[prompt_n % len(hand)])
+                elif cancel and prompt_n > 8:
                     g.click(*cancel.center)
                     prompt_n = 0
                 elif mine:
@@ -250,7 +255,8 @@ def pad_start(p, g, res):
     the D-pad is checked to move between them (and back); the wanted button (Play first, Start the duel, OK) is reached with the D-pad and pressed with A."""
     nv = Nav(g, res)
     w = int(res.split("x")[0])
-    g.pad_click(*soak.DUEL[w])
+    if not p.standalone():                                   # DUEL.EXE starts with its setup dialog, whose OK is found below like any other dialog's button
+        g.pad_click(*soak.DUEL[w])
     moved, end = set(), time.time() + 100
     while time.time() < end:
         time.sleep(1.5)
@@ -466,6 +472,7 @@ def main():
     ap.add_argument("--workdir", default="/tmp/nav_play")
     ap.add_argument("--shots", default=None)
     ap.add_argument("--seed", type=int, default=5)
+    ap.add_argument("--game", choices=["magic", "duel"], default="magic", help="magic: MAGIC.EXE's saved game; duel: DUEL.EXE, the standalone duel program (its setup dialog)")
     ap.add_argument("--keep", action="store_true", help="leave the game running at the populated board (its process id and control pipe are printed) for trying things by hand")
     ap.add_argument("--attach", nargs=2, metavar=("WORKDIR", "PID"), help="run the checks on a game that is already at a populated board (made with --keep): its work folder and process id")
     a = ap.parse_args()

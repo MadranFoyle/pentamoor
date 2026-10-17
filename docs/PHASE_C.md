@@ -517,7 +517,7 @@ machine could draw; a held button moves the party a step per frame. (Measured: f
 `pace.c` makes the loop wait where it starts a frame: it takes over the call of `0x5016f9` (the 33 ms timer's tick counter, read and cleared) that the loop makes at
 0x4e786e, and when it is that call it sleeps out the rest of 60 ms since the last frame (frames now come 60.0 ms apart, 16.7 a second: the game's own number).
 `PORT_FRAME_MS=100` makes the frame longer (a slower game), `PORT_FRAME_MS=0` takes the pacing away. A press now lasts at least 70 ms (it was 40), so one frame always sees it.
-`clock()` is also the wall clock now (the host's counted CPU time). `PORT_TRACE_FN` prints a timestamp, and a `peek ADDR [COUNT]` command joins `poke` in `PORT_CONTROL`.
+`clock()` is also the wall clock now (the host's counted CPU time). `PORT_TRACE_FN` prints a timestamp, and a `peek ADDR [COUNT]` command joins `poke` in `PORT_CONTROL`. `threads` prints every guest thread to stderr: ready, blocked (with a condition, with a deadline, or with neither: waiting for something nobody will give) and the last import it called and from where (`sched.c`, `sched_dump`); it is what tells a hang from a loop, as in [draw-phase-stuck.md](notes/draw-phase-stuck.md). `trace on|off` prints every import call, and `calls on|off` every call from one lifted function to another with its caller: a few seconds of it, started before a click on a button, is the engine's flow for that click.
 
 Not known: how fast the original really ran; 60 ms is the game's intent, not a measurement of the retail game on a Pentium.
 

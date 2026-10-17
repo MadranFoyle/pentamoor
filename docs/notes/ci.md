@@ -13,8 +13,9 @@ The `test` job's steps:
 7. `python -m pytest tools/install` (the installer: disc reader, archive, decompressor, compiler choice, module build, release layout, launcher) and `python -m pytest tools/ios` (the Xcode project generator, the build script's flags and pins, `deploy.sh` against a fake `xcrun`).
 8. `python -m pytest tools/lift/test_lift.py` (the lifter, which compiles small harnesses with `cc`; the scan that finds the game's functions; the build id), `python -m pytest tools/release` (`check_tree` and `check_links` on made-up trees and on this repository, and that CONTRIBUTING's table of environment variables is the whole list the code reads) and `python -m pytest tools/research` (the readers of other builds' files, on files the tests make up).
 9. `python -m pytest tools/steamdeck` (Linux and macOS jobs; not Windows, the scripts need `sh`): the Steam shortcut writer against a hand-built `shortcuts.vdf`, the installer's progress, `install-gui.sh`'s dialogs with stand-ins, the controller layout.
+10. `python -m pytest tools/soak`: the soak scripts' control-pipe helpers (a teleport of the party tells the map to redraw), on a pipe, no game.
 
-Not in CI: `tools/difftest`, `tools/registry` and `tools/verification_harness/tests` (pure logic and recorded vectors; run them by hand, CONTRIBUTING.md, "Tests"), `tools/emu_spike/tests` (they need `unicorn`), and everything that needs the game (`tools/soak`, `tools/display`, `src/port/compare_screen.py`).
+Not in CI: `tools/difftest`, `tools/registry` and `tools/verification_harness/tests` (pure logic and recorded vectors; run them by hand, CONTRIBUTING.md, "Tests"), `tools/emu_spike/tests` (they need `unicorn`), and everything that needs the game (the soak runs themselves, `tools/display`, `src/port/compare_screen.py`).
 
 What CI cannot do: build a real game module or run the game, because that needs the lifted C, which is made from the game files and is never committed. It does build the runtime, which is the part to be published.
 

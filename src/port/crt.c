@@ -92,10 +92,11 @@ static uint32_t crt_onexit(const uint32_t *a) { return a[0]; }
 static uint32_t crt_malloc(const uint32_t *a) { return heap_alloc(a[0]); }
 static uint32_t crt_calloc(const uint32_t *a)
 {
-    uint32_t p = heap_alloc(a[0] * a[1]);
+    uint64_t n = (uint64_t)a[0] * a[1];                      /* a product that does not fit in 32 bits is a request that cannot be met, not a small one */
+    uint32_t p = n > 0xffffffffu ? 0 : heap_alloc((uint32_t)n);
 
     if (p)
-        guest_zero(p, a[0] * a[1]);
+        guest_zero(p, (uint32_t)n);
     return p;
 }
 static uint32_t crt_free(const uint32_t *a) { heap_free(a[0]); return 0; }
@@ -104,6 +105,8 @@ static uint32_t crt_realloc(const uint32_t *a)
 {
     uint32_t q = heap_alloc(a[1]), old = a[0] ? heap_size(a[0]) : 0;
 
+    if (!q)
+        return 0;                                            /* no room: NULL, and the old block stays as it was (it was copied to guest address 0 and freed) */
     if (a[0]) {
         memcpy(P(q), P(a[0]), old < a[1] ? old : a[1]);
         heap_free(a[0]);
@@ -112,8 +115,16 @@ static uint32_t crt_realloc(const uint32_t *a)
 }
 static uint32_t crt_msize(const uint32_t *a) { return heap_size(a[0]); }
 static uint32_t crt_expand(const uint32_t *a) { return a[1] <= heap_size(a[0]) ? a[0] : 0; }
-static uint32_t crt_memcpy(const uint32_t *a) { if (a[2]) memmove(P(a[0]), P(a[1]), a[2]); return a[0]; }
-static uint32_t crt_memset(const uint32_t *a) { if (a[2]) memset(P(a[0]), (int)(a[1] & 0xff), a[2]); return a[0]; }
+/* A copy or a fill of 2 GiB or more is a negative length that reached the C runtime unsigned (the game's blit and scroll code makes a width as the view's width minus a distance and
+ * does not look at the sign): in a 4 GiB address space it can only end in a fault, in the original (an access violation in MSVCRT) as here, where it was a bare SIGSEGV in the host's
+ * memmove with nothing to say where from. Say what it was, and from where, and stop as the other fatal errors do (docs/notes/castle-dungeon-stats.md). */
+static void crt_length_check(const char *fn, uint32_t n)
+{
+    if (n >= 0x80000000u)
+        port_fatal("%s of %u bytes (%d as a signed number) called from the guest's 0x%08x: the game passed a negative size", fn, n, (int)n, RD32(port_sp));
+}
+static uint32_t crt_memcpy(const uint32_t *a) { crt_length_check("memcpy", a[2]); if (a[2]) memmove(P(a[0]), P(a[1]), a[2]); return a[0]; }
+static uint32_t crt_memset(const uint32_t *a) { crt_length_check("memset", a[2]); if (a[2]) memset(P(a[0]), (int)(a[1] & 0xff), a[2]); return a[0]; }
 static uint32_t crt_memcmp(const uint32_t *a)
 {
     int c = memcmp(P(a[0]), P(a[1]), a[2]);

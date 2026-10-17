@@ -82,8 +82,14 @@ static uint32_t heap_top = HEAP_BASE;
 uint32_t heap_alloc(uint32_t size)
 {
     int i;
-    uint32_t n = (size + 15u) & ~15u;
+    uint32_t n;
 
+    /* More than the heap's whole range is a request that cannot be met, as the C library's and Windows' own allocators say (NULL, a failed HeapAlloc). Most often it is a negative size that
+     * arrived unsigned (-48 is 0xffffffd0): rounded up to 16 it wrapped to 0 and became a block of 16 bytes, and for the sizes that did not wrap, heap_top + n wrapped round the end of the
+     * 4 GiB address space, passed the limit test and moved heap_top backwards, so the next blocks overlapped the live ones. */
+    if (size > HEAP_LIMIT - HEAP_BASE)
+        return 0;
+    n = (size + 15u) & ~15u;
     if (!n)
         n = 16;
     for (i = 0; i < nblocks; i++)
