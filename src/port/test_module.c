@@ -6,6 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef _WIN32
+#include <sys/wait.h>
+#endif
+
 #include "plat.h"
 #include "port.h"
 #include "sched.h"
@@ -24,6 +28,16 @@ static void count_poll(void) { polls++; }
 /* the host function the module calls: a * 10 + b */
 static uint32_t ten_a_plus_b(const uint32_t *a) { return a[0] * 10 + a[1]; }
 
+static WinApiFn crt_api(const char *name)
+{
+    int i;
+
+    for (i = 0; CRT_APIS[i].name; i++)
+        if (!strcmp(CRT_APIS[i].name, name))
+            return CRT_APIS[i].fn;
+    return NULL;
+}
+
 static const LiftedFn *find_fn(const char *name)
 {
     int i;
@@ -41,6 +55,13 @@ int main(int argc, char **argv)
     uint32_t i, expect = 0, r;
     double in[2] = {2.25, 0};
 
+    if (argc > 2 && !strcmp(argv[2], "--negative-length")) {      /* the child of the check below: the game hands the C runtime a negative size (docs/notes/castle-dungeon-stats.md) */
+        uint32_t a[3] = {0x00610000u, 0x00611000u, 0xffffffd0u};
+
+        guest_init();
+        crt_api("memcpy")(a);
+        return 0;                                                  /* not reached: port_fatal ends the process with status 2 */
+    }
     guest_init();
     gamemod_load(path);
     sched_init();
@@ -130,6 +151,41 @@ int main(int argc, char **argv)
         CHECK(gamemod_static_pick(NULL, names, 3) == -1);
         CHECK(gamemod_static_pick("magic", names, 0) == -1);
         CHECK(gamemod_static_pick("magical.exe", names, 3) == -1);
+    }
+
+    /* the C runtime's memcpy/memmove/memset: they copy, and a length of 2 GiB or more (a negative size that arrived unsigned: the scroll of the world map made one of 640 - 688) is
+     * reported as such and ends the process with status 2, not a SIGSEGV in the host's memmove with nothing said */
+    {
+        uint32_t a[3] = {0x00620000u, 0x00621000u, 5}, b[3] = {0x00620000u, 0x00620002u, 6}, c[3] = {0x00620100u, 0x41, 4};
+
+        memcpy(G + 0x00621000u, "hello", 5);
+        CHECK(crt_api("memcpy")(a) == 0x00620000u && !memcmp(G + 0x00620000u, "hello", 5));
+        memcpy(G + 0x00620000u, "abcdefgh", 8);
+        crt_api("memmove")(b);                                     /* overlapping, forwards */
+        CHECK(!memcmp(G + 0x00620000u, "cdefghgh", 8));
+        crt_api("memset")(c);
+        CHECK(!memcmp(G + 0x00620100u, "AAAA", 4) && G[0x00620104u] == 0);
+        a[2] = 0;
+        CHECK(crt_api("memcpy")(a) == 0x00620000u);                /* a length of 0 is fine */
+#ifndef _WIN32
+        {
+            char cmd[1200], text[600] = "";
+            FILE *pp;
+            int st = -1;
+
+            snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\" --negative-length 2>&1", argv[0], path);
+            pp = plat_popen_read(cmd);
+            CHECK(pp != NULL);
+            if (pp) {
+                size_t n = fread(text, 1, sizeof(text) - 1, pp);
+
+                text[n] = 0;
+                st = plat_pclose(pp);
+            }
+            CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 2);
+            CHECK(strstr(text, "memcpy of 4294967248 bytes (-48 as a signed number)") != NULL && strstr(text, "the game passed a negative size") != NULL);
+        }
+#endif
     }
 
     printf("test_module: %d checks, %d failed\n", checks, failures);

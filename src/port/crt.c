@@ -112,8 +112,16 @@ static uint32_t crt_realloc(const uint32_t *a)
 }
 static uint32_t crt_msize(const uint32_t *a) { return heap_size(a[0]); }
 static uint32_t crt_expand(const uint32_t *a) { return a[1] <= heap_size(a[0]) ? a[0] : 0; }
-static uint32_t crt_memcpy(const uint32_t *a) { if (a[2]) memmove(P(a[0]), P(a[1]), a[2]); return a[0]; }
-static uint32_t crt_memset(const uint32_t *a) { if (a[2]) memset(P(a[0]), (int)(a[1] & 0xff), a[2]); return a[0]; }
+/* A copy or a fill of 2 GiB or more is a negative length that reached the C runtime unsigned (the game's blit and scroll code makes a width as the view's width minus a distance and
+ * does not look at the sign): in a 4 GiB address space it can only end in a fault, in the original (an access violation in MSVCRT) as here, where it was a bare SIGSEGV in the host's
+ * memmove with nothing to say where from. Say what it was, and from where, and stop as the other fatal errors do (docs/notes/castle-dungeon-stats.md). */
+static void crt_length_check(const char *fn, uint32_t n)
+{
+    if (n >= 0x80000000u)
+        port_fatal("%s of %u bytes (%d as a signed number) called from the guest's 0x%08x: the game passed a negative size", fn, n, (int)n, RD32(port_sp));
+}
+static uint32_t crt_memcpy(const uint32_t *a) { crt_length_check("memcpy", a[2]); if (a[2]) memmove(P(a[0]), P(a[1]), a[2]); return a[0]; }
+static uint32_t crt_memset(const uint32_t *a) { crt_length_check("memset", a[2]); if (a[2]) memset(P(a[0]), (int)(a[1] & 0xff), a[2]); return a[0]; }
 static uint32_t crt_memcmp(const uint32_t *a)
 {
     int c = memcmp(P(a[0]), P(a[1]), a[2]);
