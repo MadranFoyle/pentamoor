@@ -57,7 +57,7 @@ first of `cc`, `gcc`, `clang` that really builds a shared library; else the Zig 
 
 **iOS** (macOS with Xcode only; [docs/notes/ios.md](docs/notes/ios.md)): there is no module to load on an iPad, so the three programs' lifted C is linked into the app. `tools/ios/build_ios.sh simulator` builds SDL2 (the same pinned source as the macOS runtime), the
 three modules (each joined into one object whose only visible symbol is its renamed `pentamoor_game_init_<program>`), the runtime (`make -C src/port ios-runtime`, which also builds with no game files) and `dist/ios/simulator/Pentamoor.app`; `tools/ios/sim.sh` installs it
-in a simulated iPad Pro and copies the game in; `tools/ios/gen_xcodeproj.py` writes the Xcode project for a real device. **Never commit a built app** (`dist/` is git-ignored): it holds code made from the game.
+in a simulated iPad Pro and copies the game in; `tools/ios/gen_xcodeproj.py` writes the Xcode project for a real device, and `tools/ios/deploy.sh` runs the whole device flow in one command (an "iPad kit" with the compiled game modules and the game folder, made locally, lets the Mac the iPad is plugged into skip the build of the game: docs/notes/ios.md, "One command"). **Never commit a built app or a kit** (`dist/` is git-ignored): it holds code made from the game.
 
 The `./pentamoor` launcher runs one of the three (`./pentamoor`, `./pentamoor deck`, `./pentamoor duel`).
 `PENTAMOOR_GAME` points it at a different installed game folder, `PENTAMOOR_RUN` and `PENTAMOOR_MODULE` at another runtime or module, and saves go to `port_overlay/`.
@@ -135,7 +135,7 @@ make -C src/port check-program              # a tiny PE made by stubgame/mkpe.c 
 make -C src/port check-build                # ... and without the switch it is refused (exit status 3, the message), and so is a file that is not the one the module was made from
 python3 tools/install/install.py --self-test   # the module build in Python (compiler choice, flags, link) on the same stub module, loaded by the runtime
 python3 tools/release/check_tree.py            # nothing tracked looks like decompiler output
-python3 -m pytest tools/ios                    # the Xcode project generator, the iOS build script's flags and pins (no Xcode needed); `make -C src/port ios-runtime` (macOS) compiles the runtime for iOS
+python3 -m pytest tools/ios                    # the Xcode project generator, the iOS build script's flags and pins, tools/ios/deploy.sh (JSON, team, stamp, commands, the flow against a fake xcrun) (no Xcode needed); `make -C src/port ios-runtime` (macOS) compiles the runtime for iOS
 ```
 
 `tools/display/` checks the display work ([docs/notes/display.md](docs/notes/display.md)) against real windows, with the installed game: `xe2e.py` on a Linux box with Xvfb (it builds `minwm.c`, a 150-line window manager, and `xtool.c`, which makes real key and pointer events with XTest, and plays the title screen through full screen, the scaling modes and filters, resizing, `display.cfg` and clicks on the drawn buttons), and `hidden_e2e.py` on any machine with a video driver (a real window that is never shown, `PORT_HIDDEN=1`: a Retina Mac's Metal drawable, the filters, the pointer mapping in window points).
@@ -186,7 +186,7 @@ overlay, and stop them by process id, not by name.
 | `src/native/` | the runtime header the lifted code uses (`lift_rt.h`, `lift_tables.h`), and hand-written C versions of verified engine functions with the addresses they stand in for (`layout.c`) |
 | `src/port/profile.c` | the build profiles: the build id (SHA-256 of a file), the table of known builds with every address of the game the port hard-codes, and the refusal of an unknown build ([docs/PHASE_C.md](docs/PHASE_C.md), "Build profiles") |
 | `tools/install/` | the installer: reads the disc image, unpacks the game's InstallShield archive (`blast.py`, `datax.py`, `iso9660.py`), copies the music and movies, then `--build` lifts and compiles (`liftrun.py`: the lifter run from Python; `modbuild.py`, `zigdl.py`: the compiler choice and the module build without make; `manifest.py`: what a release carries) |
-| `tools/ios/` | the iPad app: `build_ios.sh` (SDL2, the game modules linked in, the app), `sim.sh` and `sim_drive.py` (the Simulator), `gen_xcodeproj.py` (the Xcode project for a device), `Info.plist.in`, `Pentamoor.entitlements`, tests |
+| `tools/ios/` | the iPad app: `build_ios.sh` (SDL2, the game modules linked in, the app), `sim.sh` and `sim_drive.py` (the Simulator), `gen_xcodeproj.py` (the Xcode project for a device), `deploy.sh` (one command: check, sign, build, install, copy the game, start; `--dry-run`, `--selftest`, `--simulator`), `Info.plist.in`, `Pentamoor.entitlements`, tests |
 | `tools/steamdeck/` | the Steam Deck: `install-gui.sh` (the installer with a file picker and a progress bar), `add-to-steam.py` (writes the Steam shortcut, a menu entry, the layout), `progress.py`, the Steam Input layout, the `.desktop` icons, tests |
 | `tools/release/` | the release archives: `package.py` lays one out from a built runtime, `check_archive.py` unpacks and checks it, `build_macos.sh` makes the macOS runtime with SDL2 linked in, `win_libs.sh` lists the DLLs for Windows |
 | `pentamoor`, `pentamoor.bat`, `pentamoor-install`, `pentamoor-install.bat` | the launchers and the one-command installer (they work in a checkout and in a release) |

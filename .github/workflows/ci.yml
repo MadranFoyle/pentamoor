@@ -74,6 +74,11 @@ jobs:
       - name: iOS tools tests (the Xcode project generator, the build script's flags and pins)
         run: python -m pytest tools/ios
 
+      # every xcodebuild / devicectl / simctl option that tools/ios/deploy.sh passes is looked up in the runner's own Xcode help (no device is needed)
+      - name: iOS deploy script's tool options exist in this Xcode (macOS)
+        if: runner.os == 'macOS'
+        run: tools/ios/deploy.sh --selftest
+
       - name: Lifter tests (the lifter, the scan that finds the game's functions)
         run: python -m pytest tools/lift/test_lift.py
 

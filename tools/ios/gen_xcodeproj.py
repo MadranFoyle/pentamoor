@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """gen_xcodeproj: write an Xcode project for Pentamoor on an iPad (docs/notes/ios.md, "On a real iPad").
 
-    python3 tools/ios/gen_xcodeproj.py [--team TEAMID] [--bundle-id org.example.pentamoor] [--entitlements] [--out dist/ios/xcode]
+    python3 tools/ios/gen_xcodeproj.py [--team TEAMID] [--bundle-id org.example.pentamoor] [--entitlements] [--out dist/ios/xcode] [--prebuilt DIR]
     open dist/ios/xcode/Pentamoor.xcodeproj
 
 No generator, no CocoaPods, nothing to install: this writes the project file itself (Xcode's old-style text format) from the runtime's own source list (`make -C src/port print-ios-src`).
@@ -10,6 +10,9 @@ The project has two targets:
   GameLibs    an aggregate target with one build step, `tools/ios/build_ios.sh <simulator|device> libs`: SDL2 (the pinned source, built static) and the three game modules (the C lifted from
               YOUR game files, joined into one object per program with only its entry point visible). It needs sources/generated (tools/lift/lift_all.sh) and is incremental.
   Pentamoor   the app: the runtime's C files compiled by Xcode, linked with those objects, SDL2 and the system frameworks. It depends on GameLibs.
+
+With --prebuilt DIR there is no GameLibs target: the game modules and SDL2 were built beforehand (the "iPad kit", docs/notes/ios.md, "One command") and the project only links them. DIR holds
+iphoneos/ and iphonesimulator/ (either one), each with game_magic.o, game_deck.o, game_duel.o and libSDL2.a, and sdl-include/ (SDL2's headers). `tools/ios/deploy.sh` uses this.
 
 Signing is yours to set: pick your team in Xcode (Signing & Capabilities), or pass --team. Nothing here touches the keychain or any provisioning profile. The result holds code made from your
 own game files and is for your own devices only: dist/ is git-ignored, and a built app is never to be committed or given to anyone.
@@ -82,8 +85,25 @@ exec env -i HOME="$HOME" USER="$USER" TMPDIR="$TMPDIR" DEVELOPER_DIR="$DEVELOPER
 '''
 
 
-def build(team, bundle_id, entitlements, out_dir):
+def prebuilt_programs(prebuilt):
+    """The programs whose object is in the prebuilt folder (in at least one SDK folder); it must hold SDL2 and its headers too."""
+    sdks = [d for d in ("iphoneos", "iphonesimulator") if os.path.isdir(os.path.join(prebuilt, d))]
+    if not sdks:
+        raise SystemExit("gen_xcodeproj: %s has neither iphoneos/ nor iphonesimulator/" % prebuilt)
+    if not os.path.isfile(os.path.join(prebuilt, "sdl-include", "SDL.h")):
+        raise SystemExit("gen_xcodeproj: %s/sdl-include/SDL.h is not there" % prebuilt)
+    progs = None
+    for d in sdks:
+        have = [p for p in PROGRAMS if os.path.isfile(os.path.join(prebuilt, d, "game_%s.o" % p))]
+        if not os.path.isfile(os.path.join(prebuilt, d, "libSDL2.a")) or not have:
+            raise SystemExit("gen_xcodeproj: %s/%s needs libSDL2.a and at least one game_<program>.o" % (prebuilt, d))
+        progs = have if progs is None else [p for p in progs if p in have]
+    return progs
+
+
+def build(team, bundle_id, entitlements, out_dir, prebuilt=None):
     srcs = runtime_sources()
+    programs = prebuilt_programs(prebuilt) if prebuilt else list(PROGRAMS)
     os.makedirs(out_dir, exist_ok=True)
     plist_path = os.path.join(out_dir, "Info.plist")
     info_plist(plist_path)
@@ -118,31 +138,40 @@ def build(team, bundle_id, entitlements, out_dir):
 
     # targets
     t_libs, t_app, proj = uid("t:GameLibs"), uid("t:Pentamoor"), uid("project")
-    script = uid("script")
-    add("PBXShellScriptBuildPhase", script, "Build SDL2 and the game modules",
-        "{isa = PBXShellScriptBuildPhase; alwaysOutOfDate = 1; buildActionMask = 2147483647; files = (); inputFileListPaths = (); inputPaths = (); name = %s; outputFileListPaths = (); outputPaths = (); "
-        "runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = %s; showEnvVarsInLog = 0; }" % (q("Build SDL2 and the game modules"), q(GAMELIBS_SCRIPT % {"root": ROOT, "link": LINK_SDK})))
     cl_libs, cl_app, cl_proj = uid("cl:libs"), uid("cl:app"), uid("cl:proj")
-    add("PBXAggregateTarget", t_libs, "GameLibs",
-        "{isa = PBXAggregateTarget; buildConfigurationList = %s; buildPhases = %s; dependencies = (); name = GameLibs; productName = GameLibs; }" % (cl_libs, qlist([script], 3)))
-    proxy, dep = uid("proxy"), uid("dep")
-    add("PBXContainerItemProxy", proxy, "PBXContainerItemProxy", "{isa = PBXContainerItemProxy; containerPortal = %s; proxyType = 1; remoteGlobalIDString = %s; remoteInfo = GameLibs; }" % (proj, t_libs))
-    add("PBXTargetDependency", dep, "PBXTargetDependency", "{isa = PBXTargetDependency; target = %s; targetProxy = %s; }" % (t_libs, proxy))
+    if prebuilt:
+        dependencies, target_ids = [], [t_app]
+    else:
+        script = uid("script")
+        add("PBXShellScriptBuildPhase", script, "Build SDL2 and the game modules",
+            "{isa = PBXShellScriptBuildPhase; alwaysOutOfDate = 1; buildActionMask = 2147483647; files = (); inputFileListPaths = (); inputPaths = (); name = %s; outputFileListPaths = (); outputPaths = (); "
+            "runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = %s; showEnvVarsInLog = 0; }" % (q("Build SDL2 and the game modules"), q(GAMELIBS_SCRIPT % {"root": ROOT, "link": LINK_SDK})))
+        add("PBXAggregateTarget", t_libs, "GameLibs",
+            "{isa = PBXAggregateTarget; buildConfigurationList = %s; buildPhases = %s; dependencies = (); name = GameLibs; productName = GameLibs; }" % (cl_libs, qlist([script], 3)))
+        proxy, dep = uid("proxy"), uid("dep")
+        add("PBXContainerItemProxy", proxy, "PBXContainerItemProxy", "{isa = PBXContainerItemProxy; containerPortal = %s; proxyType = 1; remoteGlobalIDString = %s; remoteInfo = GameLibs; }" % (proj, t_libs))
+        add("PBXTargetDependency", dep, "PBXTargetDependency", "{isa = PBXTargetDependency; target = %s; targetProxy = %s; }" % (t_libs, proxy))
+        dependencies, target_ids = [dep], [t_app, t_libs]
     sources_phase, frameworks_phase = uid("phase:sources"), uid("phase:frameworks")
     add("PBXSourcesBuildPhase", sources_phase, "Sources", "{isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = %s; runOnlyForDeploymentPostprocessing = 0; }" % qlist(build_ids, 3))
     add("PBXFrameworksBuildPhase", frameworks_phase, "Frameworks", "{isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; }")
     add("PBXNativeTarget", t_app, "Pentamoor",
         "{isa = PBXNativeTarget; buildConfigurationList = %s; buildPhases = %s; buildRules = (); dependencies = %s; name = Pentamoor; productName = Pentamoor; productReference = %s; "
-        "productType = \"com.apple.product-type.application\"; }" % (cl_app, qlist([sources_phase, frameworks_phase], 3), qlist([dep], 3), product_ref))
-    attrs = "{LastUpgradeCheck = 2600; TargetAttributes = {%s = {CreatedOnToolsVersion = 26.0; }; %s = {CreatedOnToolsVersion = 26.0; %s}; }; }" % (
-        t_libs, t_app, ('DevelopmentTeam = %s; ' % q(team)) if team else "")
+        "productType = \"com.apple.product-type.application\"; }" % (cl_app, qlist([sources_phase, frameworks_phase], 3), qlist(dependencies, 3), product_ref))
+    attrs = "{LastUpgradeCheck = 2600; TargetAttributes = {%s%s = {CreatedOnToolsVersion = 26.0; %s}; }; }" % (
+        "" if prebuilt else "%s = {CreatedOnToolsVersion = 26.0; }; " % t_libs, t_app, ('DevelopmentTeam = %s; ' % q(team)) if team else "")
     add("PBXProject", proj, "Project object",
         "{isa = PBXProject; attributes = %s; buildConfigurationList = %s; compatibilityVersion = \"Xcode 14.0\"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base, ); "
-        "mainGroup = %s; productRefGroup = %s; projectDirPath = \"\"; projectRoot = \"\"; targets = %s; }" % (attrs, cl_proj, g_main, g_prod, qlist([t_app, t_libs], 3)))
+        "mainGroup = %s; productRefGroup = %s; projectDirPath = \"\"; projectRoot = \"\"; targets = %s; }" % (attrs, cl_proj, g_main, g_prod, qlist(target_ids, 3)))
 
     # build settings
-    defs = ["LIFT_BACKEND_FLAT4G=1", "LIFT_PREEMPT=1", "PORT_IOS=1", "PORT_STATIC_MODULES=1"] + ["PORT_STATIC_%s=1" % p.upper() for p in PROGRAMS]
-    ldflags = ["$(inherited)"] + ["$(IOS_ROOT)/dist/ios/$(IOS_PLAT)/game_%s.o" % p for p in PROGRAMS] + ["$(IOS_ROOT)/dist/work-ios/sdl-build/$(IOS_PLAT)/Release-$(PLATFORM_NAME)/libSDL2.a"]
+    defs = ["LIFT_BACKEND_FLAT4G=1", "LIFT_PREEMPT=1", "PORT_IOS=1", "PORT_STATIC_MODULES=1"] + ["PORT_STATIC_%s=1" % p.upper() for p in programs]
+    if prebuilt:       # built beforehand, one folder per SDK (iphoneos / iphonesimulator = $(PLATFORM_NAME))
+        ldflags = ["$(inherited)"] + ["$(PREBUILT_LIBS)/$(PLATFORM_NAME)/game_%s.o" % p for p in programs] + ["$(PREBUILT_LIBS)/$(PLATFORM_NAME)/libSDL2.a"]
+        sdl_include = "$(PREBUILT_LIBS)/sdl-include"
+    else:
+        ldflags = ["$(inherited)"] + ["$(IOS_ROOT)/dist/ios/$(IOS_PLAT)/game_%s.o" % p for p in programs] + ["$(IOS_ROOT)/dist/work-ios/sdl-build/$(IOS_PLAT)/Release-$(PLATFORM_NAME)/libSDL2.a"]
+        sdl_include = "$(IOS_ROOT)/dist/work-ios/sdl-src/include"
     for f in FRAMEWORKS:
         ldflags += ["-framework", f]
     ldflags += ["-liconv"]
@@ -151,6 +180,8 @@ def build(team, bundle_id, entitlements, out_dir):
         "TARGETED_DEVICE_FAMILY": "2", "CLANG_ENABLE_OBJC_ARC": "YES", "GCC_C_LANGUAGE_STANDARD": "gnu99", "ENABLE_USER_SCRIPT_SANDBOXING": "NO",
         "IOS_ROOT": ROOT, "ALWAYS_SEARCH_USER_PATHS": "NO", "COPY_PHASE_STRIP": "NO", "STRIP_INSTALLED_PRODUCT": "NO",
     }
+    if prebuilt:
+        common["PREBUILT_LIBS"] = os.path.abspath(prebuilt)
 
     def cfg(name, settings, raw=None):
         body = "{\n\t\t\tisa = XCBuildConfiguration;\n\t\t\tbuildSettings = {\n"
@@ -170,14 +201,15 @@ def build(team, bundle_id, entitlements, out_dir):
         pid = uid("cfg:proj:" + name)
         add("XCBuildConfiguration", pid, name, cfg(name, s))
         proj_ids.append(pid)
-        lid = uid("cfg:libs:" + name)
-        add("XCBuildConfiguration", lid, name, cfg(name, {"PRODUCT_NAME": "$(TARGET_NAME)"}))
-        libs_ids.append(lid)
+        if not prebuilt:
+            lid = uid("cfg:libs:" + name)
+            add("XCBuildConfiguration", lid, name, cfg(name, {"PRODUCT_NAME": "$(TARGET_NAME)"}))
+            libs_ids.append(lid)
         a = {
             "PRODUCT_NAME": "Pentamoor", "PRODUCT_BUNDLE_IDENTIFIER": bundle_id, "MARKETING_VERSION": "0.0.1", "CURRENT_PROJECT_VERSION": "1",
             "INFOPLIST_FILE": plist_path, "GENERATE_INFOPLIST_FILE": "NO", "CODE_SIGN_STYLE": "Automatic", "DEVELOPMENT_TEAM": team or "",
             "GCC_PREPROCESSOR_DEFINITIONS": ["$(inherited)"] + defs,
-            "HEADER_SEARCH_PATHS": ["$(IOS_ROOT)/src/native", "$(IOS_ROOT)/dist/work-ios/sdl-src/include"],
+            "HEADER_SEARCH_PATHS": ["$(IOS_ROOT)/src/native", sdl_include],
             "USER_HEADER_SEARCH_PATHS": ["$(IOS_ROOT)/src/port"],
             "OTHER_CFLAGS": ["-Wno-unused-parameter", "-Wno-deprecated-declarations"],
             "OTHER_LDFLAGS": ldflags,
@@ -192,7 +224,8 @@ def build(team, bundle_id, entitlements, out_dir):
         add("XCBuildConfiguration", aid, name, cfg(name, a))
         app_ids.append(aid)
     cfglist(cl_proj, 'Build configuration list for PBXProject "Pentamoor"', proj_ids)
-    cfglist(cl_libs, 'Build configuration list for PBXAggregateTarget "GameLibs"', libs_ids)
+    if not prebuilt:
+        cfglist(cl_libs, 'Build configuration list for PBXAggregateTarget "GameLibs"', libs_ids)
     cfglist(cl_app, 'Build configuration list for PBXNativeTarget "Pentamoor"', app_ids)
 
     text = "// !$*UTF8*$!\n{\n\tarchiveVersion = 1;\n\tclasses = {\n\t};\n\tobjectVersion = 56;\n\tobjects = {\n"
@@ -231,14 +264,18 @@ def main(argv):
     ap.add_argument("--bundle-id", default=default_bundle_id(), help="default: %(default)s (a device needs one that is yours: the same id as any other app of your team is refused)")
     ap.add_argument("--entitlements", action="store_true", help="sign with tools/ios/Pentamoor.entitlements (extended virtual addressing, increased memory limit)")
     ap.add_argument("--out", default=os.path.join(ROOT, "dist", "ios", "xcode"), help="where the project goes (default dist/ios/xcode, git-ignored)")
+    ap.add_argument("--prebuilt", default="", help="a folder with iphoneos/ (and/or iphonesimulator/), each with game_<program>.o and libSDL2.a, and sdl-include/: link those instead of building them (the iPad kit)")
     a = ap.parse_args(argv)
     if a.team and not re.fullmatch(r"[A-Z0-9]{10}", a.team):
         raise SystemExit("gen_xcodeproj: --team is the 10-character team id (Xcode > Settings > Accounts, or developer.apple.com > Membership), not a name")
     if not re.fullmatch(r"[A-Za-z0-9.-]+", a.bundle_id):
         raise SystemExit("gen_xcodeproj: a bundle id has only letters, digits, dots and hyphens")
-    p = build(a.team, a.bundle_id, a.entitlements, os.path.abspath(a.out))
+    p = build(a.team, a.bundle_id, a.entitlements, os.path.abspath(a.out), os.path.abspath(a.prebuilt) if a.prebuilt else None)
     print("wrote", p)
-    print("next: tools/ios/build_ios.sh device libs   (optional: the project's first build step does it)\n      open %s   and choose your team in Signing & Capabilities" % p)
+    if a.prebuilt:
+        print("next: open %s   and choose your team in Signing & Capabilities (or run tools/ios/deploy.sh, which does all of it)" % p)
+    else:
+        print("next: tools/ios/build_ios.sh device libs   (optional: the project's first build step does it)\n      open %s   and choose your team in Signing & Capabilities" % p)
     return 0
 
 
