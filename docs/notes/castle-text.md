@@ -48,3 +48,10 @@ them 1.5 pixels apart. Screenshots were taken with the `PORT_CONTROL` recipe of 
   same extents, so it may be the original's too; not compared.
 - The Windows 98 VM was not running; the comparison is one screenshot of another card. A same-card check (a castle's rule card on the original at 640x480) would settle
   the em and the spaces.
+
+## Settled since (`card-text-metrics.md`)
+
+The questions above were answered by measuring the original in the Windows 98 VM: the card font is **8 ppem** (a whole number, not 8.64), a space is **3** logical units (the extents round to the nearest unit; the port
+truncated), GDI applies **no kerning**, the card's MM_ISOTROPIC mapping is cut to **149 x 224** (x scale 0.745), the line pitch is `tmHeight` **13** (the port said 14). With those the words wrap where the original
+wraps them and Fire Elemental's seven lines fit the box at 640x480. What stays: the original's hinted glyph shapes (a TrueType bytecode interpreter), and the sizes other than 640x480, which have no reference.
+

@@ -1511,10 +1511,19 @@ static void rescale(DC *dc)
     if ((dc->mm == 7 || dc->mm == 8) && dc->wext[0] && dc->wext[1]) {
         dc->sx = (double)dc->vext[0] / dc->wext[0];
         dc->sy = (double)dc->vext[1] / dc->wext[1];
-        if (dc->mm == 7) {            /* isotropic: one scale for both axes (the smaller, as Windows fits it) */
-            double ax = dc->sx < 0 ? -dc->sx : dc->sx, ay = dc->sy < 0 ? -dc->sy : dc->sy, m = ax < ay ? ax : ay;
+        if (dc->mm == 7) {
+            /* MM_ISOTROPIC: the units must be equal, so Windows shrinks the viewport extent of the axis whose scale is the bigger, in whole units (the integer quotient). The card text's mapping:
+             * window 200 x 300, viewport 160 x 224: x would be 0.8 and y 0.7467, so the viewport's x becomes 224 * 200 / 300 = 149 and the scales are 149 / 200 = 0.745 and 224 / 300. (The original's
+             * extents of words, which the card text lays out by, agree with 0.745: docs/notes/card-text-metrics.md.) */
+            long vx = dc->vext[0], vy = dc->vext[1], wx = dc->wext[0], wy = dc->wext[1];
+            long ax = vx < 0 ? -vx : vx, ay = vy < 0 ? -vy : vy, bx = wx < 0 ? -wx : wx, by = wy < 0 ? -wy : wy;
 
-            dc->sx = dc->sy = m;
+            if (ax * by > ay * bx)            /* |vx / wx| > |vy / wy| */
+                vx = (vx < 0 ? -1 : 1) * (ay * bx / by);
+            else
+                vy = (vy < 0 ? -1 : 1) * (ax * by / bx);
+            dc->sx = (double)vx / (double)wx;
+            dc->sy = (double)vy / (double)wy;
         }
     } else
         dc->sx = dc->sy = 1.0;

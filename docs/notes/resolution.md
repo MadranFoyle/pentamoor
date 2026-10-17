@@ -56,9 +56,9 @@ Nothing printed "is not implemented" on stderr at any size, and nothing crashed.
 
 ## The game's own behaviour at the larger sizes (not changed)
 
-- **Card text boxes.** The ante screen's cards at 800x600 and 1024x768 print a long rules text past the bottom of the text box (the Giant Spider's: the last lines run over the artist line and
-  out of the card). The text wraps by our substitute font's widths; the original used its own bitmap font. It belongs with the card-text work (`font.c`, `gdi_text.c`), which was in other hands
-  at the time. `overworld.md` found the same at 1024x768.
+- **Card text boxes.** The ante screen's cards at 800x600 and 1024x768 printed a long rules text past the bottom of the text box (the Giant Spider's: the last lines ran over the artist line and
+  out of the card), and Fire Elemental's did at 640x480. **Fixed** (`card-text-metrics.md`): the game wraps by the extents and metrics it reads from GDI, which were not the original's (a fractional 8.64 for the
+  original's 8 ppem, a space of 2 for its 3, kerning, a line pitch of 14 for its 13, an isotropic scale of 0.7467 for its 0.745). `overworld.md` found the same at 1024x768.
 - **The Journal's map is small and centred** at 800x600 and 1024x768 (it is drawn at the size the game draws it for 640x480), and the labels overlap each other ("Windlass Forge" under the
   entry line). The code picks the positions; not compared with the original.
 - **The deck builder's labels ("Stats (36 cards)", "* Deck1 *", "Exit")** inside the game were dark grey on black at all three sizes, 640x480 too; in the standalone `DECK.EXE` they are

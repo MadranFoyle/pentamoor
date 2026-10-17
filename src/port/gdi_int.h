@@ -134,10 +134,13 @@ TTFont *ttf_load(const char *path);
 const char *ttf_family(const TTFont *f);
 const char *ttf_style(const TTFont *f);
 void ttf_text_metrics(const TTFont *f, double em, int *height, int *avg_width);           /* tmHeight and tmAveCharWidth (the dialog base units) */
+int ttf_avg_width(const TTFont *f, double em);                                            /* tmAveCharWidth: the OS/2 table's xAvgCharWidth, rounded; 0 if none */
 int ttf_ascent(const TTFont *f, double em);                                               /* tmAscent: the rounded ascent */
-void ttf_metrics(const TTFont *f, double em, int *ascent, int *descent);              /* hinted-like integer metrics at an em size in pixels */
+void ttf_metrics(const TTFont *f, double em, int *ascent, int *descent);              /* hinted-like integer metrics at an em size in pixels (the ascent and the descent rounded up: where glyphs are placed) */
+void ttf_cell(const TTFont *f, double em, int *ascent, int *descent);                 /* the cell Windows reports at a whole ppem: both rounded to nearest (tmAscent, tmDescent) */
 double ttf_advance(const TTFont *f, double em, unsigned char ch);                      /* integer-rounded advance of a Latin-1 character */
 double ttf_kern(const TTFont *f, double em, unsigned char a, unsigned char b);
+int font_ppem_for_cell(const TTFont *f, int cell);                                     /* the ppem Windows gives a TrueType font asked for a cell of this many pixels */
 uint8_t *ttf_glyph(const TTFont *f, double em, unsigned char ch, int *w, int *h, int *left, int *top);   /* malloc'd coverage plane, or NULL (a space) */
 
 /* text on a plain RGB buffer in the stand-in face (the compositor's own labels) */

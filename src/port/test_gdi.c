@@ -274,6 +274,53 @@ static void test_palette_relative_tools(void)
     CHECK(API("GetPixel", hdc, 8, 8) == RGB(44, 55, 66) && API("GetPixel", hdc, 10, 10) == RGB(11, 22, 33));
 }
 
+/* The card text of the original, measured in the Windows 98 VM at 640x480 (MPZurich Cn BT, TT0298M_.TTF, a LOGFONT of height 14 on the card's mapping, three ante cards' words and spaces: MM_ISOTROPIC, window 200 x 300, viewport 160 x 224): what
+ * GetTextExtentPoint32 returned for the words and spaces of an ante card ("Gain 1 life. Use this ability ... for each such spell."), and what GetTextMetrics returned for the font
+ * (docs/notes/card-text-metrics.md). Skipped when the game's font is not there (it is not in the repository). */
+static void test_card_text_metrics(void)
+{
+    static const struct { const char *s; int cx; } words[] = {
+        {" ", 3}, {"+2/+2.", 35}, {"1", 5}, {":", 3}, {"Asp", 16}, {"Enchanted", 46}, {"Flying", 27}, {"Gain", 20}, {"Nafs", 19}, {"Use", 16}, {"Whenever", 44}, {"a", 5}, {"ability", 27},
+        {"additional", 43}, {"an", 11}, {"and", 16}, {"before", 27}, {"cast", 17}, {"creature", 35}, {"damage", 35}, {"damages", 39}, {"deals", 23}, {"draw", 21}, {"during", 27},
+        {"each", 21}, {"for", 11}, {"gets", 17}, {"he", 11}, {"her", 13}, {"his", 12}, {"is", 7}, {"it", 5}, {"life.", 16}, {"next", 19}, {"once", 21}, {"only", 19}, {"or", 8},
+        {"pays", 20}, {"phase", 26}, {"phase.", 28}, {"player", 27}, {"player,", 30}, {"red", 13}, {"she", 15}, {"spell", 20}, {"spell.", 23}, {"successfully", 52}, {"such", 20},
+        {"that", 16}, {"this", 15}, {"to", 8}, {"unless", 27}, {"when", 24},
+    };
+    extern int fonts_add_file(const char *host_path);
+    const char *path = "../../sources/installed/Magic/Program/TT0298M_.TTF";
+    Window *win = window_with_surface(200, 40);
+    uint32_t hdc, face = scratch(32), str = scratch(32), sz = scratch(8), tm = scratch(64), font;
+    size_t i;
+    int bad = 0;
+    TTFont *f = ttf_load(path);
+
+    if (!f) {
+        printf("(the game's card font is not here: the card text's metrics are not checked)\n");
+        return;
+    }
+    /* the ppem Windows picks for a cell: the largest whose hinted cell (both rounded) fits */
+    CHECK(font_ppem_for_cell(f, 10) == 8 && font_ppem_for_cell(f, 11) == 9 && font_ppem_for_cell(f, 12) == 10 && font_ppem_for_cell(f, 16) == 14 && font_ppem_for_cell(f, 1) == 1);
+    CHECK(fonts_add_file(path) == 1);
+    hdc = API("GetDC", win->hwnd);
+    API("SetMapMode", hdc, 7);                                          /* MM_ISOTROPIC: window 200 x 300 on viewport 160 x 224 (the card's: 0.8 and 0.7467), so x is cut to 149 of 160: 0.745 */
+    API("SetWindowExtEx", hdc, 200, 300, 0);
+    API("SetViewportExtEx", hdc, 160, 224, 0);
+    strcpy((char *)(G + face), "MPZurich Cn BT");
+    font = API("CreateFontA", 14, 0, 0, 0, 400, 0, 0, 0, 0, 0, 0, 0, 0, face);
+    API("SelectObject", hdc, font);
+    for (i = 0; i < sizeof(words) / sizeof(words[0]); i++) {
+        strcpy((char *)(G + str), words[i].s);
+        API("GetTextExtentPoint32A", hdc, str, (uint32_t)strlen(words[i].s), sz);
+        if ((int)RD32(sz) != words[i].cx || (int)RD32(sz + 4) != 13) {
+            bad++;
+            printf("  '%s': %d x %d, the original's %d x 13\n", words[i].s, (int)RD32(sz), (int)RD32(sz + 4), words[i].cx);
+        }
+    }
+    CHECK(bad == 0);
+    API("GetTextMetricsA", hdc, tm);
+    CHECK((int)RD32(tm) == 13 && (int)RD32(tm + 4) == 10 && (int)RD32(tm + 8) == 2 && (int)RD32(tm + 12) == 2 && (int)RD32(tm + 16) == 0 && (int)RD32(tm + 20) == 4);   /* height, ascent, descent, internal leading, external leading, average width */
+}
+
 static void test_text(void)
 {
     Window *win = window_with_surface(200, 40);
@@ -338,6 +385,7 @@ int main(void)
     test_mono_bitmap_and_clip();
     test_palettes();
     test_palette_relative_tools();
+    test_card_text_metrics();
     test_text();
     test_small_text_coverage();
     printf("%d checks, %d failed\n", checks, failures);
