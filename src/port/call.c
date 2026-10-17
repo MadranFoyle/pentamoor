@@ -26,7 +26,8 @@ LiftThreadState lift_thread_initial(void)
     t.x87_cw = 0x27f;
     return t;
 }
-int port_trace_imports;        /* "trace on" in PORT_CONTROL: every import call is printed with its first four arguments and its result */
+int port_trace_calls;          /* "calls on" in PORT_CONTROL: every call from one lifted function to another is printed with its caller (a few seconds of it show the engine's flow) */
+int port_trace_imports;       /* "trace on" in PORT_CONTROL: every import call is printed with its first four arguments and its result */
 __thread uint32_t port_sp;      /* the guest's stack pointer at the import call being served (the address of its return address) */
 
 typedef struct { uint32_t entry; uint32_t (*fn)(uint32_t); uint32_t cleanup; } Target;
@@ -213,6 +214,8 @@ uint32_t lift_call(uint32_t target, uint32_t argp, uint32_t *cleanup)
             }
             fputc('\n', stderr);
         }
+        if (port_trace_calls)
+            fprintf(stderr, "    [fn] 0x%08x from 0x%08x\n", target, RD32(argp - 4u));
         if (who_on) {
             char nm[16];
 
@@ -242,6 +245,7 @@ uint32_t lift_call(uint32_t target, uint32_t argp, uint32_t *cleanup)
 
         im->calls++;
         if (who_on) who_note(im->name, RD32(argp - 4u));
+        sched_note_call(im->name, RD32(argp - 4u));
         *cleanup = im->cleanup;
         if (!im->fn) {
             if (!getenv("PORT_STUB"))

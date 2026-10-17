@@ -210,6 +210,25 @@ int main(int argc, char **argv)
         CHECK(crt_api("realloc")(args) != 0);
     }
 
+    /* PORT_CONTROL "threads": the dump names the main thread and the last import it called (a hang is told from a loop by what the blocked threads called last) */
+    {
+        char text[400] = "";
+        FILE *tf = tmpfile();
+
+        sched_note_call("WaitForSingleObject", 0x00442236u);
+        CHECK(tf != NULL);
+        if (tf) {
+            size_t n;
+
+            sched_dump(tf);
+            rewind(tf);
+            n = fread(text, 1, sizeof(text) - 1, tf);
+            text[n] = 0;
+            fclose(tf);
+        }
+        CHECK(strstr(text, "thread 1 ready") != NULL && strstr(text, "last import WaitForSingleObject from 0x00442236") != NULL);
+    }
+
     printf("test_module: %d checks, %d failed\n", checks, failures);
     return failures != 0;
 }

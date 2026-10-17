@@ -31,6 +31,8 @@ struct GThread {
     int started;
     LiftThreadState lth;        /* this thread's x87 state and return EDX while another thread runs (lift_state.th is the running thread's) */
     int slot;                   /* which stack of the stack area it runs on (-1: the main thread has its own) */
+    const char *last_call;      /* the last import this thread called, and from where in the guest: what a thread that blocks in it is waiting for (sched_dump) */
+    uint32_t last_from;
 };
 
 static pthread_mutex_t big = PTHREAD_MUTEX_INITIALIZER;
@@ -56,6 +58,35 @@ double port_now(void) { return mono() - t0 + port_clock_skew; }
 uint32_t port_now_ms(void) { return 60000u + (uint32_t)(port_now() * 1000.0); }
 
 GThread *sched_current(void) { return cur; }
+
+void sched_note_call(const char *name, uint32_t from)
+{
+    if (cur) {
+        cur->last_call = name;
+        cur->last_from = from;
+    }
+}
+
+/* PORT_CONTROL "threads": every guest thread, what it is doing and what it called last. A thread that is blocked, with no deadline and nothing that can wake it (ready is the function
+ * that says it may run; none means only a deadline can wake it), is waiting for something that nobody is going to give: the import it is in says what. */
+void sched_dump(FILE *f)
+{
+    int i;
+    double now = port_now();
+
+    for (i = 0; i < nthreads; i++) {
+        const GThread *t = threads[i];
+
+        fprintf(f, "  thread %d %s", t->tid, t->state == READY ? "ready" : t->state == BLOCKED ? "blocked" : "done");
+        if (t->state == BLOCKED)
+            fprintf(f, " (%s, %s)", t->ready ? "waits for a condition" : "no condition", t->until < 0 ? "no deadline" : "a deadline");
+        if (t->state == BLOCKED && t->until >= 0)
+            fprintf(f, " in %.2f s", t->until - now);
+        if (t->state == BLOCKED && t->ready)
+            fprintf(f, " ready=%p (sched_dump is %p)", (void *)t->ready, (void *)sched_dump);
+        fprintf(f, ", last import %s from 0x%08x\n", t->last_call ? t->last_call : "none", t->last_from);
+    }
+}
 uint32_t sched_tid(void) { return (uint32_t)cur->tid; }
 uint32_t sched_thread_id(const GThread *t) { return (uint32_t)t->tid; }
 int sched_thread_done(const GThread *t) { return t->state == DONE; }

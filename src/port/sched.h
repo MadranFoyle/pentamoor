@@ -10,6 +10,7 @@
 #define PORT_SCHED_H
 
 #include <stdint.h>
+#include <stdio.h>
 
 typedef struct GThread GThread;
 
@@ -34,6 +35,10 @@ void sched_give_up(void);
 /* Offer the baton now, and give the thread a full budget, if fewer than `min` back-edges are left of it: a place where the guest is about to run a stretch of code that must not be
  * preempted in the middle (pace.c: a screen's pass of the button table). Returns 1 if the baton was offered. */
 int sched_yield_if_low(int32_t min);
+
+/* Debugging: what each thread called last (call.c notes every import), and a dump of all guest threads (PORT_CONTROL "threads", on stderr). */
+void sched_note_call(const char *name, uint32_t from);
+void sched_dump(FILE *f);
 
 /* The clock the guest sees: real time since the program started. now_ms is what GetTickCount returns. */
 extern double port_clock_skew;
