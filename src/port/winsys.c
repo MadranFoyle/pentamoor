@@ -236,15 +236,107 @@ static const char *system_message(uint32_t id)
     }
 }
 
+/* The inserts of a FORMAT_MESSAGE_FROM_STRING message (Spells of the Ancients 2.15 takes its texts from AdvStrings.txt with them: "%1 Village", "Trade %1 for %2", "%1!d! fine %2"):
+ *   %1 .. %99  the n-th argument, as a string (a pointer); %1!fmt! with a printf conversion: %1!d!, %1!s!, %1!02x!, %1!c! (the argument is a 32-bit value)
+ *   %0 ends the text (no more); %n a line break (CR LF), %r CR, %t tab, %% a percent sign, %. a period, %! an exclamation mark, %space a space
+ * `args` is the address of the argument array (FORMAT_MESSAGE_ARGUMENT_ARRAY) or of a va_list (the dword it holds is the array's address). A message with no inserts comes out as it was. */
+size_t winsys_format_message(char *out, size_t cap, const char *fmt, uint32_t args, int array)
+{
+    size_t n = 0;
+    uint32_t base = args;
+
+    if (args && !array)
+        base = RD32(args);                          /* a va_list is a pointer to the arguments on the caller's stack */
+#define PUT(c) do { if (n + 1 < cap) out[n] = (char)(c); n++; } while (0)
+    while (*fmt) {
+        char c = *fmt++;
+
+        if (c != '%') {
+            PUT(c);
+            continue;
+        }
+        c = *fmt;
+        if (c >= '1' && c <= '9') {
+            unsigned idx = 0;
+            char spec[24], text[400];
+            const char *s;
+            uint32_t v;
+            int k = 0;
+
+            while (*fmt >= '0' && *fmt <= '9' && idx < 100)
+                idx = idx * 10 + (unsigned)(*fmt++ - '0');
+            v = base ? RD32(base + 4 * (idx - 1)) : 0;
+            strcpy(spec, "%s");
+            if (*fmt == '!') {                      /* %1!d!: up to the next '!' is a printf conversion */
+                const char *e = strchr(fmt + 1, '!');
+
+                if (e && (size_t)(e - fmt) < sizeof(spec)) {
+                    spec[0] = '%';
+                    memcpy(spec + 1, fmt + 1, (size_t)(e - fmt - 1));
+                    spec[e - fmt] = 0;
+                    fmt = e + 1;
+                }
+            }
+            k = (int)strlen(spec);
+            switch (spec[k - 1]) {
+            case 'd': case 'i': snprintf(text, sizeof(text), spec, (int)v); break;
+            case 'u': case 'x': case 'X': case 'o': snprintf(text, sizeof(text), spec, v); break;
+            case 'c': case 'C': snprintf(text, sizeof(text), "%c", (int)(v & 0xff)); break;
+            default:                                /* a string: the argument is the address of its characters */
+                s = v ? P(v) : "(null)";
+                spec[k - 1] = 's';
+                snprintf(text, sizeof(text), spec, s);
+            }
+            for (s = text; *s; s++)
+                PUT(*s);
+            continue;
+        }
+        fmt++;
+        switch (c) {
+        case 0: fmt--; PUT('%'); break;
+        case '%': PUT('%'); break;
+        case 'n': PUT('\r'); PUT('\n'); break;
+        case 'r': PUT('\r'); break;
+        case 't': PUT('\t'); break;
+        case '.': PUT('.'); break;
+        case '!': PUT('!'); break;
+        case ' ': PUT(' '); break;
+        case '0': goto done;
+        default: PUT(c);
+        }
+    }
+done:
+    if (cap)
+        out[n < cap ? n : cap - 1] = 0;
+#undef PUT
+    return n;
+}
+
 static uint32_t FormatMessageA(const uint32_t *a)
 {
     uint32_t flags = a[0], n;
-    char fallback[64];
+    char fallback[64], *formatted = NULL;
     const char *text;
 
-    if (flags & 0x400)                             /* FORMAT_MESSAGE_FROM_STRING */
+    if (flags & 0x400) {                           /* FORMAT_MESSAGE_FROM_STRING */
         text = P(a[1]);
-    else if (flags & 0x1000) {                     /* FORMAT_MESSAGE_FROM_SYSTEM */
+        if (!(flags & 0x200)) {                    /* no FORMAT_MESSAGE_IGNORE_INSERTS: do the inserts */
+            size_t cap = 4096, len;
+
+            formatted = malloc(cap);
+            if (!formatted) {
+                k32_set_last_error(8);
+                return 0;
+            }
+            len = winsys_format_message(formatted, cap, text, a[6], (flags & 0x2000) != 0);
+            if (len >= cap) {
+                free(formatted);
+                k32_set_last_error(ERROR_INSUFFICIENT_BUFFER);
+                return 0;
+            }
+            text = formatted;
+        }
+    } else if (flags & 0x1000) {                     /* FORMAT_MESSAGE_FROM_SYSTEM */
         text = system_message(a[2]);
         if (!text) {
             snprintf(fallback, sizeof(fallback), "Unknown error (0x%x).", a[2]);
@@ -258,17 +350,18 @@ static uint32_t FormatMessageA(const uint32_t *a)
     if (flags & 0x100) {                           /* FORMAT_MESSAGE_ALLOCATE_BUFFER: a[4] is the address of the pointer to set */
         uint32_t block = heap_alloc(n + 1);
 
-        if (!block)
+        if (!block) {
+            free(formatted);
             return 0;
+        }
         memcpy(P(block), text, n + 1);
         WR32(a[4], block);
-        return n;
-    }
-    if (a[5] < n + 1) {
+    } else if (a[5] < n + 1) {
         k32_set_last_error(ERROR_INSUFFICIENT_BUFFER);
-        return 0;
-    }
-    memcpy(P(a[4]), text, n + 1);
+        n = 0;
+    } else
+        memcpy(P(a[4]), text, n + 1);
+    free(formatted);
     return n;
 }
 

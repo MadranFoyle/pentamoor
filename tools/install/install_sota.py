@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-install_sota.py - lift and build Spells of the Ancients 2.15 (shandalar.exe, FaceMaker.exe and the deck builder) from a folder of your own files.   EXPERIMENTAL: milestone 1,
-docs/notes/sota-comparison.md ("Milestone 1")
+install_sota.py - lift and build Spells of the Ancients 2.15 (shandalar.exe, FaceMaker.exe and the deck builder) from a folder of your own files.   EXPERIMENTAL: milestones 1 and 2,
+docs/notes/sota-comparison.md ("Milestone 1", "Milestone 2")
 
-    python3 tools/install/install_sota.py sources/installed_sota_215_play --build          # lift the three programs and build their modules (a checkout: make; a release: modbuild)
-    python3 tools/install/install_sota.py sources/installed_sota_215_play --check          # only say which build each file is
-    PENTAMOOR_SOTA=sources/installed_sota_215_play/Program ./pentamoor sota                # run it
+    python3 tools/install/install_sota.py sources/installed_sota_215_m2 --build          # lift the three programs and build their modules (a checkout: make; a release: modbuild)
+    python3 tools/install/install_sota.py sources/installed_sota_215_m2 --check          # only say which build each file is
+    PENTAMOOR_SOTA=sources/installed_sota_215_m2/Program ./pentamoor sota                # run it
 
 The folder is what Windows has after the expansion is installed over the first game and patched: the first game's install (the pictures, sprites and sounds Spells of the Ancients
 still reads from it), with the files of the 2.0 install over it (the expansion's disc, `Program\\`), and the six files of the 2.15 patch over those. This script does not make it: it
@@ -20,8 +20,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, "..", "lift"))       # builds.py: run from a checkout as `python3 tools/install/install_sota.py`, it was not found (milestone 1 ran it with tools/lift on PYTHONPATH)
 
-import builds  # noqa: E402  (liftrun puts tools/lift on the path)
+import builds  # noqa: E402
 import install  # noqa: E402
 import liftrun  # noqa: E402
 import modbuild  # noqa: E402

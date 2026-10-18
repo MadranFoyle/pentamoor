@@ -145,6 +145,17 @@ int port_hook_at(int i, uint32_t *addr, int *is_override)
     return 1;
 }
 
+/* The function of the first pre-call hook installed at addr, or NULL: for the tests, which run a hook as the game's call would, without a lifted function behind it. */
+HostGuestFn port_prehook_fn(uint32_t addr)
+{
+    int i;
+
+    for (i = 0; i < nprehooks; i++)
+        if (prehooks[i].addr == addr)
+            return prehooks[i].fn;
+    return NULL;
+}
+
 void lift_bad_jump(uint32_t from)
 {
     port_fatal("a jump table was indexed out of range at 0x%08x", from);

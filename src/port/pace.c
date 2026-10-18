@@ -55,7 +55,17 @@ static uint32_t read_and_clear_ticks(const uint32_t *a)
 #define PASS_BUDGET 20000                       /* back-edges a pass of the table may need (a few hundred in fact: the records' loops and their drawing); a budget below this is renewed at its start */
 #define REPEAT_MS 400u                          /* a button held this long repeats */
 
-static double ui_last;
+static double ui_last;                          /* the last paced pass */
+static int naps;                                /* how many times an idle hook has rested (the tests count) */
+
+static void idle_nap(void)
+{
+    naps++;
+    sched_sleep(profile->pace.idle_ms / 1000.0);
+}
+
+int pace_nap_count(void) { return naps; }
+static int snap_napped;                         /* pace_idle_snapshot (below) napped since the last pass: the loop that took the snapshot has had its rest */
 static uint32_t cur_press, press_val;           /* the press the loops have acted on (front.c's number), and the button state it had */
 static int suppressed, carried, ui_log;
 
@@ -82,6 +92,16 @@ static uint32_t pace_ui_pass(const uint32_t *a)
         WR32(arg, btn);
         if (ui_log)
             port_log("ui pass from 0x%x: the press came in while the baton was offered: state %u", ret, btn);
+    }
+    if (snap_napped)
+        snap_napped = 0;
+    else if (btn == 0 && profile->pace.idle_ms && RD32(profile->buttons.mouse_var) == 0) {
+        /* a screen's loop whose only work is this call (the title menu never takes the mouse snapshot: it called this 1.8 million times a second): nap, as pace_idle_snapshot does; a press that
+         * came in meanwhile is the state the call is given */
+        idle_nap();
+        btn = RD32(profile->buttons.mouse_var);
+        if (btn != 0)
+            WR32(arg, btn);
     }
     down = front_ui_pass(&id, &held);
     if (id != 0 && id != cur_press && btn != 0) {     /* the first pass that sees this press down: the click */
@@ -123,6 +143,34 @@ static uint32_t pace_ui_pass(const uint32_t *a)
     return 0;
 }
 
+/* The loops that wait for the player (a menu, the "Cards for Sale" page, a message that waits for a click or a key) take the mouse snapshot on every pass of a loop that has nothing
+ * else to do, and so used a whole core: nothing in them waits. The snapshot is the one call every such loop makes, so the wait is made here: a call that finds no button down naps
+ * pace.idle_ms (the window's events are served meanwhile, so a click is seen within that time). Not from the map's loop, which has its frame period, and not while a button is held,
+ * which a screen's pass already paces and a drag must not lose. */
+static uint32_t pace_idle_snapshot(const uint32_t *a)
+{
+    uint32_t ret = RD32(port_sp);
+
+    (void)a;
+    if (ret >= profile->pace.map_loop.lo && ret < profile->pace.map_loop.hi)
+        return 0;
+    if (RD32(profile->buttons.mouse_var) != 0)
+        return 0;
+    idle_nap();
+    snap_napped = 1;
+    return 0;
+}
+
+/* The same for the game's "wait for a key" (a (Y/N) question, a message that waits for any key): its loop polls the key queue with nothing between the polls; the poll is entered from
+ * keys.wait_loop_ret. */
+static uint32_t pace_idle_poll(const uint32_t *a)
+{
+    (void)a;
+    if (RD32(port_sp) == profile->keys.wait_loop_ret)
+        idle_nap();
+    return 0;
+}
+
 void pace_install(void)
 {
     const char *ms = getenv("PORT_FRAME_MS");
@@ -135,6 +183,10 @@ void pace_install(void)
     ui_log = getenv("PORT_UI_LOG") != NULL;
     port_override(profile->pace.tick_fn, read_and_clear_ticks, 0, 0);
     port_prehook(profile->buttons.pass, pace_ui_pass);
+    if (profile->pace.idle_ms && profile->pace.idle_fn)
+        port_prehook(profile->pace.idle_fn, pace_idle_snapshot);
+    if (profile->pace.idle_ms && profile->keys.pop && profile->keys.wait_loop_ret)
+        port_prehook(profile->keys.pop, pace_idle_poll);
 }
 
 /* Is the overworld's loop running (it has made a frame in the last third of a second)? The touch screen holds the left button with a finger there (the party walks while it is held) and

@@ -128,6 +128,7 @@ void port_prehook(uint32_t addr, HostGuestFn fn);    /* runs before the lifted f
 struct BuildProfile;
 void lzw_install(void);          /* the program's own copy of the picture decompressor, if the active profile has one (lzw.c) */
 void pace_install(void);         /* the overworld's frame rate (pace.c) */
+int pace_nap_count(void);        /* how many times an idle hook (a loop that waits for the player) has rested the host (pace.c; the tests count) */
 int pace_map_active(void);       /* the overworld's loop has made a frame in the last third of a second (pace.c; the touch screen's mode) */
 void textfocus_install(void);    /* when the game waits for typed text (textfocus.c) */
 void screens_install(void);      /* which screen of the game is on, for the D-pad (screens.c) */
@@ -136,6 +137,7 @@ void lzw_install_library(const struct BuildProfile *lib, uint32_t base);     /* 
 void lzw_reset(void);            /* forget the copies installed (the tests, with port_hooks_reset) */
 void port_hooks_reset(void);     /* forget them all (the tests) */
 int port_hook_count(void);      /* how many pre-call hooks and overrides are installed (the tests; an unknown build must have none) */
+HostGuestFn port_prehook_fn(uint32_t addr);                     /* the first pre-call hook installed at addr, or NULL (the tests run it directly) */
 int port_hook_at(int i, uint32_t *addr, int *is_override);      /* the i'th of them, pre-call hooks first, then overrides, in the order they were installed */
 
 /* DLLs (modules.c): the game's libraries, lifted or provided by the host */

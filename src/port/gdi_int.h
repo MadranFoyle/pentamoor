@@ -131,6 +131,7 @@ uint8_t text_coverage(uint8_t a, double em);                                    
 
 /* the TrueType rasterizer (font.c) */
 typedef struct TTFont TTFont;
+unsigned int font_cp1252_to_unicode(unsigned int ch);                                  /* the game's ANSI text to the fonts' Unicode (0x80..0x9f are punctuation there, not controls) */
 TTFont *ttf_load(const char *path);
 const char *ttf_family(const TTFont *f);
 const char *ttf_style(const TTFont *f);

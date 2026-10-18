@@ -44,7 +44,7 @@
 
 static const BuildProfile PROFILES[] = {
     {
-        .id = ID_V10_MAGIC, .build = "v1.0", .file = "MAGIC.EXE", .program = "MAGIC", .hooks_verified = 1,
+        .id = ID_V10_MAGIC, .build = "v1.0", .file = "MAGIC.EXE", .program = "MAGIC", .hooks_verified = HK_ALL,
         .lzw = {.header = 0x70d000, .read = 0x70d484, .read2 = 0x70d1fc, .block = 0x532860,
                 .in_ptr = 0x706500, .in_end = 0x5327b0, .refill = 0x67f43c, .callback = 0x50e8b0},
         .pace = {.tick_fn = 0x5016f9, .ticks = 0x530da0, .frame_ret = 0x4e7873, .map_loop = {0x4e73a0, 0x4e7936}},
@@ -77,7 +77,11 @@ static const BuildProfile PROFILES[] = {
         .id = ID_V10_STATWIN, .build = "v1.0", .file = "STATWIN.DLL", .program = "", .base = 0x30000000,
     },
     {
-        .id = ID_V215_SHANDALAR, .build = "v2.15", .file = "shandalar.exe", .program = "SHANDALAR",
+        .id = ID_V215_SHANDALAR, .build = "v2.15", .file = "shandalar.exe", .program = "SHANDALAR", .hooks_verified = HK_DISPLAY | HK_PACE | HK_KEYS,
+        .pace = {.tick_fn = 0x48a3a5, .ticks = 0x566f3c, .frame_ret = 0x438f85, .map_loop = {0x438a70, 0x439059}, .idle_fn = 0x4eab14, .idle_ms = 16},
+        .buttons = {.pass = 0x4ba087, .mouse_var = 0x9199b0},
+        .keys = {.wait = 0x4b84d7, .pop = 0x4a8ea2, .wait_loop_ret = 0x4b84e5, .sites = {0x4a3296}, .nsites = 1, .name_loop = {0x53aecd, 0x53b129}},
+        .display = {.width = 0x57a7d0, .height = 0x57a7d4},
         .programs = {{"facemaker.exe", "game_facemaker"}, {"deck.exe", "game_sotadeck"}, {"shandalar.exe", "game_shandalar"}},
         .lzw = {.header = 0x91e000, .read = 0x91e484, .read2 = 0x91e1fc, .block = 0x582070,
                 .in_ptr = 0x915cd0, .in_end = 0x581fc0, .refill = 0x726b1c, .callback = 0x55d9e0},

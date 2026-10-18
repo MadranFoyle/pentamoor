@@ -321,6 +321,32 @@ static void test_card_text_metrics(void)
     CHECK((int)RD32(tm) == 13 && (int)RD32(tm + 4) == 10 && (int)RD32(tm + 8) == 2 && (int)RD32(tm + 12) == 2 && (int)RD32(tm + 16) == 0 && (int)RD32(tm + 20) == 4);   /* height, ascent, descent, internal leading, external leading, average width */
 }
 
+/* The game's text is in code page 1252: 0x93 and 0x94 are the curly quotes of the 2.15 card texts, and they are drawn from the font's Unicode glyphs, not as the missing-glyph box. */
+static void test_cp1252(void)
+{
+    const char *path = "../../sources/installed/Magic/Program/TT0298M_.TTF";
+    TTFont *f;
+
+    CHECK(font_cp1252_to_unicode(0x93) == 0x201cu && font_cp1252_to_unicode(0x94) == 0x201du && font_cp1252_to_unicode(0x91) == 0x2018u && font_cp1252_to_unicode(0x92) == 0x2019u);
+    CHECK(font_cp1252_to_unicode(0x96) == 0x2013u && font_cp1252_to_unicode(0x97) == 0x2014u && font_cp1252_to_unicode(0x85) == 0x2026u && font_cp1252_to_unicode(0x80) == 0x20acu);
+    CHECK(font_cp1252_to_unicode('A') == 'A' && font_cp1252_to_unicode(0x7f) == 0x7fu && font_cp1252_to_unicode(0xa0) == 0xa0u && font_cp1252_to_unicode(0xfb) == 0xfbu);
+    CHECK(font_cp1252_to_unicode(0x81) == 0x81u && font_cp1252_to_unicode(0x8d) == 0x8du && font_cp1252_to_unicode(0x8f) == 0x8fu && font_cp1252_to_unicode(0x90) == 0x90u && font_cp1252_to_unicode(0x9d) == 0x9du);
+    f = ttf_load(path);
+    if (!f) {
+        printf("(the game's card font is not here: the curly quotes' glyphs are not checked)\n");
+        return;
+    }
+    {
+        int w, h, l, t, w2, h2;
+        uint8_t *q = ttf_glyph(f, 14, 0x93, &w, &h, &l, &t), *missing = ttf_glyph(f, 14, 0x81, &w2, &h2, &l, &t);
+
+        CHECK(q != NULL && w > 0 && h > 0);
+        CHECK(missing == NULL || w != w2 || h != h2 || memcmp(q, missing, (size_t)w * (size_t)h) != 0);    /* not the box U+0081 has */
+        free(q);
+        free(missing);
+    }
+}
+
 static void test_text(void)
 {
     Window *win = window_with_surface(200, 40);
@@ -440,6 +466,7 @@ int main(void)
     test_palettes();
     test_palette_relative_tools();
     test_card_text_metrics();
+    test_cp1252();
     test_text();
     test_small_text_coverage();
     test_sota_calls();

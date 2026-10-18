@@ -10,6 +10,7 @@
 #include "port.h"
 #include "profile.h"
 #include "screens.h"
+#include "sched.h"
 #include "test_util.h"
 #include "yesno.h"
 
@@ -183,12 +184,32 @@ static void test_v10_values(void)
 }
 
 /* Spells of the Ancients 2.15: every row, with the values tools/research/sotalzw.py and tools/lift/builds.py give, and the rule that a row with no verified hooks holds none. */
-static int has_hook_fields(const BuildProfile *p)
+/* The groups (HK_*) a row holds addresses of. A row may hold a group only if its `hooks_verified` has the bit. */
+static int hook_groups(const BuildProfile *p)
 {
-    return p->pace.tick_fn || p->pace.ticks || p->pace.frame_ret || p->pace.map_loop.hi || p->buttons.pass || p->buttons.mouse_var || p->buttons.snapshot || p->buttons.ctx_cur ||
-           p->buttons.ctx_count || p->buttons.ctx_ptrs || p->textmenu.loop.hi || p->textmenu.left || p->textmenu.count || p->buycards.loop.hi || p->buycards.ids ||
-           p->clues.loop.hi || p->title.loop.hi || p->keys.wait || p->keys.pop || p->keys.wait_loop_ret || p->keys.nsites || p->keys.name_loop.hi || p->display.width || p->display.height;
+    int g = 0;
+
+    if (p->pace.tick_fn || p->pace.ticks || p->pace.frame_ret || p->pace.map_loop.hi || p->pace.idle_fn || p->pace.idle_ms)
+        g |= HK_PACE;
+    if (p->buttons.pass || p->buttons.mouse_var)
+        g |= HK_PACE;
+    if (p->buttons.snapshot || p->buttons.ctx_cur || p->buttons.ctx_count || p->buttons.ctx_ptrs)
+        g |= HK_BUTTONS;
+    if (p->textmenu.loop.hi || p->textmenu.left || p->textmenu.top || p->textmenu.right || p->textmenu.line_h || p->textmenu.first || p->textmenu.count || p->textmenu.mask)
+        g |= HK_TEXTMENU;
+    if (p->buycards.loop.hi || p->buycards.ids || p->buycards.count_ebp || p->buycards.boxes_ebp)
+        g |= HK_BUYCARDS;
+    if (p->clues.loop.hi || p->clues.count_ebp)
+        g |= HK_CLUES;
+    if (p->title.loop.hi)
+        g |= HK_TITLE;
+    if (p->keys.wait || p->keys.pop || p->keys.wait_loop_ret || p->keys.nsites || p->keys.name_loop.hi)
+        g |= HK_KEYS;
+    if (p->display.width || p->display.height)
+        g |= HK_DISPLAY;
+    return g;
 }
+static int has_hook_fields(const BuildProfile *p) { return hook_groups(p) != 0; }
 
 static void test_v215_values(void)
 {
@@ -209,14 +230,23 @@ static void test_v215_values(void)
             continue;
         profile_name(p, name, sizeof(name));
         CHECK(!strcmp(p->build, "v2.15") && !strcmp(p->file, rows[i].file) && !strcmp(p->program, rows[i].program) && p->base == rows[i].base);
-        CHECK(!p->hooks_verified && !has_hook_fields(p));
+        if (p != profile_find(ID_S_SHANDALAR))
+            CHECK(!p->hooks_verified && !has_hook_fields(p));       /* only shandalar.exe has hooks: the others hold none */
     }
-    for (i = 0; i < profile_count(); i++)
-        if (!profile_at(i)->hooks_verified)
-            CHECK(!has_hook_fields(profile_at(i)));         /* a build whose hooks were not ported holds none of their addresses, whichever build it is */
-        else
+    for (i = 0; i < profile_count(); i++) {
+        const BuildProfile *p = profile_at(i);
+
+        CHECK((hook_groups(p) & ~p->hooks_verified) == 0);          /* a group that is not verified holds none of its addresses, whichever build it is */
+        CHECK((p->hooks_verified & ~HK_ALL) == 0);
+        if (hook_groups(p))
             n++;
-    CHECK(n == 1);                                          /* MAGIC.EXE 1.0 is the one row with verified hooks */
+    }
+    CHECK(profile_find(ID_MAGIC)->hooks_verified == HK_ALL && hook_groups(profile_find(ID_MAGIC)) == HK_ALL);     /* MAGIC.EXE 1.0: every group verified */
+    CHECK(n == 2);                                          /* MAGIC.EXE 1.0 and shandalar.exe 2.15 hold hook addresses */
+    CHECK(sh && sh->display.width == 0x57a7d0u && sh->display.height == 0x57a7d4u && hook_groups(sh) == (HK_DISPLAY | HK_PACE | HK_KEYS) && sh->hooks_verified == (HK_DISPLAY | HK_PACE | HK_KEYS));
+    CHECK(sh->pace.tick_fn == 0x48a3a5u && sh->pace.ticks == 0x566f3cu && sh->pace.frame_ret == 0x438f85u && sh->pace.map_loop.lo == 0x438a70u && sh->pace.map_loop.hi == 0x439059u);
+    CHECK(sh->pace.idle_fn == 0x4eab14u && sh->pace.idle_ms == 16 && !profile_find(ID_MAGIC)->pace.idle_ms && !profile_find(ID_MAGIC)->pace.idle_fn);   /* 1.0 does not nap */
+    CHECK(sh->buttons.pass == 0x4ba087u && sh->buttons.mouse_var == 0x9199b0u && !sh->buttons.snapshot);
     CHECK(sh && fm && dd && dc);
     if (!sh || !fm || !dd || !dc)
         return;
@@ -316,15 +346,16 @@ static void test_hooks(void)
     CHECK(hooks_are(none, 0, deckdll_over, 3));
     /* Spells of the Ancients 2.15: no hook of any kind, the picture decompressor of each file that has one; two libraries have a copy and both are overridden */
     {
-        static const uint32_t shandalar_over[] = {0x91e000, 0x91e484, 0x91e1fc};
+        static const uint32_t shandalar_hooks[] = {0x4ba087, 0x4eab14, 0x4a8ea2, 0x4a8ea2, 0x4b84d7, 0x4a8ea2};
+        static const uint32_t shandalar_over[] = {0x91e000, 0x91e484, 0x91e1fc, 0x48a3a5};
         static const uint32_t facemaker_over[] = {0x428000, 0x428484, 0x4281fc};
         static const uint32_t both_over[] = {0x321e9000, 0x321e9484, 0x321e91fc, 0x36155000, 0x36155484, 0x361551fc};
 
         profile = profile_find(ID_S_SHANDALAR);
         install_all();
-        CHECK(hooks_are(none, 0, shandalar_over, 3));
-        CHECK(!yesno_site(0x4a3296) && !yesno_site(0x4f0b96) && !yesno_site(0x509e4a));
-        CHECK(profile_write_screen_size(800, 600) == 0);
+        CHECK(hooks_are(shandalar_hooks, 6, shandalar_over, 4));
+        CHECK(yesno_site(0x4a3296) && !yesno_site(0x468c0e) && !yesno_site(0x4f0b96) && !yesno_site(0x509e4a) && !yesno_site(0x45119d) && !yesno_site(0x4b84e5));     /* only "Buy for N gold?" was run: the sell (0x468c0e) and take (0x4f0b96) sites are matched by code shape but were not seen answering, so they are not in the row */
+        CHECK(profile_write_screen_size(800, 600) == 2);      /* the screen-size globals 0x57a7d0 and 0x57a7d4 */
         profile = profile_find(ID_S_FACEMAKER);
         install_all();
         CHECK(hooks_are(none, 0, facemaker_over, 3));
@@ -514,13 +545,65 @@ static void test_init(void)
     test_rmtree(dir);
 }
 
+/* Spells of the Ancients 2.15's loops that wait for the player (the title menu: it only calls the button table's pass, a million and a half times a second; the other menus and the "wait for
+ * a key" loop: the mouse snapshot and the key poll) make the host nap, except on the map (its frame period does that), while a button is down, and in 1.0. The hooks are run as the game's
+ * call would, with the return address on the stack. */
+static int naps_of(HostGuestFn fn, uint32_t ret, uint32_t button)
+{
+    uint32_t args[4] = {0, 0, button, 0};
+    int before = pace_nap_count();
+
+    port_sp = 0x800000u;
+    WR32(port_sp, ret);
+    WR32(port_sp + 12, button);                 /* the state the pass is called with */
+    WR32(profile->buttons.mouse_var, button);
+    fn(args);
+    return pace_nap_count() - before;
+}
+
+static void test_idle_naps(void)
+{
+    const BuildProfile *sh = profile_find(ID_S_SHANDALAR);
+    HostGuestFn snap, pass, poll;
+    const uint32_t outside = 0x4b6fe7u, in_map = 0x438f85u;
+    double t0;
+
+    profile = sh;
+    install_all();
+    snap = port_prehook_fn(sh->pace.idle_fn);
+    pass = port_prehook_fn(sh->buttons.pass);
+    poll = port_prehook_fn(sh->keys.pop);
+    CHECK(snap && pass && poll && sh->pace.idle_ms >= 8 && sh->pace.idle_ms <= 50);
+    if (!snap || !pass || !poll)
+        return;
+    t0 = port_now();
+    CHECK(naps_of(snap, outside, 0) == 1);                        /* a menu's loop takes the mouse snapshot with no button down: it rests ... */
+    CHECK(port_now() - t0 >= sh->pace.idle_ms / 1000.0 * 0.9);    /* ... for the profile's time */
+    CHECK(naps_of(snap, outside, 1) == 0);                        /* a button is down: a drag is not slowed */
+    CHECK(naps_of(snap, in_map, 0) == 0);                         /* the map has its frame period, not this */
+    CHECK(naps_of(snap, outside, 0) == 1);
+    CHECK(naps_of(pass, outside, 0) == 0);                        /* the pass after a snapshot that napped has had its rest ... */
+    CHECK(naps_of(pass, outside, 0) == 1);                        /* ... and the next one, with no snapshot before it (the title menu), rests itself */
+    CHECK(naps_of(pass, outside, 1) == 0 && naps_of(pass, in_map, 0) == 0);
+    CHECK(naps_of(poll, sh->keys.wait_loop_ret, 0) == 1);         /* the key poll of the "wait for a key" loop */
+    CHECK(naps_of(poll, 0x4a3296u, 0) == 0);                      /* a poll from anywhere else (the name box) is not that loop */
+    profile = profile_find(ID_MAGIC);                            /* 1.0: no nap of any kind (its snapshot hook is screens.c's, which notes the screen) */
+    install_all();
+    CHECK(profile->pace.idle_ms == 0 && profile->pace.idle_fn == 0);
+    CHECK(naps_of(port_prehook_fn(0x44b84b), outside, 0) == 0);
+    CHECK(naps_of(port_prehook_fn(0x41f3ea), outside, 0) == 0);
+    CHECK(naps_of(port_prehook_fn(0x4080b2), 0x48ac3d, 0) == 0);
+}
+
 int main(void)
 {
     guest_init();
+    sched_init();
     test_sha256();
     test_v10_values();
     test_v215_values();
     test_hooks();
+    test_idle_naps();
     test_second_profile();
     test_verdicts();
     test_init();

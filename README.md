@@ -14,7 +14,8 @@ reimplementation of the Windows calls it makes, over SDL2. How that works is in
 
 You supply the game: a disc image of the retail *Magic: The Gathering* CD (version 1.0), as an `.iso`
 (a raw `.mdf/.mds` pair needs `mdf2iso "MTG v1.0.mdf" "MTG v1.0.iso"` first). Only version 1.0 is supported: a program of another build (a patched one, the *Spells of the Ancients* expansion) is recognised
-by its checksum and refused at start with a message (exit status 3), because the port's hooks are made for 1.0's addresses.
+by its checksum and refused at start with a message (exit status 3), because the port's hooks are made for 1.0's addresses. (*Spells of the Ancients* 2.15's `shandalar.exe` is a separate, experimental build that runs from a folder you assemble yourself, with `tools/install/install_sota.py` and `./pentamoor sota`: it plays from the title screen through a new game and duels with the mouse;
+[docs/notes/sota-comparison.md](docs/notes/sota-comparison.md) says what was run and what was not.)
 
 ### From a release
 

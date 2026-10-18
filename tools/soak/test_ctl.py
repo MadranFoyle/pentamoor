@@ -152,3 +152,45 @@ def test_known_stderr_lines_depend_on_the_program(tmp_path):
     assert known(magic, "GetProcAddress(0x400000, szDeckName) -> not found") and not known(magic, "GetProcAddress(0x400000, Gold) -> not found")
     assert known(deck, "GetProcAddress(0x400000, Gold) -> not found") and not known(deck, "port: something else")
     assert make_soak(tmp_path / "e", "DUEL").standalone() and not magic.standalone()
+
+
+# ---- Spells of the Ancients 2.15 (sota_soak.py) ---------------------------------------------------------------------------------------------
+def test_game_without_a_seed_overlay_starts_empty_and_takes_arguments(tmp_path):
+    g = Game(str(tmp_path), workdir=str(tmp_path / "w"), program="x/shandalar.exe", module="m.dylib", overlay_seed=None, args=["root"])
+    assert g.overlay_seed is None and g.args == ["root"]
+    assert Game(str(tmp_path), workdir=str(tmp_path / "w2")).overlay_seed == "sources/emu_overlay"        # 1.0: the saved game that soak.py plays from
+
+
+def test_sota_teleport_uses_the_2_15_addresses_not_1_0s(tmp_path):
+    import sota_soak
+    p = dict(sota_soak.teleport_pokes(36, 34))
+    assert p[0x5645b0] == 36 * 32 + 16 and p[0x5645b4] == 34 * 32 + 16 and p[0x912870] == 36 and p[0x912874] == 34
+    assert p[0x8b82d0] == 0 and p[0x69e220] == 0xffffffff                       # the map is drawn whole on the next frame (the function at 0x49313e does the same)
+    assert not any(a in p for a in (0x52eff0, 0x52eff4, 0x641010, 0x641884))     # none of 1.0's
+    assert sota_soak.MONSTERS == 0x725310 and sota_soak.MONSTER_STRIDE == 24 and sota_soak.LIVES == 0x8f67d0 and sota_soak.WIN_LIFE == 0x8f67d4
+
+
+def test_sota_soak_expects_its_own_messages_on_stderr(tmp_path):
+    import argparse
+    import sota_soak
+    a = argparse.Namespace(res="1024x768", seed=1, workdir=str(tmp_path / "s"), program="sources/installed_sota_215_m2/Program/shandalar.exe", module=None, repo=str(tmp_path), exe="x")
+    s = sota_soak.SotaSoak(a)
+    known = lambda line: any(k.match(line) for k in s.known_stderr)           # noqa: E731
+    assert known("LoadLibraryA(drawcardlib.dll) -> mapped at 0x36000000") and known("process: started facemaker.exe (module game_facemaker, id 61333)")
+    assert known("build: v2.15 shandalar.exe (sha256 e4e46718c451)") and not known("overworld frame took 700 ms (the period is 60)")
+
+
+def test_read_ppm(tmp_path):
+    import sota_soak
+    p = tmp_path / "a.ppm"
+    p.write_bytes(b"P6\n2 1\n255\n" + bytes([1, 2, 3, 4, 5, 6]))
+    assert sota_soak.read_ppm(str(p)) == (2, 1, bytes([1, 2, 3, 4, 5, 6]))
+    assert sota_soak.read_ppm(str(tmp_path / "none.ppm")) is None
+
+
+def test_sota_saveload_and_soak_scripts_parse_and_agree_on_addresses():
+    import ast
+    import sota_soak
+    for name in ("sota_soak.py", "sota_saveload.py"):
+        ast.parse(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), name)).read())
+    assert sota_soak.PARTY_TILE == (0x912870, 0x912874) and sota_soak.LOCATIONS == 0x721e30
