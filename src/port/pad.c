@@ -31,7 +31,8 @@
 #define PAD_ARROW_OFF 0.3f
 
 /* The controls, in one table: each control of the pad and what it does. Keys are the game's own (virtual-key code, scan code, character): Enter 13/0x1C, Escape 27/0x01,
- * Page Up 0x21/0x49 and Page Down 0x22/0x51 (they scroll the game's lists, the deck builder's and the file dialog's among them). The sticks are not here: the left one moves
+ * Page Up 0x21/0x49 and Page Down 0x22/0x51 (they scroll the game's lists, the deck builder's and the file dialog's among them). LB is PB_VIEW: in a duel, with the pointer on a card, it is "view this card" (the game's
+ * own Full-size card window shows it at once); otherwise it is its key, Page Up. The sticks are not here: the left one moves
  * the cursor, the right one is the arrow keys and eight directions (the castle's and the dungeons' walking, a list's rows). docs/notes/controller.md and the README's Controls list this table. */
 static const PadBind binds[] = {
     /* btn         action       vk    sc     ch  rep dx dy */
@@ -42,7 +43,7 @@ static const PadBind binds[] = {
     {PAD_START,  PB_KEY,    13,   0x1C,  13, 0, 0,  0},       /* Enter */
     {PAD_BACK,   PB_KEY,    27,   0x01,  27, 0, 0,  0},       /* Escape: cancel ("Ready to Quit?" on the map) */
     {PAD_LSTICK, PB_KEY,    32,   0x39,  32, 0, 0,  0},       /* Space (the stick pressed in): stops the party walking by the arrow keys on the map */
-    {PAD_LB,     PB_KEY,    0x21, 0x49,  -1, 1, 0,  0},       /* Page Up */
+    {PAD_LB,     PB_VIEW,   0x21, 0x49,  -1, 1, 0,  0},       /* with the pointer on a card of a duel: show it in the Full-size card window now; else Page Up */
     {PAD_RB,     PB_KEY,    0x22, 0x51,  -1, 1, 0,  0},       /* Page Down */
     {PAD_LT,     PB_SLOW,   0,    0,     -1, 0, 0,  0},       /* held: the cursor moves slowly (precision) */
     {PAD_RT,     PB_WALK,   0,    0,     -1, 0, 0,  0},       /* held: the left stick walks (aims the avatar's way and holds the left button) */
@@ -226,9 +227,22 @@ void pad_set_back_guard(int (*fn)(void)) { back_guard = fn; }
 static int step_index(const PadBind *b) { return b->dy < 0 ? 0 : b->dy > 0 ? 1 : b->dx < 0 ? 2 : 3; }
 
 void pad_set_nav(Pad *p, int on) { p->nav = on != 0; }
+void pad_set_card(Pad *p, int on) { p->card = on != 0; }
+
+void pad_freeze(Pad *p, int on, PadOut *out)
+{
+    on = on != 0;
+    if (on == p->frozen)
+        return;
+    if (on)
+        pad_release_all(p, out);                         /* the game hears the end of everything the pad held, once */
+    p->frozen = on;
+}
 
 void pad_put(Pad *p, int x, int y, PadOut *out)
 {
+    if (p->frozen)
+        return;
     put_cursor(p, (float)x, (float)y);
     announce(p, out);
 }
@@ -238,7 +252,8 @@ void pad_tap_dir(Pad *p, int dir, PadOut *out)
 {
     size_t k;
 
-    (void)p;
+    if (p->frozen)
+        return;
     for (k = 0; k < sizeof(binds) / sizeof(binds[0]); k++)
         if (binds[k].act == PB_NAV && step_index(&binds[k]) == dir) {
             emit(out, PA_KEYDOWN, 0, 0, binds[k].vk, binds[k].sc, binds[k].ch, 0);
@@ -273,7 +288,7 @@ void pad_button(Pad *p, int btn, int down, PadOut *out)
 {
     const PadBind *b;
 
-    if (btn < 0 || btn >= PAD_NBUTTONS || down == (int)((p->down >> btn) & 1))
+    if (btn < 0 || btn >= PAD_NBUTTONS || down == (int)((p->down >> btn) & 1) || p->frozen)
         return;
     if (down) {
         p->down |= 1u << btn;
@@ -308,6 +323,14 @@ void pad_button(Pad *p, int btn, int down, PadOut *out)
                     p->back.holding = 0;
                 key_up(p, btn, out);
             }
+            break;
+        case PB_VIEW:
+            if (down && p->card)
+                emit(out, PA_VIEW, p->ix, p->iy, 0, 0, -1, 0);                 /* no key: nothing for the game to see, nothing to let go */
+            else if (down)
+                key_down(p, btn, b->vk, b->sc, b->ch, b->rep, out);
+            else
+                key_up(p, btn, out);
             break;
         case PB_NAV: {
             int i = step_index(b);
@@ -348,7 +371,7 @@ int pad_axis(Pad *p, int axis, int value, PadOut *out)
     float v = (float)value / 32767.0f, sx, sy;
     int use = 0;
 
-    if (axis < 0 || axis > PAD_AX_RT)
+    if (axis < 0 || axis > PAD_AX_RT || p->frozen)
         return 0;
     v = v < -1.0f ? -1.0f : v > 1.0f ? 1.0f : v;
     p->ax[axis] = v;
@@ -389,7 +412,7 @@ void pad_step(Pad *p, int ms, PadOut *out)
     int i, slow = 0, fast = 0, walk = 0;
     size_t k;
 
-    if (ms <= 0 || !p->active)
+    if (ms <= 0 || !p->active || p->frozen)
         return;
     if (p->back.holding) {
         p->back.t += ms;

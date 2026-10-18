@@ -179,6 +179,7 @@ static void handle_text(const char *text)
 /* Whether SDL's text input is on. Everywhere but the Steam Deck it always is. On the Deck (and with PORT_TEXTINPUT=auto) it is on only while a text field has the focus
  * (front_text_wanted), because there SDL_StartTextInput is what brings the Steam keyboard up, and it must not be up over the title screen. */
 static int text_managed, text_on;
+static int drop_text;                                /* the key that was just taken as the display's or the port's own (V) types a character in SDL's text input, which follows it in the same batch: it is dropped */
 
 static void update_text_input(void)
 {
@@ -249,6 +250,7 @@ static void log_pad_act(const PadAct *a)
     case PA_RUP:     padlog("pad: right button up at (%d,%d)", a->x, a->y); break;
     case PA_KEYDOWN: if (!a->repeat) padlog("pad: key down vk 0x%x", a->vk); break;
     case PA_KEYUP:   padlog("pad: key up vk 0x%x", a->vk); break;
+    case PA_VIEW:    padlog("pad: view card at (%d,%d): the game's Full-size card window is to show the card under the pointer", a->x, a->y); break;
     case PA_NAV:     padlog("pad: D-pad %s from (%d,%d)%s: asks the game for the next target", a->dir == 0 ? "up" : a->dir == 1 ? "down" : a->dir == 2 ? "left" : "right", a->x, a->y, a->repeat ? " (repeat)" : ""); break;
     default: break;
     }
@@ -271,6 +273,7 @@ static void pad_deliver(const PadOut *o)
         case PA_RUP:     front_push_mouse(IN_RUP, a->x, a->y); break;
         case PA_KEYDOWN: front_push_key(a->vk, a->sc, 1, a->ch, a->repeat); break;
         case PA_KEYUP:   front_push_key(a->vk, a->sc, 0, -1, 0); break;
+        case PA_VIEW:    front_push_view(a->x, a->y); break;               /* LB with a card under the pointer: the guest side posts the game's own "View in full card" to that card */
         case PA_NAV:     front_push_nav(a->dir, a->x, a->y); break;       /* the D-pad: the guest side finds the next card or button (navwm.c), the answer comes back in pad_nav_answers */
         }
     }
@@ -358,6 +361,7 @@ static void pad_event(const SDL_Event *ev)
 
     out.n = 0;
     pad_set_nav(&pad, front_nav_ready());
+    pad_set_card(&pad, front_view_ready());
     switch (ev->type) {
     case SDL_CONTROLLERAXISMOTION: {
         int axis = pad_axis_of(ev->caxis.axis);
@@ -453,6 +457,7 @@ static void pad_tick(void)
         dt = 100;
     out.n = 0;
     pad_set_nav(&pad, front_nav_ready());
+    pad_set_card(&pad, front_view_ready());
     pad_step(&pad, dt, &out);
     pad_deliver(&out);
 }
@@ -843,6 +848,9 @@ static void run_step(const Step *s)
             fprintf(stderr, "shot: no frame yet\n");
         if (f)
             fclose(f);
+    } else if (!strcmp(s->cmd, "viewcard")) {          /* viewcard X Y: the middle mouse button's action at a picture pixel (the game's Full-size card window shows the card there) */
+        if (sscanf(s->arg, "%d %d", &x, &y) == 2)
+            front_push_view(x, y);
     } else if (!strcmp(s->cmd, "pad")) {
         run_pad_step(s->arg);
     } else if (!strcmp(s->cmd, "dump")) {         /* dump ADDR LENGTH FILE: raw guest memory (a debugging aid; the guest keeps running meanwhile) */
@@ -1038,6 +1046,17 @@ typedef struct {
 } Disp;
 
 static Disp D;
+
+/* ---- the enlarged card ----
+ * The second press of the view button (LB, V, the middle button) on a card the game's Full-size card window already shows: front.c has copied that window's picture (front_zoom_take), and it is
+ * shown here over the frame, dimmed behind, as large as the window allows (display_zoom_layout), with the filter the player chose. It is drawn into the output, not the game's picture, so it is as
+ * sharp as the output allows whatever the window's size. While it is up the game is sent nothing: mouse, keys, pad and touch are taken here, and any button or key (the pad's sticks and the
+ * pointer's moving do not) ends it. docs/notes/controller.md. */
+static int zoom_on;
+static SDL_Texture *zoom_tex, *zoom_pre;
+static int zoom_w, zoom_h, zoom_pre_w, zoom_pre_h, zoom_pre_valid;
+static unsigned zoom_seen;
+static int zoom_swallow_up[2];                       /* a mouse button (left, right) whose press ended the picture: its release is not the game's either */
 
 static int is_fullscreen(void) { return (SDL_GetWindowFlags(D.win) & SDL_WINDOW_FULLSCREEN) != 0; }
 
@@ -1268,6 +1287,62 @@ static void draw_picture(void)
     SDL_RenderCopy(D.ren, D.tex, NULL, &dst);
 }
 
+/* The enlarged card over the picture, in the drawable: the frame dimmed, the card centred. nearest and linear as the picture is; sharp: the card enlarged by a whole number with nearest neighbour into
+ * a render target and that scaled linearly to its final size (as draw_picture does), or nearest alone where the scale is a whole number. */
+static void draw_zoom(void)
+{
+    DispRect r;
+    SDL_Rect dst;
+    FilterMode f = D.now.filter;
+    int exact;
+
+    if (!zoom_on || !zoom_tex)
+        return;
+    display_zoom_layout(zoom_w, zoom_h, D.ow, D.oh, &r);
+    if (r.w <= 0 || r.h <= 0)
+        return;
+    SDL_SetRenderDrawBlendMode(D.ren, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(D.ren, 0, 0, 0, ZOOM_DIM_ALPHA);
+    SDL_RenderFillRect(D.ren, NULL);
+    SDL_SetRenderDrawBlendMode(D.ren, SDL_BLENDMODE_NONE);
+    dst = (SDL_Rect){r.x, r.y, r.w, r.h};
+    exact = r.w % zoom_w == 0 && r.h % zoom_h == 0;
+    if (f == FILTER_SHARP && !exact) {
+        int kx = display_prescale(zoom_w, r.w, 8, D.max_tex), ky = display_prescale(zoom_h, r.h, 8, D.max_tex);
+
+        if ((kx > 1 || ky > 1) && SDL_RenderTargetSupported(D.ren)) {
+            int pw = zoom_w * kx, ph = zoom_h * ky;
+
+            if (!zoom_pre || zoom_pre_w != pw || zoom_pre_h != ph) {
+                if (zoom_pre)
+                    SDL_DestroyTexture(zoom_pre);
+                SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+                zoom_pre = SDL_CreateTexture(D.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, pw, ph);
+                SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
+                zoom_pre_w = pw;
+                zoom_pre_h = ph;
+                zoom_pre_valid = 0;
+                if (zoom_pre)
+                    set_tex_filter(zoom_pre, 1);
+            }
+            if (zoom_pre) {
+                if (!zoom_pre_valid) {
+                    set_tex_filter(zoom_tex, 0);
+                    SDL_SetRenderTarget(D.ren, zoom_pre);
+                    SDL_RenderCopy(D.ren, zoom_tex, NULL, NULL);
+                    SDL_SetRenderTarget(D.ren, NULL);
+                    zoom_pre_valid = 1;
+                }
+                SDL_RenderCopy(D.ren, zoom_pre, NULL, &dst);
+                return;
+            }
+        }
+        set_tex_filter(zoom_tex, 1);
+    } else
+        set_tex_filter(zoom_tex, f == FILTER_LINEAR);
+    SDL_RenderCopy(D.ren, zoom_tex, NULL, &dst);
+}
+
 /* the picture into the back buffer (not yet shown) */
 static void render_current(void)
 {
@@ -1280,6 +1355,7 @@ static void render_current(void)
     SDL_SetRenderDrawColor(D.ren, 0, 0, 0, 255);
     SDL_RenderClear(D.ren);
     draw_picture();
+    draw_zoom();
 }
 
 static void present_now(void)
@@ -1319,6 +1395,120 @@ static void winshot(const char *path)
     free(px);
     free(row);
     fclose(f);
+}
+
+/* The enlarged card is shown / ended. The pad is told (pad_freeze: it lets go of what it held and is silent while the picture is up). */
+static void zoom_open(const uint8_t *rgb, int w, int h)
+{
+    if (!zoom_tex || zoom_w != w || zoom_h != h) {
+        if (zoom_tex)
+            SDL_DestroyTexture(zoom_tex);
+        if (zoom_pre) {
+            SDL_DestroyTexture(zoom_pre);
+            zoom_pre = NULL;
+        }
+        SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
+        zoom_tex = SDL_CreateTexture(D.ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, w, h);
+        zoom_w = w;
+        zoom_h = h;
+    }
+    if (!zoom_tex || SDL_UpdateTexture(zoom_tex, NULL, rgb, w * 3) != 0)
+        return;
+    zoom_pre_valid = 0;
+    zoom_on = 1;
+    padlog("the enlarged card is up (%dx%d card picture): the game is sent nothing until a button or key ends it", w, h);
+    if (pad_on) {
+        PadOut out;
+
+        out.n = 0;
+        pad_freeze(&pad, 1, &out);
+        pad_deliver(&out);
+    }
+}
+
+static void zoom_close(void)
+{
+    if (!zoom_on)
+        return;
+    zoom_on = 0;
+    padlog("the enlarged card is closed");
+    if (pad_on) {
+        PadOut out;
+
+        out.n = 0;
+        pad_freeze(&pad, 0, &out);
+        pad_deliver(&out);
+    }
+}
+
+static int mouse_fwd[2];                              /* a left, a right button press the game was sent and has not been sent the release of */
+
+/* An SDL event while the enlarged card is up. 0: it goes on its way (the window's own events, the display's keys, a release of something the game was sent the press of); 1: taken, nothing is sent
+ * to the game; 2: taken, and it ended the picture (the caller draws again). Any mouse button, key, pad button or finger ends it; the pointer's moving, the sticks and a key that only modifies do not. */
+static int zoom_event(const SDL_Event *ev, int *l3, int *r3)
+{
+    int b;
+
+    switch (ev->type) {
+    case SDL_MOUSEMOTION:
+        return ev->motion.which == CALIB_MOUSE ? 0 : 1;
+    case SDL_MOUSEWHEEL:
+        return 1;
+    case SDL_MOUSEBUTTONDOWN:
+        if (ev->button.which == CALIB_MOUSE)
+            return 0;
+        b = ev->button.button == SDL_BUTTON_LEFT ? 0 : ev->button.button == SDL_BUTTON_RIGHT ? 1 : -1;
+        if (b >= 0)
+            zoom_swallow_up[b] = 1;
+        zoom_close();
+        return 2;
+    case SDL_MOUSEBUTTONUP:
+        if (ev->button.which == CALIB_MOUSE)
+            return 0;
+        b = ev->button.button == SDL_BUTTON_LEFT ? 0 : ev->button.button == SDL_BUTTON_RIGHT ? 1 : -1;
+        return b >= 0 && mouse_fwd[b] ? 0 : 1;
+    case SDL_KEYDOWN: {
+        int sc = ev->key.keysym.scancode;
+        DispKey dk;
+
+        if (sc <= 0 || sc >= SDL_NUM_SCANCODES)
+            return 1;
+        dk = sc == SDL_SCANCODE_F11 ? DK_F11 : (sc == SDL_SCANCODE_RETURN || sc == SDL_SCANCODE_KP_ENTER) ? DK_RETURN : DK_OTHER;
+        if (dk != DK_OTHER && display_key_action(dk, phys[SDL_SCANCODE_LALT] || phys[SDL_SCANCODE_RALT], phys[SDL_SCANCODE_LCTRL] || phys[SDL_SCANCODE_RCTRL],
+                                                 phys[SDL_SCANCODE_LSHIFT] || phys[SDL_SCANCODE_RSHIFT]) != DA_NONE)
+            return 0;                                              /* the display's own key (full screen, scaling, filter): the picture stays and the key does its work */
+        phys[sc] = 1;
+        swallowed[sc] = 1;                                         /* its release is not the game's either */
+        if (sc == SDL_SCANCODE_LALT || sc == SDL_SCANCODE_RALT || sc == SDL_SCANCODE_LCTRL || sc == SDL_SCANCODE_RCTRL || sc == SDL_SCANCODE_LSHIFT || sc == SDL_SCANCODE_RSHIFT)
+            return 1;                                              /* a modifier may be the start of Alt+Enter */
+        drop_text = text_on;
+        zoom_close();
+        return 2;
+    }
+    case SDL_TEXTINPUT:
+        return 1;
+    case SDL_CONTROLLERBUTTONDOWN:
+        if (ev->cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSTICK)
+            *l3 = 1;
+        else if (ev->cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSTICK)
+            *r3 = 1;
+        zoom_close();                                              /* the pad never hears of this press: it is not a click, a key or a move */
+        return 2;
+    case SDL_CONTROLLERAXISMOTION:
+        if ((ev->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT || ev->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) && ev->caxis.value > 16000) {
+            zoom_close();
+            return 2;
+        }
+        return 0;                                                  /* a stick: the (frozen) pad follows nothing */
+    case SDL_FINGERDOWN:
+        zoom_close();
+        return 2;
+    case SDL_FINGERMOTION:
+    case SDL_FINGERUP:
+        return 1;
+    default:
+        return 0;
+    }
 }
 
 /* the player can also leave or enter full screen without us (the green button on a Mac, a window manager's key): the state is what the window says, except just after our own change */
@@ -1719,6 +1909,14 @@ int front_run(int (*game)(void *), void *arg)
             do {
                 if (padlog_on())
                     log_sdl_event(&ev);
+                if (zoom_on) {
+                    int z = zoom_event(&ev, &pad_l3, &pad_r3);
+
+                    if (z) {
+                        dirty = dirty || z == 2;
+                        continue;
+                    }
+                }
                 switch (ev.type) {
                 case SDL_QUIT:
                     front_push_quit();
@@ -1785,13 +1983,25 @@ int front_run(int (*game)(void *), void *arg)
                             note_calibration(&mouse_scale_button, ev.button.x);
                         break;
                     }
+                    if (ev.type == SDL_MOUSEBUTTONUP && (ev.button.button == SDL_BUTTON_LEFT || ev.button.button == SDL_BUTTON_RIGHT) && zoom_swallow_up[ev.button.button == SDL_BUTTON_LEFT ? 0 : 1]) {
+                        zoom_swallow_up[ev.button.button == SDL_BUTTON_LEFT ? 0 : 1] = 0;           /* the release of the press that ended the enlarged card: not the game's, and not the mouse taking the cursor either */
+                        break;
+                    }
                     map_mouse(ev.button.which, 1, &mx, &my);
                     if (ev.type == SDL_MOUSEBUTTONDOWN)
                         flush_alt();                 /* Alt+click is the game's */
                     pad_mouse(mx, my);
+                    if (ev.button.button == SDL_BUTTON_MIDDLE) {            /* the middle button is the game's nothing: it views the card under the pointer (the guest side finds out whether there is one) */
+                        if (ev.type == SDL_MOUSEBUTTONDOWN) {
+                            front_push_mouse(IN_MOVE, mx, my);
+                            front_push_view(mx, my);
+                        }
+                        break;
+                    }
                     if (ev.button.button == SDL_BUTTON_LEFT || ev.button.button == SDL_BUTTON_RIGHT) {
                         int down = ev.type == SDL_MOUSEBUTTONDOWN, left = ev.button.button == SDL_BUTTON_LEFT;
 
+                        mouse_fwd[left ? 0 : 1] = down;
                         front_push_mouse(left ? (down ? IN_DOWN : IN_UP) : (down ? IN_RDOWN : IN_RUP), mx, my);
                     }
                     break;
@@ -1842,6 +2052,15 @@ int front_run(int (*game)(void *), void *arg)
                                                                                       phys[SDL_SCANCODE_LSHIFT] || phys[SDL_SCANCODE_RSHIFT]);
 
                         phys[sc] = 1;
+                        if (sc == SDL_SCANCODE_V && ev.key.repeat && swallowed[sc])
+                            break;                                          /* the held V of a view */
+                        if (sc == SDL_SCANCODE_V && !ev.key.repeat && !phys[SDL_SCANCODE_LCTRL] && !phys[SDL_SCANCODE_RCTRL] && !phys[SDL_SCANCODE_LALT] && !phys[SDL_SCANCODE_RALT]
+                            && !phys[SDL_SCANCODE_LSHIFT] && !phys[SDL_SCANCODE_RSHIFT] && front_view_ready()) {
+                            front_push_view(pad_on ? pad.ix : mouse_x, pad_on ? pad.iy : mouse_y);      /* V: view the card under the pointer in the game's Full-size card window; not the game's key, nor its release. With no card there it is the game's (a V typed in a name) */
+                            swallowed[sc] = 1;
+                            drop_text = text_on;
+                            break;
+                        }
                         if (da != DA_NONE) {                                /* the display's key: not the game's, and neither is its release; an Alt that was held back stays back */
                             if (!ev.key.repeat)
                                 display_act(da);
@@ -1890,6 +2109,10 @@ int front_run(int (*game)(void *), void *arg)
                     break;
                 }
                 case SDL_TEXTINPUT:
+                    if (drop_text) {
+                        drop_text = 0;
+                        break;
+                    }
                     handle_text(ev.text.text);
                     break;
                 default:
@@ -1897,6 +2120,7 @@ int front_run(int (*game)(void *), void *arg)
                 }
             } while (SDL_PollEvent(&ev));
             flush_pending(-1);                       /* a key whose text did not follow in the batch types nothing */
+            drop_text = 0;
         }
         if (display_combo_step(&combo, pad_l3, pad_r3, SDL_GetTicks()))
             display_act(DA_FULLSCREEN);
@@ -1906,6 +2130,15 @@ int front_run(int (*game)(void *), void *arg)
         pad_tick();
         if (pad_on)
             pad_nav_answers();
+        {
+            static uint8_t zbuf[512 * 768 * 3];
+            int zw, zh;
+
+            if (front_zoom_take(zbuf, sizeof(zbuf), &zoom_seen, &zw, &zh)) {
+                zoom_open(zbuf, zw, zh);
+                dirty = 1;
+            }
+        }
         if (front_take_frame(rgb, &seen))
             D.upload = dirty = 1;
         if (pad_view_changed())
@@ -1928,6 +2161,10 @@ int front_run(int (*game)(void *), void *arg)
             SDL_GameControllerClose(pads[i]);
     free(rgb);
     free(view_buf);
+    if (zoom_tex)
+        SDL_DestroyTexture(zoom_tex);
+    if (zoom_pre)
+        SDL_DestroyTexture(zoom_pre);
     if (D.pre)
         SDL_DestroyTexture(D.pre);
     SDL_DestroyTexture(D.tex);

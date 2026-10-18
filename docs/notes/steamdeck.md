@@ -38,6 +38,9 @@ are the mouse, the Desktop layout's A/B/D-pad send Enter, Esc and arrows; not tr
 What the layout must give (what `pad.c` reads, `controller.md` has what each does): A B X Y; both sticks and their clicks; both triggers as analog triggers; both bumpers; the D-pad; View (back) and Menu (start). The
 back grips and the trackpad touches are not used.
 
+The view-card button is LB (`controller.md`, "Viewing a card"): the shipped layout binds the left bumper to the Xbox's `SHOULDER_LEFT` (the `left_bumper` group of `controller_neptune_pentamoor.vdf`) and the Gamepad templates do the same, so it needs no entry
+in any layout; on a Deck the left bumper is L1. V and the middle mouse button do the same for a keyboard and mouse (the Deck's trackpads are the mouse in the "with Mouse Trackpad" layout; a trackpad click is its left or right button, not the middle one).
+
 SDL's own pieces, which need nothing from us: Steam launches a non-Steam game with `SDL_GAMECONTROLLERCONFIG` set for the virtual "Steam Virtual Gamepad" (an Xbox 360 pad as far as SDL is concerned); the
 SDL reads it when the controller subsystem starts, as for any SDL program (the front end does not touch it), and `SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` is set on a Deck
 (`front_sdl.c`: the pad keeps working while Steam's overlay, a notification or Gamescope itself has the focus).

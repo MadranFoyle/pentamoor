@@ -202,6 +202,37 @@ int display_prescale(int src, int dst, int cap, int max_dim)
     return k < 1 ? 1 : k;
 }
 
+/* ---- the card zoom ---------------------------------------------------------------------------------------------------------------------------- */
+double display_zoom_layout(int cw, int ch, int ow, int oh, DispRect *dst)
+{
+    int aw, ah, vw = 0, vh = 0, integer = 0;
+    double s;
+
+    memset(dst, 0, sizeof(*dst));
+    if (cw <= 0 || ch <= 0 || ow <= 0 || oh <= 0)
+        return 1.0;
+    aw = (int)((long)ow * ZOOM_FILL_PCT / 100);
+    ah = (int)((long)oh * ZOOM_FILL_PCT / 100);
+    if (aw < 1)
+        aw = 1;
+    if (ah < 1)
+        ah = 1;
+    s = display_fit(cw, ch, aw, ah, &integer, &vw, &vh);
+    if (vw > ow)
+        vw = ow;
+    if (vh > oh)
+        vh = oh;
+    if (vw < 1)
+        vw = 1;
+    if (vh < 1)
+        vh = 1;
+    dst->w = vw;
+    dst->h = vh;
+    dst->x = (ow - vw) / 2;
+    dst->y = (oh - vh) / 2;
+    return s;
+}
+
 /* ---- the window ------------------------------------------------------------------------------------------------------------------------------------- */
 void display_initial_window(int sw, int sh, int usable_w, int usable_h, double dpi, int *w, int *h)
 {

@@ -24,13 +24,62 @@ All of this is one table at the top of `pad.c` (`binds[]`, with the numbers besi
 | X, Start | Enter | the default button of a dialog, the Done of a prompt bar, the name entry |
 | Y | a double click at the cursor | on a card in a duel the game pays its mana for you; two presses 70 ms apart, well inside the game's double-click time |
 | Back | Escape | cancel; "Ready to Quit?" on the map. **At the title menu it has to be held half a second** (below). Y is not Escape on purpose: Escape closes the game on some screens, and Y is easy to hit |
-| LB, RB | Page Up, Page Down, repeating | the list boxes, the file dialog and the deck builder's card row (RB scrolled the stock row a page at 1024x768) |
+| LB | **in a duel, with the cursor on a card: view that card** (below): the game's own Full-size card window shows it at once, and a second press shows it enlarged over the whole window. With no card under the cursor, and everywhere else, **Page Up** (repeating) | the list boxes, the file dialog and the deck builder's card row |
+| RB | Page Down, repeating | the same lists (RB scrolled the deck builder's stock row a page at 1024x768) |
 | Left stick pressed in | Space | the map reads Space as "stop" (`Adventure_PlayLocationMusic`, key 0x20); not tried |
 | Right trigger (held) + left stick | **walk** on the map (below) | |
 | Right stick | the arrow keys, in eight directions (the diagonals are Home, Page Up, End, Page Down, which the map and the castles read as the keypad) | walking on the map and in castles and dungeons by key, rows of a list |
 | Guide, the extra buttons, rumble | nothing | |
 
 Names are the position-based ones SDL uses (A is the bottom button of the diamond on every pad; on a Nintendo pad SDL's button labels setting decides, its default is the label).
+
+## Viewing a card
+
+**What the spot is.** In a duel the game keeps a window of its own for the card you are looking at: `MAGICGAME_FullCardClass`, title "Full-size card", the big card on the left (256 x 384 at 1024x768; the deck
+builder has its own, `MagicFullCardClass`, 288 x 432). It is drawn by the game from the card it was last given. It is given one by a message of its own (`WM_USER + 1`: the card's two numbers; the window keeps
+them and repaints), and the game sends that in two ways, found by reading the window procedures (`MAGIC.EXE` 0x4997e6 is the Full-size card's, 0x467a68 the card windows'):
+
+- **Hover.** The card under the pointer is shown after the pointer has rested on it for about three seconds (the windows that hold cards set 3000 ms timers). Measured at 1024x768 by moving the pointer onto a card of the
+  hand and taking the picture every 0.7 s: unchanged at 3.5 s, changed at 4.3 s. That is what the D-pad's moves wait for. (The deck builder shows its card at once: changed in under 0.5 s.)
+- **The card's own menu.** A right click on a card (B) opens a menu whose first line is "View in full card" (command 0x6e; "Show full card" when the game runs at the small size, where the same window pops up for
+  twelve seconds), and choosing it sends the window the card at once. The card's window procedure does it on `WM_COMMAND` 0x6e, from the card's own two numbers.
+
+On the Full-size card window itself (tried at 1024x768 with the real game): a left click and a double click do nothing; a right click opens its own menu, "Expand text box" (the card's rules text
+box grows over the picture, for a long text: a game option, the first line is checked while it is on), "Help for this card..." and "Help...". A, Y (double click) and B on a card in the duel are what they always were:
+play or tap it, pay its mana, open its menu. So there is no bigger view in the game than this window (and its expanded text box).
+
+**What the port does.** The view button posts that same command, `WM_COMMAND` 0x6e, to the card window under the pointer (`navwm_view_card`; `profile->viewcard.cmd`, a per-build number: 1.0's `MAGIC.EXE` and `DUEL.EXE` have it,
+Spells of the Ancients 2.15 draws its card menu from a resource and has no such command, so LB stays Page Up there). The game then does what it does for its own menu: the card is in the Full-size card window within a
+frame, and stays there until the pointer has rested on another card for three seconds. Nothing is written to the game's memory and no key or mouse message is invented. Three ways to ask:
+
+| | |
+|---|---|
+| LB | with the pointer (the pad's cursor) on a card of a duel: view it. Elsewhere Page Up, as above. The decision is the one of the moment the button goes down (`front_view_ready`, a flag the guest side refreshes 30 times a second: the pointer is on a `MAGICGAME_CardClass` window, in a duel with no dialog or menu on top), so a held LB is a view or a Page Up for its whole length |
+| V | the same, for the keyboard's pointer. With no card under it V is the game's (a V typed in a name); Ctrl, Alt and Shift with V are not ours |
+| the middle mouse button | the same, at the pointer |
+
+**The second press.** The same button again, on the same card, with nothing sent to the game since (`front.c`: the pointer has not moved, no click or key went in), takes a copy of the Full-size card window's picture
+(its own surface, on the guest side, at that moment: it stays as it was whatever the pointer does) and the window half shows it over the whole frame, dimmed behind (`ZOOM_DIM_ALPHA`), centred, with its shape kept
+(`display_zoom_layout`: as large as fits in 96% of each side, a whole-number scale when that loses under 10%), drawn into the window's own pixels with the filter the player chose (nearest, linear, or sharp: a
+whole-number enlargement with nearest neighbour and then the final step linear). So it uses all of the window's resolution, not the game's. While it is up **the game is sent nothing**: the pointer's moves, the
+wheel, clicks, keys, text and touches are taken here and so are the pad's buttons, triggers and sticks (`pad_freeze`: what the pad held is let go once, then it is silent, so the cursor stays where it was). **Any
+mouse button, key (except Shift, Ctrl, Alt and the display's own F11 and Alt+Enter), pad button or trigger, or a finger on the screen ends it**, and that press is not the game's either (its release is dropped too); the
+sticks and moving the mouse do not. Press LB, V or the middle button once more on the card and it is back; move the pointer and the next press is a first one again.
+
+Touch (iOS) has no binding of its own: a long press is a right click, whose menu has "View in full card".
+
+**How legible it is** (looked at, 1024x768 and 640x480): the source is the game's drawing at its own size, with 8 ppem text. At 1024x768 (the card 256 x 384, shown 1.92x at 491 x 737) the name, cost and type line,
+the rules text and the artist line are easy to read; at 640x480 (160 x 240, also 1.92x at 307 x 460) the rules text of a short card is readable and a long one is small and soft but legible. It is a bigger picture of the
+same pixels, not a redraw: the hinted letter shapes of the 8 ppem font and the card's dither get bigger with it. A crisper card would need the game's own card drawing (`MagicFullCardClass`'s and the card windows'
+routine, which draws into the window's device context with `MM_ISOTROPIC` and a LOGFONT of height 14, `card-text-metrics.md`) to be called with a larger window and font, which means a window (or a device
+context) of the larger size for the game to paint into: not tried.
+
+Tested: `test_pad` (the binding; LB is a view only with a card under the pointer and Page Up otherwise, for the whole press; RB unchanged; `pad_freeze`), `test_wm` (`navwm_card_at` in a duel laid out as at 1024x768,
+the command posted to the card's window, none in a build without it or with a dialog on top), `test_display` (`display_zoom_layout`: centred, shape kept, inside the margin, never cut, at 13 output sizes and 5 card
+sizes), `test_profile`, and `python3 tools/soak/card_view.py [--res 640x480|800x600|1024x768] [--deck] [--game duel]`: a duel at the pad's pace, LB, V and the middle button on a card of the hand and permanents of both
+sides (the big card changes within 0.6 s, as the game's own hover does only after its wait, to the same picture), LB with no card is Page Up, the second press (the window dimmed, the card centred), and every kind of
+press ending it with the input log showing the game was sent nothing, the window then identical to before, A on Done passing the phase; `--deck` checks the deck builder (its card follows at once, LB and RB are as they were).
+Not verified: with a real controller, in Spells of the Ancients, at the small size where the game pops the card window up (`0x6fe444` is 2 there: read in the code, not seen), and on a real display.
 
 ## The cursor
 

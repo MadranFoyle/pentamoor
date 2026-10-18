@@ -114,6 +114,11 @@ typedef struct ProfKeys {
 /* The screen's size as the game's layouts read it (main.c): the program is told the size by writing it here */
 typedef struct ProfDisplay { uint32_t width, height; } ProfDisplay;
 
+/* The duel's card windows (navwm.c, front.c): the command the game's own right-click menu of a card sends for its "View in full card" item (the line "Show full card" at the small screen size, the same
+ * command). The card's window procedure answers it by sending the Full-size card window the card, which is what the game does itself after the pointer has rested on a card for three seconds;
+ * the controller's view button posts it, so that the big card is shown at once. 0: this build has no such item (Spells of the Ancients draws its card menu from a resource), the button stays Page Up. */
+typedef struct ProfViewCard { uint32_t cmd; } ProfViewCard;
+
 /* The programs a program of the build may start (spawn.c: _spawnl, WinExec, CreateProcessA): the file name it asks for (lower case, no folder) and the game module (file name
  * without its extension, beside the running module) that runs that program. A program not in the list is not started: the call fails, as it did before the runtime had a process model. */
 #define PROFILE_MAX_PROGRAMS 4
@@ -130,7 +135,8 @@ enum {
     HK_TITLE = 32,          /* .title */
     HK_KEYS = 64,           /* .keys (wait for a key, the yes/no sites, the name box loop) */
     HK_DISPLAY = 128,       /* .display */
-    HK_ALL = 255
+    HK_VIEWCARD = 256,      /* .viewcard */
+    HK_ALL = 511
 };
 
 /* One file of one build. */
@@ -140,7 +146,7 @@ typedef struct BuildProfile {
     const char *file;       /* "MAGIC.EXE" */
     const char *program;    /* the program this file is: "MAGIC", "DUEL", "DECK" (LIFT_PROGRAM); "" for a library */
     uint32_t base;          /* a library: the address it is lifted for and mapped at; 0 for a program */
-    int hooks_verified;     /* a mask of HK_*: the groups of hook addresses below (pace, buttons, textmenu, buycards, clues, title, keys, display) that were checked against the running game
+    int hooks_verified;     /* a mask of HK_*: the groups of hook addresses below (pace, buttons, textmenu, buycards, clues, title, keys, display, viewcard) that were checked against the running game
                              * (HK_ALL for 1.0). A group that is not in the mask is not ported: the row holds none of its addresses and its hook stays off (a test keeps the two together).
                              * `lzw` is not a hook: the game cannot show a picture without it. */
     ProfProgram programs[PROFILE_MAX_PROGRAMS];     /* what this program may start; {NULL, NULL} ends the list */
@@ -153,6 +159,7 @@ typedef struct BuildProfile {
     ProfTitle title;
     ProfKeys keys;
     ProfDisplay display;
+    ProfViewCard viewcard;
 } BuildProfile;
 
 /* The table (profile.c) */

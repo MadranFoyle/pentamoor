@@ -62,9 +62,11 @@ static const BuildProfile PROFILES[] = {
         .keys = {.wait = 0x48ac2f, .pop = 0x4080b2, .wait_loop_ret = 0x48ac3d,
                  .sites = {0x509e4a, 0x4f156e, 0x45119d}, .nsites = 3, .name_loop = {0x47be64, 0x47c080}},
         .display = {.width = 0x522458, .height = 0x52245c},
+        .viewcard = {.cmd = 0x6e},
     },
     {
-        .id = ID_V10_DUEL, .build = "v1.0", .file = "DUEL.EXE", .program = "DUEL",
+        .id = ID_V10_DUEL, .build = "v1.0", .file = "DUEL.EXE", .program = "DUEL", .hooks_verified = HK_VIEWCARD,
+        .viewcard = {.cmd = 0x6e},
         .lzw = {.header = 0x6c5000, .read = 0x6c5484, .read2 = 0x6c51fc, .block = 0x4fb154,
                 .in_ptr = 0x69453c, .in_end = 0x4f7918, .refill = 0x694740, .callback = 0x43d858},
     },

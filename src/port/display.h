@@ -65,6 +65,15 @@ void display_to_window(const DispView *v, int sw, int sh, int ow, int oh, double
  * smaller step is linear. Returns the factor for one axis: ceil(dst/src), at least 1 and at most `cap`, and small enough that src*k stays within `max_dim` (0: no limit). */
 int display_prescale(int src, int dst, int cap, int max_dim);
 
+/* ---- the card zoom ---------------------------------------------------------------------------------------------------------------------------- */
+/* The enlarged card (the second press of the view button, docs/notes/controller.md): a picture of cw x ch pixels (the game's Full-size card window, 256 x 384 at 1024x768) shown over the
+ * whole output of ow x oh pixels, which is dimmed. It is centred with its shape kept and as large as fits inside ZOOM_FILL_PCT percent of each side of the output, with a whole-number
+ * scale when that gives up at most 10 percent of the room (display_fit's rule, so a card at 2x on a 1080p television is exact), else a fractional one, and never cut: in an output
+ * too small for it, it is shown smaller than itself. *dst is where it goes, in output pixels. Returns the scale (output pixels per card pixel). */
+#define ZOOM_FILL_PCT 96
+#define ZOOM_DIM_ALPHA 176             /* how much of black is laid over the game's picture behind the card, 0..255 */
+double display_zoom_layout(int cw, int ch, int ow, int oh, DispRect *dst);
+
 /* ---- the window ------------------------------------------------------------------------------------------------------------------------------------ */
 /* The size the window starts at, in points: the largest whole-number multiple of the picture (in pixels: a Retina window of 1024x768 points holds 2048x1536 pixels, a 2x picture)
  * that fits 90% of the display's usable area, and never larger than the usable area. A display too small for even 1x gets the picture reduced to 90% of it, shape kept (a 1366x768

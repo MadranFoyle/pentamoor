@@ -120,13 +120,14 @@ or Switch pad: anything SDL knows as a game controller, plugged in before or whi
 | X or Start | Enter |
 | Y | double click (on a card in a duel, the game pays its mana for you) |
 | Back | Escape (cancel; on the map it asks "Ready to Quit?"; at the title menu hold it half a second to leave the game, a tap does nothing there) |
-| LB / RB | Page Up / Page Down (lists, the deck builder's card row) |
+| LB | in a duel, with the cursor on a card: show that card in the big card window on the left at once (the game itself waits about three seconds); press it again and the card fills the window, the rest dimmed, until any button or key; anywhere else Page Up (lists, the deck builder's card row) |
+| RB | Page Down |
 | Left stick pressed in (L3) | Space (stops the party on the map when it is walking by the arrow keys) |
 | Right trigger + left stick | walk on the map in the direction you push |
 | Right stick | arrow keys (castles, dungeons) |
 
 The game's own "(Y/N)" questions (buying a card in a village, for one) are answered with a key; with a mouse or a controller the left button (A) is yes and the right one (B) is no, and the screen says so.
-Typing a name needs a keyboard (on a Steam Deck, Steam's keyboard: Steam + X). `PORT_NOPAD=1` turns the controller off. Details and what is not tested: [docs/notes/controller.md](docs/notes/controller.md).
+On a keyboard and mouse the same view is **V** or the **middle mouse button** with the pointer on a card; a second press shows the card enlarged. Typing a name needs a keyboard (on a Steam Deck, Steam's keyboard: Steam + X). `PORT_NOPAD=1` turns the controller off. Details and what is not tested: [docs/notes/controller.md](docs/notes/controller.md).
 
 ### Display
 

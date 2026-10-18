@@ -313,6 +313,161 @@ static void test_buttons(void)
 static int guard_on;
 static int guard(void) { return guard_on; }
 
+/* LB: with the pointer on a card of a duel it is "view this card" (the game's Full-size card window shows it at once); everywhere else it is Page Up, which scrolls the lists. RB stays Page Down. */
+static void test_view(void)
+{
+    Pad p;
+    PadOut out;
+    int n, i, found = 0;
+    const PadBind *b = pad_bindings(&n);
+    const PadAct *a;
+
+    for (i = 0; i < n; i++)
+        if (b[i].btn == PAD_LB) {
+            found = 1;
+            CHECK(b[i].act == PB_VIEW && b[i].vk == 0x21 && b[i].sc == 0x49 && b[i].rep == 1);        /* the view button, whose key is Page Up */
+        } else if (b[i].btn == PAD_RB)
+            CHECK(b[i].act == PB_KEY && b[i].vk == 0x22);                                              /* RB: Page Down, as it was */
+    CHECK(found);
+
+    /* no card under the pointer (a list, a dialog, the deck builder, the map, a pointer on the board's empty parts): Page Up, repeating, as it was */
+    pad_init(&p, 1024, 768);
+    out.n = 0;
+    CHECK(p.card == 0);
+    pad_button(&p, PAD_LB, 1, &out);
+    CHECK(out.n == 1 && out.act[0].type == PA_KEYDOWN && out.act[0].vk == 0x21 && out.act[0].sc == 0x49 && count(&out, PA_VIEW) == 0);
+    run(&p, 600, 10, &out);
+    CHECK(count(&out, PA_KEYDOWN) > 2 && count(&out, PA_VIEW) == 0);                                  /* it repeats while held */
+    pad_button(&p, PAD_LB, 0, &out);
+    CHECK(out.act[out.n - 1].type == PA_KEYUP && out.act[out.n - 1].vk == 0x21);
+
+    /* a card under the pointer: one PA_VIEW at the pointer, no key (the game sees nothing), nothing on letting go or while held, whatever the length */
+    pad_init(&p, 1024, 768);
+    pad_mouse_used(&p, 892, 506, &out);
+    out.n = 0;
+    pad_set_card(&p, 1);
+    pad_button(&p, PAD_LB, 1, &out);
+    CHECK(out.n == 1 && out.act[0].type == PA_VIEW && out.act[0].x == 892 && out.act[0].y == 506 && p.active);
+    run(&p, 1500, 10, &out);
+    CHECK(out.n == 1);                                                                                  /* held: no repeat */
+    pad_button(&p, PAD_LB, 0, &out);
+    CHECK(out.n == 1 && p.key[PAD_LB].on == 0);                                                         /* let go: no key up (none was down) */
+    out.n = 0;
+    pad_button(&p, PAD_LB, 1, &out);                                                                    /* again: it is not a toggle of the pad's, each press asks */
+    pad_button(&p, PAD_LB, 0, &out);
+    CHECK(count(&out, PA_VIEW) == 1 && count(&out, PA_KEYDOWN) == 0 && count(&out, PA_KEYUP) == 0);
+    a = first(&out, PA_VIEW);
+    CHECK(a && a->x == p.ix && a->y == p.iy);
+
+    /* the answer of the moment of the press holds for the press: a card that goes away while LB is held leaves no key down; a key pressed with no card is let go though a card is there when it is */
+    out.n = 0;
+    pad_button(&p, PAD_LB, 1, &out);
+    pad_set_card(&p, 0);
+    pad_button(&p, PAD_LB, 0, &out);
+    CHECK(out.n == 1 && out.act[0].type == PA_VIEW);
+    out.n = 0;
+    pad_button(&p, PAD_LB, 1, &out);                                                                    /* no card now: Page Up goes down */
+    pad_set_card(&p, 1);
+    run(&p, 500, 10, &out);
+    pad_button(&p, PAD_LB, 0, &out);
+    CHECK(count(&out, PA_KEYDOWN) > 1 && out.act[out.n - 1].type == PA_KEYUP && out.act[out.n - 1].vk == 0x21 && count(&out, PA_VIEW) == 0);
+    pad_step(&p, 1000, &out);
+    CHECK(out.act[out.n - 1].type == PA_KEYUP);                                                         /* nothing repeats after it */
+
+    /* RB is Page Down with or without a card; the other buttons are as they were with a card there */
+    pad_init(&p, 1024, 768);
+    pad_set_card(&p, 1);
+    out.n = 0;
+    pad_button(&p, PAD_RB, 1, &out);
+    pad_button(&p, PAD_RB, 0, &out);
+    CHECK(out.n == 2 && out.act[0].type == PA_KEYDOWN && out.act[0].vk == 0x22 && count(&out, PA_VIEW) == 0);
+    out.n = 0;
+    pad_button(&p, PAD_A, 1, &out);
+    pad_button(&p, PAD_A, 0, &out);
+    pad_button(&p, PAD_B, 1, &out);
+    pad_button(&p, PAD_B, 0, &out);
+    CHECK(count(&out, PA_LDOWN) == 1 && count(&out, PA_RDOWN) == 1 && count(&out, PA_VIEW) == 0);
+
+    /* unplugging with LB held and a view done leaves nothing to let go; with Page Up held it is let go */
+    pad_init(&p, 1024, 768);
+    out.n = 0;
+    pad_set_card(&p, 1);
+    pad_button(&p, PAD_LB, 1, &out);
+    pad_release_all(&p, &out);
+    CHECK(count(&out, PA_VIEW) == 1 && count(&out, PA_KEYUP) == 0);
+    pad_set_card(&p, 0);
+    pad_button(&p, PAD_LB, 1, &out);
+    pad_release_all(&p, &out);
+    CHECK(count(&out, PA_KEYDOWN) == 1 && count(&out, PA_KEYUP) == 1);
+}
+
+/* While the enlarged card is shown the pad is silent (pad_freeze): what it held is let go, then buttons, triggers, sticks, the D-pad's answers and time send the game nothing */
+static void test_freeze(void)
+{
+    Pad p;
+    PadOut out;
+    int i;
+
+    pad_init(&p, 1024, 768);
+    pad_mouse_used(&p, 400, 300, &out);
+    out.n = 0;
+    pad_button(&p, PAD_A, 1, &out);                                    /* A held (a drag), Page Up held, the right stick pushed (an arrow key), the stick moving the cursor */
+    pad_button(&p, PAD_LB, 1, &out);
+    axis(&p, PAD_AX_RX, 1.0, &out);
+    axis(&p, PAD_AX_LX, 1.0, &out);
+    run(&p, 100, 10, &out);
+    CHECK(count(&out, PA_LDOWN) == 1 && count(&out, PA_KEYDOWN) >= 2 && count(&out, PA_MOVE) > 2);
+    out.n = 0;
+    pad_freeze(&p, 1, &out);
+    CHECK(p.frozen && count(&out, PA_LUP) == 1 && count(&out, PA_KEYUP) == 2 && out.n == 3);           /* the game hears the end of what was held, once: the left button, Page Up, the arrow key */
+    out.n = 0;
+    pad_freeze(&p, 1, &out);
+    CHECK(out.n == 0);                                                                                  /* freezing again does nothing */
+    for (i = 0; i < PAD_NBUTTONS; i++) {
+        pad_button(&p, i, 1, &out);
+        pad_button(&p, i, 0, &out);
+    }
+    axis(&p, PAD_AX_LX, 1.0, &out);
+    axis(&p, PAD_AX_LY, -1.0, &out);
+    axis(&p, PAD_AX_RX, -1.0, &out);
+    axis(&p, PAD_AX_RY, 1.0, &out);
+    axis(&p, PAD_AX_LT, 1.0, &out);
+    axis(&p, PAD_AX_RT, 1.0, &out);
+    pad_put(&p, 10, 10, &out);                                                                          /* the answer of a D-pad press that was asked before */
+    pad_tap_dir(&p, 0, &out);
+    run(&p, 2000, 8, &out);
+    CHECK(out.n == 0);                                                                                  /* nothing: no click, no key, no move */
+    pad_freeze(&p, 0, &out);                                                                            /* unfrozen: the pad works as before */
+    CHECK(!p.frozen && out.n == 0);
+    pad_button(&p, PAD_A, 1, &out);
+    CHECK(out.n == 1 && out.act[0].type == PA_LDOWN);
+    pad_button(&p, PAD_A, 0, &out);
+    pad_button(&p, PAD_X, 1, &out);
+    CHECK(out.act[out.n - 1].type == PA_KEYDOWN && out.act[out.n - 1].vk == 13);
+    pad_button(&p, PAD_X, 0, &out);
+    /* a button that was pressed in the picture and is let go after it is nothing to the game */
+    pad_init(&p, 1024, 768);
+    out.n = 0;
+    pad_freeze(&p, 1, &out);
+    pad_button(&p, PAD_B, 1, &out);
+    pad_freeze(&p, 0, &out);
+    pad_button(&p, PAD_B, 0, &out);
+    CHECK(out.n == 0);
+    /* with the cursor where it is: nothing moved it while frozen */
+    pad_init(&p, 1024, 768);
+    pad_mouse_used(&p, 400, 300, &out);
+    out.n = 0;
+    pad_button(&p, PAD_A, 0, &out);
+    axis(&p, PAD_AX_LX, 1.0, &out);
+    run(&p, 50, 10, &out);
+    CHECK(p.ix > 400);
+    pad_freeze(&p, 1, &out);
+    i = p.ix;
+    out.n = 0;
+    run(&p, 1000, 10, &out);
+    CHECK(p.ix == i && out.n == 0);
+}
+
 static void test_back_guard(void)
 {
     Pad p;
@@ -662,6 +817,8 @@ int main(void)
     test_table();
     test_cursor();
     test_buttons();
+    test_view();
+    test_freeze();
     test_back_guard();
     test_nav();
     test_triggers_and_arrows();
