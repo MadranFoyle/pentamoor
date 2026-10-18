@@ -1993,9 +1993,43 @@ static void test_navwm_duel(void)
         API("DestroyWindow", att);
     }
 
+    /* "View card" (the controller's LB, V, the middle button): the card window under the pointer, in a duel, for a build whose card windows answer the game's own "View in full card" command */
+    {
+        const BuildProfile *saved = profile;
+        uint32_t msg = scratch(28), got = 0, wp = 0;
+        int k;
+
+        profile = &PROFILE_NONE;
+        CHECK(navwm_card_at(340, 420) == 0 && navwm_view_card(340, 420) == 0);          /* a build with no such command (SotA 2.15, an unknown build): nothing to post, LB stays Page Up */
+        profile = profile_find("4dc592695b6ee390485f283feb2a248cd3f3f739749c2800ab3b1100ea03845c");
+        CHECK(profile && profile->viewcard.cmd == 0x6e);
+        CHECK(navwm_card_at(340, 420) == mc[0] && navwm_card_at(309 + 133 * 2 + 5, 500) == mc[2]);       /* a permanent in your territory */
+        CHECK(navwm_card_at(892, 506) == hc[0] && navwm_card_at(892, 520) == hc[1] && navwm_card_at(892, 640) == hc[3]);   /* a strip of the hand: the card that shows there */
+        CHECK(navwm_card_at(30, 700) == 0 && navwm_card_at(5, 5) == 0 && navwm_card_at(280, 300) == 0);   /* the life total, nothing, the phase column */
+        CHECK(navwm_card_at(320, 380) == 0);                                                              /* the prompt bar over your territory's top: not a card */
+        CHECK(navwm_card_at(-5, 900) == 0);                                                               /* off the screen */
+        for (k = 0; k < 4000 && API("PeekMessageA", msg, 0, 0, 0, 1); k++)                              /* the queue: nothing of ours yet */
+            ;
+        CHECK(navwm_view_card(340, 420) == 1 && navwm_view_card(30, 700) == 0);                         /* a card: the command is posted to its window; no card: nothing */
+        for (k = 0; k < 4000 && API("PeekMessageA", msg, 0, 0, 0, 1); k++)
+            if (RD32(msg + 4) == WM_COMMAND) {
+                got = RD32(msg);
+                wp = RD32(msg + 8);
+            }
+        CHECK(got == mc[0] && (wp & 0xFFFF) == 0x6e);                                                    /* WM_COMMAND, id 0x6e, to the card: what the card's menu item sends */
+        profile = saved;
+    }
+
     /* a duel that is not shown has no targets */
     API("ShowWindow", main_w, 0);
     CHECK(navwm_mode() == NAVWM_NONE && navwm_collect(nt, NAV_MAXTARGETS, 0, 0, &cur) == 0);
+    {
+        const BuildProfile *saved = profile;
+
+        profile = profile_find("4dc592695b6ee390485f283feb2a248cd3f3f739749c2800ab3b1100ea03845c");
+        CHECK(navwm_card_at(340, 420) == 0 && navwm_view_card(340, 420) == 0);                          /* no duel on the screen: no card to view */
+        profile = saved;
+    }
     API("ShowWindow", main_w, 1);
     CHECK(navwm_mode() == NAVWM_DUEL);
     API("DestroyWindow", main_w);

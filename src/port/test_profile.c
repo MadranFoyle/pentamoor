@@ -207,6 +207,8 @@ static int hook_groups(const BuildProfile *p)
         g |= HK_KEYS;
     if (p->display.width || p->display.height)
         g |= HK_DISPLAY;
+    if (p->viewcard.cmd)
+        g |= HK_VIEWCARD;
     return g;
 }
 static int has_hook_fields(const BuildProfile *p) { return hook_groups(p) != 0; }
@@ -242,7 +244,8 @@ static void test_v215_values(void)
             n++;
     }
     CHECK(profile_find(ID_MAGIC)->hooks_verified == HK_ALL && hook_groups(profile_find(ID_MAGIC)) == HK_ALL);     /* MAGIC.EXE 1.0: every group verified */
-    CHECK(n == 2);                                          /* MAGIC.EXE 1.0 and shandalar.exe 2.15 hold hook addresses */
+    CHECK(n == 3);                                          /* MAGIC.EXE 1.0, DUEL.EXE 1.0 (the view-card command only) and shandalar.exe 2.15 hold hook addresses */
+    CHECK(profile_find(ID_MAGIC)->viewcard.cmd == 0x6e && profile_find(ID_DUEL)->viewcard.cmd == 0x6e && !sh->viewcard.cmd);   /* the game's own menu item "View in full card"; 2.15 has none to post */
     CHECK(sh && sh->display.width == 0x57a7d0u && sh->display.height == 0x57a7d4u && hook_groups(sh) == (HK_DISPLAY | HK_PACE | HK_KEYS) && sh->hooks_verified == (HK_DISPLAY | HK_PACE | HK_KEYS));
     CHECK(sh->pace.tick_fn == 0x48a3a5u && sh->pace.ticks == 0x566f3cu && sh->pace.frame_ret == 0x438f85u && sh->pace.map_loop.lo == 0x438a70u && sh->pace.map_loop.hi == 0x439059u);
     CHECK(sh->pace.idle_fn == 0x4eab14u && sh->pace.idle_ms == 16 && !profile_find(ID_MAGIC)->pace.idle_ms && !profile_find(ID_MAGIC)->pace.idle_fn);   /* 1.0 does not nap */

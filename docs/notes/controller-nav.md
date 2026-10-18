@@ -40,6 +40,8 @@ What the code says (names in the decompiled tree are unreliable; these were read
   `WM_MOUSEMOVE` (the big card on the left follows it). The one-window things have inner parts the procedure finds itself: the phase column (`Pic_Subsystem_00425ee3`, 0x425ee3, with the rectangles of
   `Pic_Subsystem_004262cf`, 0x4262cf: eight icons of 40/760 of the window's height, their tops at 2, 43, 84, 125, 166, 207, 248, 289 of 760, your side 430/760 lower; a click runs to that
   phase) and the mana pool (six rows of `height / 6`; `Ai_CalcManaRequirement`, 0x4b9284's window procedure, takes a row's colour when it pays).
+- The big card on the left is shown by the game after the pointer has rested on a card for about three seconds, or at once by the card's own menu item "View in full card"; LB, V and the middle button post that command
+  (`controller.md`, "Viewing a card").
 - The hand's header (`Pic_Subsystem_0044bad4`) is a window you drag by its title; a click in its left or right fifth shows the previous or next card, which hovering does anyway, so it is not a target.
 
 **Layouts.** All of it follows from the screen size the game was started with (`g_DisplayScreenWidth`, 0x522458, in `MAGIC.EXE`; the duel code asks `GetSystemMetrics`), so the numbers change

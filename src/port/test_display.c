@@ -1,6 +1,7 @@
 /* test_display.c - how the picture is put on a window (display.c, display_cfg.c): the scaling modes and filters, the layout on many displays (with a display scaling factor of 2
  * too), the mouse mapping, the window it starts in, display.cfg, the keys, the controller combination and the on-screen message. Pure: no SDL, no game.
  *   make -C src/port test */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -614,6 +615,55 @@ static void test_notice(void)
     CHECK(!strcmp(buf, "Scaling: stretch, filter: nearest"));
 }
 
+/* The enlarged card: centred, its shape kept, never cut, as large as the room allows (a whole number of pixels per pixel when that loses under 10 percent) */
+static void test_zoom(void)
+{
+    static const struct { int ow, oh; } outs[] = {{640, 480}, {1024, 768}, {800, 600}, {1280, 800}, {1920, 1080}, {2560, 1600}, {3840, 2160}, {333, 517}, {517, 333}, {1001, 777}, {200, 200}, {97, 61}, {2048, 1536}};
+    static const struct { int cw, ch; } cards[] = {{160, 240}, {256, 384}, {200, 300}, {136, 136}, {1, 1}};
+    DispRect d;
+    double s;
+    size_t i, j;
+
+    for (i = 0; i < sizeof(outs) / sizeof(outs[0]); i++)
+        for (j = 0; j < sizeof(cards) / sizeof(cards[0]); j++) {
+            int ow = outs[i].ow, oh = outs[i].oh, cw = cards[j].cw, ch = cards[j].ch;
+            double aspect = (double)cw / ch, got;
+
+            s = display_zoom_layout(cw, ch, ow, oh, &d);
+            CHECK(d.w >= 1 && d.h >= 1 && d.x >= 0 && d.y >= 0 && d.x + d.w <= ow && d.y + d.h <= oh);          /* inside the output */
+            CHECK(abs((ow - (d.x + d.w)) - d.x) <= 1 && abs((oh - (d.y + d.h)) - d.y) <= 1);                     /* centred, to a pixel */
+            got = (double)d.w / d.h;
+            CHECK(ch == 1 || fabs(got - aspect) <= aspect * 0.5 / (d.h < d.w ? d.h : d.w) * 2 + 1e-9);            /* the shape is kept, to rounding of a pixel */
+            CHECK(fabs(s * cw - d.w) <= 1.0 && fabs(s * ch - d.h) <= 1.0);                                       /* the scale is the size over the card's */
+            CHECK(d.w <= ow * ZOOM_FILL_PCT / 100 + 1 && d.h <= oh * ZOOM_FILL_PCT / 100 + 1);                  /* inside the margin */
+            CHECK(d.w == ow * ZOOM_FILL_PCT / 100 || d.h == oh * ZOOM_FILL_PCT / 100 || s != (int)s || d.w * 100 >= ow * ZOOM_FILL_PCT * 90 / 100 || d.h * 100 >= oh * ZOOM_FILL_PCT * 90 / 100);   /* fills one side, or is a whole scale within 10 percent of it */
+            if (s == (int)s && s >= 1)
+                CHECK(d.w == cw * (int)s && d.h == ch * (int)s);                                                  /* a whole scale is exact */
+        }
+    /* the numbers a person sees */
+    s = display_zoom_layout(256, 384, 1024, 768, &d);                       /* the card at 1024x768 in a 1024x768 window: 1.92x: the room is 737 high, 2x (768) does not fit */
+    CHECK(s > 1.91 && s < 1.93 && d.h == 737 && d.w == 491 && d.x == 266 && d.y == 15);
+    s = display_zoom_layout(160, 240, 640, 480, &d);                        /* 640x480: the card is 160 x 240 and the room 460 high: 1.92x again */
+    CHECK(s > 1.91 && s < 1.93 && d.h == 460 && d.w == 307 && d.x == 166 && d.y == 10);
+    s = display_zoom_layout(256, 384, 1920, 1080, &d);                      /* a television: 2.7x of the room, 2x would use 74% of it: fractional */
+    CHECK(s > 2.69 && s < 2.70 && d.h == 1036 && d.w == 691);
+    s = display_zoom_layout(256, 384, 1536, 1152, &d);                      /* a window at 1.5x of the game: 2.88x ... */
+    CHECK(s > 2.87 && s < 2.89);
+    s = display_zoom_layout(256, 384, 2048, 1536, &d);                      /* a Retina window of 1024x768 points: 2x of the card would be 768 of 1475 room: no, 3.84x is the fit and 3 is 78%: fractional */
+    CHECK(s > 3.83 && s < 3.85);
+    s = display_zoom_layout(128, 192, 768, 768, &d);                        /* a whole number that fits to within 10 percent is taken: 3.84 -> 4 is not a fit (too big), 3 is 78%: fractional */
+    CHECK(s > 3.83 && s < 3.85);
+    s = display_zoom_layout(256, 384, 1024, 800, &d);                       /* 768 / 384 = 2 exactly in the room 2.0 (0.96 of 800 = 768): a whole 2x */
+    CHECK(s == 2.0 && d.w == 512 && d.h == 768 && d.x == 256 && d.y == 16);
+    s = display_zoom_layout(256, 384, 100, 80, &d);                         /* an output too small for the card: smaller than itself, whole, never cut */
+    CHECK(s < 1.0 && d.w <= 100 && d.h <= 80);
+    s = display_zoom_layout(0, 384, 1024, 768, &d);                         /* nothing to show: nothing */
+    CHECK(s == 1.0 && d.w == 0 && d.h == 0);
+    s = display_zoom_layout(256, 384, 0, 768, &d);
+    CHECK(d.w == 0 && d.h == 0);
+    CHECK(ZOOM_FILL_PCT > 50 && ZOOM_FILL_PCT <= 100 && ZOOM_DIM_ALPHA > 0 && ZOOM_DIM_ALPHA < 255);
+}
+
 int main(void)
 {
     test_names();
@@ -629,6 +679,7 @@ int main(void)
     test_keys();
     test_combo();
     test_notice();
+    test_zoom();
     printf("test_display: %d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

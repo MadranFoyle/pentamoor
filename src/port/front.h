@@ -9,6 +9,7 @@
 #ifndef PORT_FRONT_H
 #define PORT_FRONT_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 /* ---- called from the window thread (any thread) ---- */
@@ -24,6 +25,13 @@ void front_push_nav(int dir, int x, int y);
 int front_nav_ready(void);
 enum { NAVR_MOVE = 1, NAVR_SCROLL };
 int front_nav_result(unsigned *seen, int *kind, int *x, int *y, int *dir);       /* 1 if there is an answer newer than *seen */
+/* View card (docs/notes/controller.md): the game's own Full-size card window shows the card under (x, y) at once, instead of after the pointer has rested on it. Done on the guest side (navwm.c).
+ * front_view_ready: there is a card under the pointer in a duel (as of the last frame): the pad's view button is that, and Page Up when there is none. */
+void front_push_view(int x, int y);
+int front_view_ready(void);
+/* The enlarged card (the second press of the view button on the same card, docs/notes/controller.md): the picture of the game's Full-size card window as it was at that press, a copy the window half
+ * shows over the frame. front_zoom_take copies it when it is newer than *seen (cap bytes of room: w * h * 3), returns 1 and its size. */
+int front_zoom_take(uint8_t *rgb, size_t cap, unsigned *seen, int *w, int *h);
 /* Copy the latest frame (640x480 RGB) if it is newer than *seen; returns 1 if it was. */
 int front_take_frame(uint8_t *rgb, unsigned *seen);
 /* The game has ended: the window half stops. */

@@ -18,7 +18,7 @@
 void compose_screen(uint8_t *rgb);
 
 typedef struct {
-    int type;                    /* 0 mouse, 1 key, 2 quit, 3 call, 4 character (WM_CHAR alone), 5 a D-pad press to navigate (kind: direction, x, y: the pointer) */
+    int type;                    /* 0 mouse, 1 key, 2 quit, 3 call, 4 character (WM_CHAR alone), 5 a D-pad press to navigate (kind: direction, x, y: the pointer), 6 view the card under the pointer (x, y) */
     int kind, x, y;
     uint32_t vk, sc;
     int down, ch, repeat;
@@ -100,6 +100,90 @@ void front_push_nav(int dir, int x, int y)
 
     e.type = 5; e.kind = dir; e.x = x; e.y = y;
     push(&e);
+}
+
+/* "View card" (a controller button, a key, the middle mouse button): the game's own Full-size card window shows the card under the pointer now. The window half only says where the pointer is; what is
+ * there is read on the guest side (navwm.c), which posts the game's own "View in full card" command to the card's window. front_view_ready: a card is under the pointer in a duel, as of the last frame
+ * (the pad then takes its view button for that, and the button is Page Up when it is not). */
+void front_push_view(int x, int y)
+{
+    Ev e = {0};
+
+    e.type = 6; e.x = x; e.y = y;
+    push(&e);
+}
+
+static volatile int view_ready;
+
+int front_view_ready(void) { return view_ready; }
+
+/* The enlarged card: a copy of the Full-size card window's picture, made at the press (so it stays as it was whatever the pointer does next), handed to the window half */
+static pthread_mutex_t zlock = PTHREAD_MUTEX_INITIALIZER;
+static uint8_t zoom_rgb[512 * 768 * 3];
+static int zoom_w, zoom_h;
+static unsigned zoom_n;
+static uint32_t last_view;                  /* the card window the last view command went to: 0 after the pointer moved or anything else was sent to the game (a click, a key) */
+
+int front_zoom_take(uint8_t *rgb, size_t cap, unsigned *seen, int *w, int *h)
+{
+    int got = 0;
+
+    pthread_mutex_lock(&zlock);
+    if (zoom_n != *seen && (size_t)zoom_w * (size_t)zoom_h * 3 <= cap) {
+        memcpy(rgb, zoom_rgb, (size_t)zoom_w * (size_t)zoom_h * 3);
+        *w = zoom_w;
+        *h = zoom_h;
+        *seen = zoom_n;
+        got = 1;
+    }
+    pthread_mutex_unlock(&zlock);
+    return got;
+}
+
+/* The Full-size card window's picture into the slot the window half reads; 0 when there is none to take (the window is not shown, or it shows nothing: one colour all over). Reads the window's
+ * own surface (gdi.c), on the guest side, and nothing of the game's memory. */
+static int zoom_snapshot(void)
+{
+    const Window *w = navwm_fullcard();
+    const Surface *sf = w ? (const Surface *)w->surface : NULL;
+    size_t n, i;
+
+    if (!sf || sf->w < 8 || sf->h < 8 || sf->w > 512 || sf->h > 768)
+        return 0;
+    n = (size_t)sf->w * (size_t)sf->h;
+    pthread_mutex_lock(&zlock);
+    surface_rgb(sf, 0, 0, sf->w, sf->h, zoom_rgb);
+    for (i = 1; i < n; i++)
+        if (memcmp(zoom_rgb, zoom_rgb + 3 * i, 3))
+            break;
+    if (i >= n) {                                         /* one colour: no card is shown */
+        pthread_mutex_unlock(&zlock);
+        return 0;
+    }
+    zoom_w = sf->w;
+    zoom_h = sf->h;
+    zoom_n++;
+    pthread_mutex_unlock(&zlock);
+    return 1;
+}
+
+/* A view command, on the guest side. The first on a card shows it in the game's own Full-size card window (the game's "View in full card"); the next one with the pointer where it was and nothing
+ * sent to the game since (so the window shows that card) copies that window's picture for the window half to show enlarged. */
+static void view_serve(const Ev *e)
+{
+    uint32_t h = navwm_card_at(e->x, e->y);
+
+    if (!h) {
+        padlog("view card at (%d,%d): no card there, nothing done", e->x, e->y);
+        return;
+    }
+    if (h == last_view && zoom_snapshot()) {
+        padlog("view card at (%d,%d): the card is in the Full-size card window already: its picture is copied to be shown enlarged", e->x, e->y);
+        return;
+    }
+    navwm_view_card(e->x, e->y);
+    last_view = h;
+    padlog("view card at (%d,%d): the card's window is told 'View in full card' (the Full-size card window shows it)", e->x, e->y);
 }
 
 /* the answer to the latest D-pad press, and whether there is anything to navigate */
@@ -261,6 +345,8 @@ static void deliver(const Ev *e)
 {
     if (padlog_on())
         log_deliver(e);
+    if (e->type != 6 && !(e->type == 0 && e->kind == IN_MOVE && e->x == wm_cursor_x && e->y == wm_cursor_y))
+        last_view = 0;                                   /* anything the game is sent (a move, a click, a key) and the next view is a first one again */
     if (e->type == 0) {
         int ans = yesno_mouse(e->kind);
 
@@ -299,6 +385,8 @@ static void deliver(const Ev *e)
         sched_spawn_args(e->call[0], e->ncall, args);
     } else if (e->type == 5) {
         nav_serve(e);
+    } else if (e->type == 6) {
+        view_serve(e);
     } else {
         /* the window's close button: the game sees WM_CLOSE as it would from Windows; a second request ends the program at once */
         if (quits++ == 0 && wm_main_hwnd()) {
@@ -361,6 +449,7 @@ void front_serve(double max_wait)
         next_frame = now + 1.0 / 30;
         nav_mode_now = navwm_mode();
         nav_ready = nav_mode_now != NAVWM_NONE;
+        view_ready = navwm_card_at(wm_cursor_x, wm_cursor_y) != 0;
         if (padlog_on()) {
             static int last_mode = -1, last_asking = -1;
             int asking = yesno_waiting();

@@ -19,18 +19,18 @@ enum {
 enum { PAD_AX_LX, PAD_AX_LY, PAD_AX_RX, PAD_AX_RY, PAD_AX_LT, PAD_AX_RT };
 
 /* what the pad asks the game to see */
-enum { PA_MOVE, PA_LDOWN, PA_LUP, PA_RDOWN, PA_RUP, PA_KEYDOWN, PA_KEYUP, PA_NAV };
-typedef struct { int type, x, y; uint32_t vk, sc; int ch, repeat; int dir; } PadAct;      /* x, y: where the pointer is (all mouse actions, and PA_NAV: where it is now); vk, sc, ch, repeat: keys; dir: PA_NAV, the D-pad's direction (0 up, 1 down, 2 left, 3 right: nav.h's NAV_UP...) */
+enum { PA_MOVE, PA_LDOWN, PA_LUP, PA_RDOWN, PA_RUP, PA_KEYDOWN, PA_KEYUP, PA_NAV, PA_VIEW };
+typedef struct { int type, x, y; uint32_t vk, sc; int ch, repeat; int dir; } PadAct;      /* x, y: where the pointer is (all mouse actions, and PA_NAV: where it is now); vk, sc, ch, repeat: keys; dir: PA_NAV, the D-pad's direction (0 up, 1 down, 2 left, 3 right: nav.h's NAV_UP...); PA_VIEW: x, y is where the pointer is */
 #define PAD_MAXACT 64
 typedef struct { PadAct act[PAD_MAXACT]; int n; } PadOut;
 
 /* what a control is bound to (the table is at the top of pad.c) */
-enum { PB_NONE, PB_LCLICK, PB_RCLICK, PB_KEY, PB_SLOW, PB_FAST, PB_WALK, PB_STEP, PB_NAV, PB_DCLICK };
+enum { PB_NONE, PB_LCLICK, PB_RCLICK, PB_KEY, PB_SLOW, PB_FAST, PB_WALK, PB_STEP, PB_NAV, PB_DCLICK, PB_VIEW };
 typedef struct {
     int btn, act;
-    uint32_t vk, sc;              /* PB_KEY */
+    uint32_t vk, sc;              /* PB_KEY; PB_VIEW: the key it is when no card is under the pointer */
     int ch;                       /* the character it types, or -1 */
-    int rep;                      /* PB_KEY: repeats while held, as a keyboard does */
+    int rep;                      /* PB_KEY, PB_VIEW (its key): repeats while held, as a keyboard does */
     int dx, dy;                   /* PB_STEP: the direction of one step */
 } PadBind;
 
@@ -50,6 +50,8 @@ typedef struct {
     int step_held[4], step_next[4];                                                           /* the D-pad's auto-repeat */
     struct { int phase, t; } dbl;  /* a double click in progress (PB_DCLICK): phase 0 none, 1 first press held, 2 between, 3 second press held; t the ms in this phase */
     int nav;                      /* the game has things to move between now (a duel, a dialog, a menu): the D-pad moves the pointer between them (PB_NAV) instead of pressing its arrow key */
+    int frozen;                   /* the enlarged card is shown (pad_freeze): the pad sends the game nothing: no button, no key, no move */
+    int card;                     /* the pointer is on a card of a duel (front_view_ready): PB_VIEW shows it in the game's Full-size card window; else it is its key */
     struct { int on, nav, next; } dp[4];                                                      /* PB_NAV controls held: whether the press was a move (else its key is down), and the next repeat */
     struct { int holding, t; } back;  /* the Back button pressed where a tap would leave the game (pad_set_back_guard): waiting out the hold; t the ms so far */
 } Pad;
@@ -79,6 +81,13 @@ void pad_release_all(Pad *p, PadOut *out);
 void pad_set_origin(Pad *p, int x, int y);
 /* Whether the game has things the D-pad can move the pointer between (front.c knows). A press uses the answer of the moment it is made. */
 void pad_set_nav(Pad *p, int on);
+/* Whether a card of a duel is under the pointer (front_view_ready, as of the last frame). A press of the view button (PB_VIEW: LB) uses the answer of the moment it is made: with a card it is PA_VIEW (the game's own
+ * Full-size card window shows that card at once, docs/notes/controller.md); without one it is Page Up, which scrolls the lists. */
+void pad_set_card(Pad *p, int on);
+/* The enlarged card is on the screen (or not): while it is, the pad is silent. What it held is let go as if it had been unplugged (the game sees the releases, nothing else), then a button pressed,
+ * a trigger, a stick pushed and the time passing do nothing; the sticks' positions are not followed either, so the cursor stays where it was. The window half uses any button of the pad to close
+ * the picture (it sees the controller's events first); the pad itself never hears of that press. */
+void pad_freeze(Pad *p, int on, PadOut *out);
 /* The pointer is put at x, y (the answer to a PA_NAV): the game is told as it is for a stick's move. */
 void pad_put(Pad *p, int x, int y, PadOut *out);
 /* One tap of the arrow key of a direction (the answer 'scroll' to a PA_NAV: a list that goes on in that direction): key down, key up. */

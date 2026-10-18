@@ -8,6 +8,7 @@
 #include "gdi.h"
 #include "sched.h"
 #include "navwm.h"
+#include "profile.h"
 #include "screens.h"
 #include "wm.h"
 
@@ -514,4 +515,45 @@ void navwm_dump(FILE *f, int x, int y)
     fprintf(f, "  nav: mode %s, %d targets, pointer (%d,%d) on %d, found in %.1f ms\n", navwm_mode_name(navwm_mode()), n, x, y, cur, (port_now() - t0) * 1000.0);
     for (i = 0; i < n; i++)
         fprintf(f, "  target %d zone %d kind %d id 0x%x (%d,%d)-(%d,%d) scroll %d '%s'\n", i, t[i].zone, t[i].kind, t[i].id, t[i].x0, t[i].y0, t[i].x1, t[i].y1, t[i].scroll, t[i].label);
+}
+
+/* The duel's card the pointer is on, for the controller's "view card" button: the hwnd of the MAGICGAME_CardClass window a click at (x, y) would reach (a card of a hand, a permanent, a card in
+ * the attack or the spell chain), or 0. Only in a duel with nothing on top of it (no dialog, menu or list down: navwm_mode is NAVWM_DUEL) and only in a build whose card windows answer the game's own
+ * "View in full card" command (profile->viewcard.cmd). The game's cards are windows (controller-nav.md), so this is the same window wm_hit_test gives a click. */
+uint32_t navwm_card_at(int x, int y)
+{
+    const Window *w;
+
+    if (!profile->viewcard.cmd || navwm_mode() != NAVWM_DUEL)
+        return 0;
+    w = wm_window(wm_hit_test(x, y));
+    if (w && !cls_is(w, "MAGICGAME_CardClass"))
+        w = parent_of(w);                                  /* a card is one window; a part drawn by a child of it still means the card */
+    return w && w->visible && shown(w) && cls_is(w, "MAGICGAME_CardClass") ? w->hwnd : 0;
+}
+
+/* Show the card in the game's own Full-size card window now: the command the card's right-click menu sends for "View in full card", posted to the card's window. The game then does what it does
+ * after the pointer has rested on a card for three seconds (a timer), or after that menu item: it sends the Full-size card window the card. Nothing is written to the game's memory. 1 if posted. */
+int navwm_view_card(int x, int y)
+{
+    uint32_t h = navwm_card_at(x, y);
+
+    if (!h)
+        return 0;
+    wm_post(h, WM_COMMAND, profile->viewcard.cmd & 0xFFFF, 0);
+    return 1;
+}
+
+/* The game's Full-size card window ("Full-size card": MAGICGAME_FullCardClass in the duel, MagicFullCardClass in the deck builder's library), if it is on the screen: the big card on the left. */
+const Window *navwm_fullcard(void)
+{
+    int i, n = wm_window_count();
+
+    for (i = 0; i < n; i++) {
+        const Window *w = wm_window_at_index(i);
+
+        if (w && w->visible && w->surface && (cls_is(w, "MAGICGAME_FullCardClass") || cls_is(w, "MagicFullCardClass")) && shown(w))
+            return w;
+    }
+    return NULL;
 }
