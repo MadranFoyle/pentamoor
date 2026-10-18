@@ -115,3 +115,30 @@ def test_the_default_screen_is_the_one_the_readme_says():
     main = read("src/port/main.c")
     assert re.search(r"#define\s+DEFAULT_RES_W\s+1024\b", main) and re.search(r"#define\s+DEFAULT_RES_H\s+768\b", main)
     assert "1024x768" in read("README.md")
+
+
+# ---- the installer's options for the licence step ------------------------------------------------------------------------------------------------------------------
+LICENCE_OPTIONS = ("--no-licence-value", "--no-cd")
+
+
+def installer_options():
+    return set(re.findall(r'add_argument\("(--[a-z0-9-]+)"', read("tools/install/install.py")))
+
+
+def test_the_licence_options_are_the_installers():
+    assert set(LICENCE_OPTIONS) <= installer_options()
+
+
+@pytest.mark.parametrize("doc", ["README.md", "CONTRIBUTING.md", "tools/release/README.release.txt", "docs/notes/sota-licence.md", "docs/notes/sota-comparison.md"])
+def test_the_licence_options_are_documented_where_the_install_is(doc):
+    text = read(doc)
+    missing = [o for o in LICENCE_OPTIONS if o not in text]
+    assert not missing, f"{doc} does not mention the installer's {missing}"
+
+
+def test_the_docs_name_no_licence_option_the_installer_does_not_have():
+    """Every `--no-...` option the licence documents name for the installer exists in install.py (a rename must reach the text)."""
+    have = installer_options()
+    for doc in ("README.md", "tools/release/README.release.txt", "docs/notes/sota-licence.md"):
+        named = set(re.findall(r"(?<![A-Za-z0-9-])(--no-(?:licence|cd|licenses?|serial)[a-z0-9-]*)", read(doc)))
+        assert named <= have, f"{doc} names installer options that do not exist: {sorted(named - have)}"

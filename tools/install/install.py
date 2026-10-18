@@ -18,7 +18,12 @@ the Python packages pefile and capstone with pip, when the release did not carry
 Spells of the Ancients 2.15 (--sota and --patch, both): after the first game the installer reads the expansion's disc (Setup/data1.cab, an InstallShield cabinet) over it, applies the
 patch's six files, checks every program, library and data file of the result against the known 2.15 files (size and SHA-256), and lifts and builds its three modules (shandalar,
 facemaker, sotadeck) with the rest. The 2.15 folder is a separate one beside the first game's (sources/installed_sota/Magic/Program), with saves of its own. Everything is checked
-before anything is written (tools/install/sotainstall.py says how); nothing is written to the registry.
+before anything is written (tools/install/sotainstall.py says how).
+
+The licence value (tools/install/licence.py, docs/notes/sota-licence.md): after the discs are verified, the files are made and the modules are built, the installer does what the original
+installer did for an owner of the discs: it runs the original installer's own writer (a library from the expansion's own cabinet, checked by its hash) to write the game's machine-bound
+licence value into this install's registry file (port_overlay_sota/registry.dat), with the same flag word the original installer used. It says so when it does it; `--no-licence-value` skips it
+(the game then offers only its base pool of 409 cards). `--no-cd` is an extra, off by default: it adds the one flag the game itself defines as "skip the disc check" to that word.
 
 A raw Alcohol 120% .mdf/.mds pair is not an .iso: convert it first (`mdf2iso "MTG v1.0.mdf" "MTG v1.0.iso"`).
 """
@@ -38,6 +43,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools", "lift"))      # builds.py: the bu
 import builds  # noqa: E402
 import datax  # noqa: E402
 import iso9660  # noqa: E402
+import licence  # noqa: E402
 import liftrun  # noqa: E402
 import manifest  # noqa: E402
 import modbuild  # noqa: E402
@@ -282,6 +288,14 @@ def sota_sources(args):
     return True
 
 
+def licence_options(args, want_sota):
+    """--no-licence-value and --no-cd belong to Spells of the Ancients 2.15, and --no-cd changes the licence value that --no-licence-value does not write. Dies before anything is read or written."""
+    if (args.no_cd or args.no_licence_value) and not want_sota:
+        die("--no-licence-value and --no-cd are about Spells of the Ancients 2.15: they go with --sota and --patch.")
+    if args.no_cd and args.no_licence_value:
+        die("--no-cd and --no-licence-value together make no sense: --no-cd adds a flag to the licence value, and --no-licence-value writes no licence value. Give one of them.")
+
+
 def shell_quote(text):
     return '"' + text.replace('"', '\\"') + '"' if " " in text or not text else text
 
@@ -318,48 +332,52 @@ def link_install_folder(dest):
 
 
 # ---- building ---------------------------------------------------------------------------------------------------------------------------------------------
-def build_commands(sota=False):
+def build_commands(sota=False, with_licence=False):
     """What a source checkout's --build runs after the lifter: (message, argv) pairs. The runtime (`pentamoor-run`: everything but the game's code) and one game module
     per program (a library made only from the C the lifter wrote) are built by the one `make -C src/port` and loaded together by ./pentamoor."""
     jobs = str(max(1, min(os.cpu_count() or 1, 8)))
-    modules = "game_magic, game_deck, game_duel" + (", game_shandalar, game_facemaker, game_sotadeck" if sota else "")
+    modules = "game_magic, game_deck, game_duel" + (", game_shandalar, game_facemaker, game_sotadeck" if sota else "") + (", game_senclib" if sota and with_licence else "")
     return [("compiling the runtime and the game modules src/port/build/{pentamoor-run, %s} (a few minutes)" % modules,
              ["make", "-C", os.path.join(ROOT, "src", "port"), "-j" + jobs, "all"])]
 
 
-def lift(layout, args, sota=None):
-    """Lift the first game's three programs, and, when `sota` (the Program folder of the 2.15 install) is given, the three of Spells of the Ancients 2.15."""
+def lift(layout, args, sota=None, with_licence=False):
+    """Lift the first game's three programs, and, when `sota` (the Program folder of the 2.15 install) is given, the three of Spells of the Ancients 2.15; with `with_licence`, also the one
+    library of the expansion's cabinet that the licence step runs (it is checked by its hash first)."""
     paths = ensure_python_deps(layout, assume=args.yes)
     say("lifting the game's programs into C (a few minutes; the C is generated from your files and stays on your machine)")
     liftrun.lift_all(layout.root, sys.executable, paths, force=args.force)
     if sota:
         say("lifting Spells of the Ancients 2.15's programs (shandalar.exe, FaceMaker.exe, DECK.EXE and their libraries) into C (a few minutes more)")
         liftrun.lift_sota(layout.root, sota, sys.executable, paths, force=args.force, say=say)
+        if with_licence:
+            say("lifting the library of the expansion's cabinet that writes the licence value (the original installer's own, a few seconds)")
+            liftrun.lift_licence(layout.root, sota, sys.executable, paths, force=args.force, say=say)
 
 
-def build_with_make(layout, args, sota=None):
+def build_with_make(layout, args, sota=None, with_licence=False):
     """A source checkout: the lifter, then make builds the runtime and the modules."""
     if not any(shutil.which(c) for c in ("cc", "gcc", "clang")):
         die("no C compiler found (install Xcode's command line tools, or gcc/clang); `--modules` can fetch one for the game modules, but the runtime needs make and a compiler")
     if shutil.which("make") is None:
         die("make was not found (the runtime is built by make; a release has it already built)")
-    lift(layout, args, sota)
-    for cmd in build_commands(sota is not None):
+    lift(layout, args, sota, with_licence)
+    for cmd in build_commands(sota is not None, with_licence):
         say(cmd[0])
         t0 = time.time()
         subprocess.run(cmd[1], check=True, cwd=ROOT)
         say(f"compiled ({time.time() - t0:.0f} s)")
 
 
-def build_modules(layout, args, sota=None):
+def build_modules(layout, args, sota=None, with_licence=False):
     """The lifter, then the Python builder compiles the three modules (six with Spells of the Ancients) next to the runtime. What a release does; --modules does it in a checkout."""
     native = layout.native
     cc = modbuild.find_compiler(native, layout.tools, explicit=args.compiler, download=not args.no_download,
                                 ask=lambda q: ask_yes(q, True, args.yes), say=say)
     say(f"compiler: {cc.describe()}")
-    lift(layout, args, sota)
+    lift(layout, args, sota, with_licence)
     os.makedirs(layout.out_dir, exist_ok=True)
-    made = modbuild.build_modules(list(modbuild.PROGRAMS) + (list(modbuild.SOTA_PROGRAMS) if sota else []), layout.generated, layout.port, native, layout.objects, layout.out_dir, cc,
+    made = modbuild.build_modules(list(modbuild.PROGRAMS) + (list(modbuild.SOTA_PROGRAMS) if sota else []) + (list(modbuild.LICENCE_PROGRAMS) if sota and with_licence else []), layout.generated, layout.port, native, layout.objects, layout.out_dir, cc,
                                   jobs=args.jobs, say=say)
     if os.path.exists(layout.runtime):
         for prog, path in made.items():
@@ -370,6 +388,12 @@ def build_modules(layout, args, sota=None):
     else:
         say(f"note: no runtime at {layout.runtime} yet (a source checkout: make -C src/port runtime)")
     return made
+
+
+def licence_step(layout, args, sota):
+    """The licence step (tools/install/licence.py), after the build: only here, only for an install made from verified discs in this run."""
+    module = os.path.join(layout.out_dir, "game_" + builds.SOTA_LICENCE_LIBRARY["module"] + "." + modbuild.module_ext())
+    licence.write_value(sota, layout.root, licence.overlay_dir(layout.root), layout.runtime, module, no_cd=args.no_cd, say=say)
 
 
 def clean_up(layout):
@@ -438,6 +462,8 @@ def parser():
     ap.add_argument("--patch", metavar="SOTAV215.EXE", help="the Spells of the Ancients 2.15 patch (SOTAV215.EXE, 1,207,571 bytes); needs --sota")
     ap.add_argument("--dest", default=os.path.join(ROOT, "sources", "installed"), help="where to put it (default: sources/installed, which is ignored by the repository)")
     ap.add_argument("--sota-dest", help="where to put Spells of the Ancients 2.15 (default: beside --dest with _sota added: sources/installed_sota)")
+    ap.add_argument("--no-licence-value", action="store_true", help="with --sota: do not write the licence value the original Spells of the Ancients installer wrote for an owner of the discs (the game then offers only its base pool of 409 cards)")
+    ap.add_argument("--no-cd", action="store_true", help="with --sota: also add the flag the game itself defines as \"skip the disc check\" to that licence value, so this install does not ask for a disc (off by default; needs the licence value)")
     ap.add_argument("--build", action="store_true", help="then lift the programs to C and compile them (a source checkout: make builds the runtime and the game modules; a release: the modules)")
     ap.add_argument("--modules", action="store_true", help="a source checkout: build only the game modules, with this installer's own compiler step instead of make (what a release does)")
     ap.add_argument("--compiler", help="the C compiler to build the modules with, for example gcc or 'zig cc' (default: cc, gcc or clang if one works, else Zig downloaded into tools/local; also $PENTAMOOR_CC)")
@@ -462,6 +488,8 @@ def main(argv=None, default_build=False):
     if args.compiler and not (args.build or args.modules or default_build or layout.release):
         die("--compiler goes with --build or --modules")
     want_sota = sota_sources(args)
+    licence_options(args, want_sota)
+    want_licence = want_sota and not args.no_licence_value
     import sotainstall                                                  # (reads cabinets and the patch: needs nothing but Python)
     dest = args.dest
     sota_dest = args.sota_dest or sota_dest_for(dest)
@@ -511,6 +539,11 @@ def main(argv=None, default_build=False):
         except (sotainstall.SotaError, OSError) as e:
             die(str(e))
         say(f"Spells of the Ancients 2.15 installed ({time.time() - t0:.0f} s)")
+        if want_licence:                                                # the library the licence step runs is the cabinet's own, checked here before anything is lifted, built or run
+            try:
+                licence.verify_library(licence.library_path(sota))
+            except licence.LicenceError as e:
+                die(f"{e}\nThe game's own files are installed and verified; nothing was lifted or built yet. Run again with --no-licence-value to go on without the licence value.")
     else:
         sota = sota_program(sota_dest)
         if sota:
@@ -518,15 +551,21 @@ def main(argv=None, default_build=False):
     do_build = args.build or args.modules or default_build or layout.release
     if not do_build:
         say("next: python3 tools/install/install.py <the same disc> --build   (or run tools/lift/lift_all.sh and make -C src/port yourself)")
+        if want_licence:
+            say("(the licence value is written at the end of the build step, once the discs are verified and the modules are built: give the same discs with --build)")
         return
     link_install_folder(dest)
     try:
         if layout.release or args.modules:
-            build_modules(layout, args, sota)
+            build_modules(layout, args, sota, want_licence)
         else:
-            build_with_make(layout, args, sota)
+            build_with_make(layout, args, sota, want_licence)
+        if want_licence and sota:
+            licence_step(layout, args, sota)
     except modbuild.BuildError as e:
         die(str(e))
+    except licence.LicenceError as e:
+        die(f"{e}\nSpells of the Ancients 2.15 itself is installed and built; without the licence value it offers its base pool of 409 cards. Run again with --no-licence-value to skip this step.")
     except (RuntimeError, subprocess.CalledProcessError) as e:
         die(str(e))
     if args.clean:

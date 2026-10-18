@@ -804,6 +804,8 @@ def test_the_profiles_of_the_runtime_are_the_known_builds():
     assert len(rows) == len(set(r[0] for r in rows)) == len(ids)
     from_c = {(build, file, ids[ident]) for ident, build, file in rows}
     from_py = {(b, f, sha) for b, f, sha, role in builds.KNOWN if role == "lifted"}
+    lic = builds.SOTA_LICENCE_LIBRARY
+    from_py.add(("v2.15", lic["file"], lic["sha256"]))                  # the licence writer's library: a row of its own, not a file of the build's Program folder
     assert from_c == from_py
     assert len({sha for _, _, sha in from_c}) == len(from_c)
 

@@ -5,7 +5,7 @@
     python3 tools/soak/sota_soak.py --mode monkey --minutes 20 --workdir /tmp/sota-monkey
 
 It needs what `./pentamoor sota` needs: the 2.15 folder (`--program`, default sources/installed_sota/Magic/Program/shandalar.exe; the first game's install with the expansion's files and
-the patch over it), the modules built by tools/install/install_sota.py, and the runtime. Spells of the Ancients has no saved game to start from, so each game process starts a NEW GAME
+the patch over it), the modules built by tools/install/install_sota.py, and the runtime. Each game starts with an empty overlay, or with a copy of --overlay-seed (an install's port_overlay_sota, with its registry.dat). Spells of the Ancients has no saved game to start from, so each game process starts a NEW GAME
 (title, Start New Game, the colour, FaceMaker's portrait, the name), which ends at the first encounter's ante screen, and then:
 
   duels    play that duel and what follows the way soak.py does (lands, creatures, attacks by clicking, prompts cancelled at random), end it by conceding or, one in two, by winning (the
@@ -81,7 +81,7 @@ class SotaSoak(soak.Soak):
         self.stats["games"] += 1
         ext = "dylib" if sys.platform == "darwin" else "so"
         module = self.module or os.path.join(os.path.dirname(os.path.join(self.a.repo, self.a.exe)), "game_shandalar." + ext)
-        g = Game(self.a.repo, res=self.a.res, workdir=wd, exe=self.a.exe, program=self.a.program, module=module, overlay_seed=None)
+        g = Game(self.a.repo, res=self.a.res, workdir=wd, exe=self.a.exe, program=self.a.program, module=module, overlay_seed=self.a.overlay_seed or None)
         g.start()
         self.game = g
         self.log_off = 0
@@ -392,6 +392,8 @@ def main():
     ap.add_argument("--exe", default="src/port/build/pentamoor-run")
     ap.add_argument("--module", default=None, help="the game module (default: game_shandalar next to --exe)")
     ap.add_argument("--program", default="sources/installed_sota/Magic/Program/shandalar.exe")
+    ap.add_argument("--overlay-seed", default=None, help="a folder copied to be each game's overlay (default: an empty one): an install's port_overlay_sota keeps its registry.dat, and with it the licence value, "
+                    "so a run with a copy of it plays as that install does")
     ap.add_argument("--workdir", default=None)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--duels-per-game", type=int, default=2)

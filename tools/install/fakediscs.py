@@ -173,8 +173,10 @@ class World:
                              ("program\\CardArt", {"Forest.pic": b"a picture"}), ("program\\Decks", {"starter.dek": b"1.0 starter deck"}),
                              ("program\\Sound", {"LOCMUS0.WAV": b"music" * 50}), ("program\\Statwin", {"FIRE.AVI": b"movie" * 50})]
         self.first_files = {d.replace("\\", "/").replace("program", "Program", 1) + "/" + n: b for d, fs in self.first_layout for n, b in fs.items()}
+        self.licence_library = b"a made-up stand-in for the licence library of the cabinet, not the retail file"      # (the installer's table is pointed at it by register)
         self.cab_files = {"Program/" + n: d for n, d in self.program20.items()}
         self.cab_files.update({"Program/Decks/starter.dek": b"2.0 starter deck", "Program/ShellArt/Back.pic": b"a new picture", "Program/DuelSounds/Shell_Tooltime.wav": b"voice" * 20,
+                               "Program/DuelSounds/Manaball.wav": self.licence_library,
                                "Readme.txt": b"2.0 readme at the top", "MicroProse.url": b"[InternetShortcut]\r\n"})
         self.patch_files = {("cards.dat" if n == "CARDS.DAT" else "readme.txt" if n == "Readme.txt" else n): self.program215[n] for n in self.PATCHED}
         self.cab_bytes = make_cab(cab_version, self.cab_files, chunked)
@@ -215,5 +217,6 @@ class World:
                                                                                  "_user1.cab": (len(self.user_bytes), sha(self.user_bytes))},
                                                      cd_folders=[("Sound", "Sound", ".wav"), ("StatWin", "Statwin", ".avi")]))
         monkeypatch.setattr(builds, "SOTA_PATCH", dict(builds.SOTA_PATCH, size=len(self.patch_bytes), sha256=sha(self.patch_bytes), files=list(self.patch_files)))
+        monkeypatch.setattr(builds, "SOTA_LICENCE_LIBRARY", dict(builds.SOTA_LICENCE_LIBRARY, sha256=sha(self.licence_library), size=len(self.licence_library)))
         monkeypatch.setattr(install, "FINGERPRINTS", builds.fingerprints("v1.0"))
         return sotainstall

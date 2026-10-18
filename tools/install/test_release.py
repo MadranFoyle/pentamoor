@@ -478,7 +478,10 @@ def test_archive_check_refuses_anything_made_from_the_game():
            # Spells of the Ancients 2.15: its programs, libraries and data, the modules built from them, the patch, the cabinets and the disc
            "sources/installed_sota/Magic/Program/shandalar.exe", "x/FaceMaker.exe", "cardartlib.dll", "x/DrawCardLib.dll", "CdTools.dll", "Program/CARDS.DAT", "FaceData.txt",
            "game_shandalar.dylib", "game_facemaker.so", "game_sotadeck.dll", "SOTAV215.EXE", "sotav215.exe", "Setup/data1.cab", "_user1.cab", "MTG v2.00.iso",
-           "sources/generated/lift_shandalar/handlers_gen.c", "lift_sotadeck/cardartlib_gen.c"]
+           "sources/generated/lift_shandalar/handlers_gen.c", "lift_sotadeck/cardartlib_gen.c",
+           # the licence step: the original installer's library (by its name in the cabinet and by its internal name), the module and the lifted C made from it, an install's registry file
+           "Manaball.wav", "Program/DuelSounds/Manaball.wav", "x/MANABALL.WAV", "SencLib.dll", "game_senclib.so", "game_senclib.dylib", "game_senclib.dll", "sources/generated/lift_senclib/handlers_gen.c",
+           "lift_senclib/manaball_spec.json", "port_overlay_sota/registry.dat", "registry.dat"]
     ok = ["src/port/stubgame/handlers_gen.c", "pentamoor-run", "SDL2.dll", "tools/local/ziglang/zig.exe", "python/python313.dll", "tools/pydeps/capstone/lib/libcapstone.so"]
     assert check_archive.forbidden(bad) == bad
     assert check_archive.forbidden(ok) == []

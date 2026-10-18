@@ -8,6 +8,7 @@
 
 #include "plat.h"
 #include "port.h"
+#include "regstore.h"
 #include "sched.h"
 #include "test_util.h"
 
@@ -193,7 +194,7 @@ static void test_registry(void)
     API("advapi32.dll", "RegCloseKey", RD32(key));
     API("advapi32.dll", "RegCloseKey", RD32(key2));
 
-    /* what is not in the table is not there: the programs fall back to their defaults, as they did when the registry had nothing at all */
+    /* what is not in the table is not there: the programs fall back to their defaults, as they did when the registry had nothing at all (no store is open here: see test_registry_store) */
     CHECK(API("advapi32.dll", "RegOpenKeyA", HKLM, cstr("SOFTWARE\\MicroProse\\Magic: The Gathering"), key) == 2);
     CHECK(API("advapi32.dll", "RegOpenKeyA", 0x80000001u, cstr(WINDOWS_KEY), key) == 2);                 /* HKEY_CURRENT_USER has no such key */
     CHECK(API("advapi32.dll", "RegOpenKeyExA", HKLM, cstr("SOFTWARE\\MicroProse"), 0, 0x20019, key) == 2);
@@ -211,6 +212,96 @@ static void test_registry(void)
         CHECK(API("advapi32.dll", "RegCreateKeyExA", HKLM, cstr("SOFTWARE\\MicroProse"), 0, 0, 0, 0xF003F, 0, key, disposition) == 0 && RD32(disposition) == 1);
         API("advapi32.dll", "RegCloseKey", RD32(key));
     }
+}
+
+/* With a file registry open (regstore.h; main.c opens one for a Spells of the Ancients run): the values under MicroProse and the two Windows values come from it and are kept in it;
+ * everything else is as without one. All values here are made up. */
+static void test_registry_store(void)
+{
+    char dir[600], path[700], file[3000];
+    uint32_t key = scratch(4), type = scratch(4), size = scratch(4), data = scratch(64), blob = scratch(16);
+    const uint8_t pair_time[4] = {0x11, 0x22, 0x33, 0x44};
+    FILE *f;
+    size_t n;
+
+    test_tmpdir(dir, sizeof(dir), "win32reg_");
+    snprintf(path, sizeof(path), "%s/registry.dat", dir);
+    CHECK(regstore_open(path) == 0);
+
+    /* an empty store changes nothing that was answered before: the fixed pair, MicroProse not found */
+    CHECK(API("advapi32.dll", "RegOpenKeyA", HKLM, cstr(WINDOWS_KEY), key) == 0);
+    WR32(size, 64);
+    CHECK(API("advapi32.dll", "RegQueryValueExA", RD32(key), cstr("ProductId"), 0, type, data, size) == 0 && !strcmp(text(data), "54377-OEM-0013407-48562"));
+    API("advapi32.dll", "RegCloseKey", RD32(key));
+    CHECK(API("advapi32.dll", "RegOpenKeyA", HKLM, cstr("SOFTWARE\\MicroProse\\Magic: The Gathering"), key) == 2);
+
+    /* this install's own pair (the installer makes one): answered from the store, a value at a time */
+    CHECK(regstore_put(REGSTORE_WINDOWS_KEY, "FirstInstallDateTime", 3, pair_time, 4) == 0);
+    CHECK(API("advapi32.dll", "RegOpenKeyA", HKLM, cstr(WINDOWS_KEY), key) == 0);
+    WR32(size, 64);
+    CHECK(API("advapi32.dll", "RegQueryValueExA", RD32(key), cstr("FirstInstallDateTime"), 0, type, data, size) == 0 && RD32(type) == 3 && RD32(size) == 4 && RD32(data) == 0x44332211u);
+    WR32(size, 64);
+    CHECK(API("advapi32.dll", "RegQueryValueExA", RD32(key), cstr("ProductId"), 0, type, data, size) == 0 && !strcmp(text(data), "54377-OEM-0013407-48562"));   /* the other one is still the fixed one */
+    API("advapi32.dll", "RegCloseKey", RD32(key));
+
+    /* a write under MicroProse is kept: a key that is made, a value that is set, read back, found by a plain open, and still there after the store is opened again */
+    CHECK(API("advapi32.dll", "RegCreateKeyA", HKLM, cstr("SOFTWARE\\MicroProse\\Magic: The Gathering"), key) == 0);
+    strcpy((char *)(G + blob), "0123456789ab");
+    CHECK(API("advapi32.dll", "RegSetValueExA", RD32(key), cstr("Thing"), 0, 3, blob, 12) == 0);
+    WR32(size, 64);
+    CHECK(API("advapi32.dll", "RegQueryValueExA", RD32(key), cstr("thing"), 0, type, data, size) == 0 && RD32(type) == 3 && RD32(size) == 12 && !memcmp(G + data, "0123456789ab", 12));
+    WR32(size, 4);
+    CHECK(API("advapi32.dll", "RegQueryValueExA", RD32(key), cstr("Thing"), 0, type, data, size) == 234 && RD32(size) == 12);
+    API("advapi32.dll", "RegCloseKey", RD32(key));
+    CHECK(API("advapi32.dll", "RegOpenKeyA", HKLM, cstr("SOFTWARE\\MicroProse\\Magic: The Gathering"), key) == 0);
+    API("advapi32.dll", "RegCloseKey", RD32(key));
+    CHECK(API("advapi32.dll", "RegOpenKeyA", HKLM, cstr("SOFTWARE\\MicroProse"), key) == 0);                    /* on the way to a value */
+    API("advapi32.dll", "RegCloseKey", RD32(key));
+    CHECK(regstore_open(path) == 2);
+    CHECK(API("advapi32.dll", "RegOpenKeyA", HKLM, cstr("SOFTWARE\\MicroProse\\Magic: The Gathering"), key) == 0);
+    WR32(size, 64);
+    CHECK(API("advapi32.dll", "RegQueryValueExA", RD32(key), cstr("Thing"), 0, type, data, size) == 0 && RD32(size) == 12);
+    CHECK(API("advapi32.dll", "RegSetValueExA", RD32(key), cstr("Number"), 0, 4, blob, 4) == 0);
+    CHECK(API("advapi32.dll", "RegSetValueExA", RD32(key), cstr("Bad"), 0, 3, 0, 4) == 87);                 /* a size and no data */
+    API("advapi32.dll", "RegCloseKey", RD32(key));
+    f = fopen(path, "rb");
+    n = f ? fread(file, 1, sizeof(file) - 1, f) : 0;
+    file[n] = 0;
+    if (f)
+        fclose(f);
+    CHECK(strstr(file, "HKLM\\SOFTWARE\\MicroProse\\Magic: The Gathering\tThing\t3\t30313233343536373839" "6162\n") != NULL);
+    CHECK(strstr(file, "\tNumber\t4\t30313233\n") != NULL);
+
+    /* everything else is as before: a key can be made, a write succeeds and goes nowhere, it is not found afterwards; so are the other values of Windows' key */
+    CHECK(API("advapi32.dll", "RegCreateKeyA", HKLM, cstr("SOFTWARE\\Elsewhere"), key) == 0);
+    CHECK(API("advapi32.dll", "RegSetValueExA", RD32(key), cstr("Thing"), 0, 3, blob, 12) == 0);
+    WR32(size, 64);
+    CHECK(API("advapi32.dll", "RegQueryValueExA", RD32(key), cstr("Thing"), 0, type, data, size) == 2);
+    API("advapi32.dll", "RegCloseKey", RD32(key));
+    CHECK(API("advapi32.dll", "RegOpenKeyA", HKLM, cstr("SOFTWARE\\Elsewhere"), key) == 2);
+    CHECK(API("advapi32.dll", "RegCreateKeyA", HKLM, cstr(WINDOWS_KEY), key) == 0);
+    CHECK(API("advapi32.dll", "RegSetValueExA", RD32(key), cstr("Version"), 0, 1, cstr("x"), 2) == 0);
+    WR32(size, 64);
+    CHECK(API("advapi32.dll", "RegQueryValueExA", RD32(key), cstr("Version"), 0, type, data, size) == 2);
+    API("advapi32.dll", "RegCloseKey", RD32(key));
+    CHECK(API("advapi32.dll", "RegOpenKeyA", 0x80000001u, cstr("SOFTWARE\\MicroProse\\Magic: The Gathering"), key) == 2);   /* HKEY_CURRENT_USER is not HKLM */
+
+    /* a store that cannot be written: the write is refused (access denied) and not kept */
+    snprintf(path, sizeof(path), "%s/missing/registry.dat", dir);
+    CHECK(regstore_open(path) == 0);
+    CHECK(API("advapi32.dll", "RegCreateKeyA", HKLM, cstr("SOFTWARE\\MicroProse\\Magic: The Gathering"), key) == 0);
+    CHECK(API("advapi32.dll", "RegSetValueExA", RD32(key), cstr("Thing"), 0, 3, blob, 12) == 5);
+    API("advapi32.dll", "RegCloseKey", RD32(key));
+    CHECK(API("advapi32.dll", "RegOpenKeyA", HKLM, cstr("SOFTWARE\\MicroProse\\Magic: The Gathering"), key) == 2);
+
+    /* no store: the old behaviour exactly (a write succeeds and is not kept) */
+    regstore_open(NULL);
+    CHECK(API("advapi32.dll", "RegCreateKeyA", HKLM, cstr("SOFTWARE\\MicroProse\\Magic: The Gathering"), key) == 0);
+    CHECK(API("advapi32.dll", "RegSetValueExA", RD32(key), cstr("Thing"), 0, 3, blob, 12) == 0);
+    WR32(size, 64);
+    CHECK(API("advapi32.dll", "RegQueryValueExA", RD32(key), cstr("Thing"), 0, type, data, size) == 2);
+    API("advapi32.dll", "RegCloseKey", RD32(key));
+    test_rmtree(dir);
 }
 
 /* the game's comparison function, as a host function the guest can call: two element addresses, the first dword compared as unsigned numbers */
@@ -403,6 +494,7 @@ int main(void)
     test_format_message();
     test_thread_times();
     test_registry();
+    test_registry_store();
     test_qsort();
     test_strings_and_classes();
     test_file_title();
