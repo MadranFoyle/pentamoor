@@ -531,7 +531,7 @@ def command(world, tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(modbuild, "build_modules", lambda programs, gen, port, native, objs, out, cc, **kw: rec.calls.append(("build", list(programs))) or {p: os.path.join(out, "game_%s.so" % p) for p in programs})
     monkeypatch.setattr(modbuild, "smoke_test", lambda run, module: (True, ""))
     monkeypatch.setattr(install, "link_install_folder", lambda dest: None)
-    (root / "pentamoor-run").write_text("")              # a runtime beside the launchers: a release
+    (root / ("pentamoor-run" + install.EXE)).write_text("")              # a runtime beside the launchers: a release
 
     def run(*args):
         capsys.readouterr()
