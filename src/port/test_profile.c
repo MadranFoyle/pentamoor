@@ -10,6 +10,7 @@
 #include "port.h"
 #include "profile.h"
 #include "screens.h"
+#include "sched.h"
 #include "test_util.h"
 #include "yesno.h"
 
@@ -544,13 +545,65 @@ static void test_init(void)
     test_rmtree(dir);
 }
 
+/* Spells of the Ancients 2.15's loops that wait for the player (the title menu: it only calls the button table's pass, a million and a half times a second; the other menus and the "wait for
+ * a key" loop: the mouse snapshot and the key poll) make the host nap, except on the map (its frame period does that), while a button is down, and in 1.0. The hooks are run as the game's
+ * call would, with the return address on the stack. */
+static int naps_of(HostGuestFn fn, uint32_t ret, uint32_t button)
+{
+    uint32_t args[4] = {0, 0, button, 0};
+    int before = pace_nap_count();
+
+    port_sp = 0x800000u;
+    WR32(port_sp, ret);
+    WR32(port_sp + 12, button);                 /* the state the pass is called with */
+    WR32(profile->buttons.mouse_var, button);
+    fn(args);
+    return pace_nap_count() - before;
+}
+
+static void test_idle_naps(void)
+{
+    const BuildProfile *sh = profile_find(ID_S_SHANDALAR);
+    HostGuestFn snap, pass, poll;
+    const uint32_t outside = 0x4b6fe7u, in_map = 0x438f85u;
+    double t0;
+
+    profile = sh;
+    install_all();
+    snap = port_prehook_fn(sh->pace.idle_fn);
+    pass = port_prehook_fn(sh->buttons.pass);
+    poll = port_prehook_fn(sh->keys.pop);
+    CHECK(snap && pass && poll && sh->pace.idle_ms >= 8 && sh->pace.idle_ms <= 50);
+    if (!snap || !pass || !poll)
+        return;
+    t0 = port_now();
+    CHECK(naps_of(snap, outside, 0) == 1);                        /* a menu's loop takes the mouse snapshot with no button down: it rests ... */
+    CHECK(port_now() - t0 >= sh->pace.idle_ms / 1000.0 * 0.9);    /* ... for the profile's time */
+    CHECK(naps_of(snap, outside, 1) == 0);                        /* a button is down: a drag is not slowed */
+    CHECK(naps_of(snap, in_map, 0) == 0);                         /* the map has its frame period, not this */
+    CHECK(naps_of(snap, outside, 0) == 1);
+    CHECK(naps_of(pass, outside, 0) == 0);                        /* the pass after a snapshot that napped has had its rest ... */
+    CHECK(naps_of(pass, outside, 0) == 1);                        /* ... and the next one, with no snapshot before it (the title menu), rests itself */
+    CHECK(naps_of(pass, outside, 1) == 0 && naps_of(pass, in_map, 0) == 0);
+    CHECK(naps_of(poll, sh->keys.wait_loop_ret, 0) == 1);         /* the key poll of the "wait for a key" loop */
+    CHECK(naps_of(poll, 0x4a3296u, 0) == 0);                      /* a poll from anywhere else (the name box) is not that loop */
+    profile = profile_find(ID_MAGIC);                            /* 1.0: no nap of any kind (its snapshot hook is screens.c's, which notes the screen) */
+    install_all();
+    CHECK(profile->pace.idle_ms == 0 && profile->pace.idle_fn == 0);
+    CHECK(naps_of(port_prehook_fn(0x44b84b), outside, 0) == 0);
+    CHECK(naps_of(port_prehook_fn(0x41f3ea), outside, 0) == 0);
+    CHECK(naps_of(port_prehook_fn(0x4080b2), 0x48ac3d, 0) == 0);
+}
+
 int main(void)
 {
     guest_init();
+    sched_init();
     test_sha256();
     test_v10_values();
     test_v215_values();
     test_hooks();
+    test_idle_naps();
     test_second_profile();
     test_verdicts();
     test_init();

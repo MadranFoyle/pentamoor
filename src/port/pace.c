@@ -56,6 +56,15 @@ static uint32_t read_and_clear_ticks(const uint32_t *a)
 #define REPEAT_MS 400u                          /* a button held this long repeats */
 
 static double ui_last;                          /* the last paced pass */
+static int naps;                                /* how many times an idle hook has rested (the tests count) */
+
+static void idle_nap(void)
+{
+    naps++;
+    sched_sleep(profile->pace.idle_ms / 1000.0);
+}
+
+int pace_nap_count(void) { return naps; }
 static int snap_napped;                         /* pace_idle_snapshot (below) napped since the last pass: the loop that took the snapshot has had its rest */
 static uint32_t cur_press, press_val;           /* the press the loops have acted on (front.c's number), and the button state it had */
 static int suppressed, carried, ui_log;
@@ -89,7 +98,7 @@ static uint32_t pace_ui_pass(const uint32_t *a)
     else if (btn == 0 && profile->pace.idle_ms && RD32(profile->buttons.mouse_var) == 0) {
         /* a screen's loop whose only work is this call (the title menu never takes the mouse snapshot: it called this 1.8 million times a second): nap, as pace_idle_snapshot does; a press that
          * came in meanwhile is the state the call is given */
-        sched_sleep(profile->pace.idle_ms / 1000.0);
+        idle_nap();
         btn = RD32(profile->buttons.mouse_var);
         if (btn != 0)
             WR32(arg, btn);
@@ -147,7 +156,7 @@ static uint32_t pace_idle_snapshot(const uint32_t *a)
         return 0;
     if (RD32(profile->buttons.mouse_var) != 0)
         return 0;
-    sched_sleep(profile->pace.idle_ms / 1000.0);
+    idle_nap();
     snap_napped = 1;
     return 0;
 }
@@ -158,7 +167,7 @@ static uint32_t pace_idle_poll(const uint32_t *a)
 {
     (void)a;
     if (RD32(port_sp) == profile->keys.wait_loop_ret)
-        sched_sleep(profile->pace.idle_ms / 1000.0);
+        idle_nap();
     return 0;
 }
 
