@@ -33,7 +33,7 @@ def main():
     ap.add_argument("--workdir", default="/tmp/sota-saveload")
     ap.add_argument("--repo", default=os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")))
     ap.add_argument("--exe", default="src/port/build/pentamoor-run")
-    ap.add_argument("--program", default="sources/installed_sota_215_m2/Program/shandalar.exe")
+    ap.add_argument("--program", default="sources/installed_sota/Magic/Program/shandalar.exe")
     ap.add_argument("--res", default="1024x768")
     a = ap.parse_args()
     a.minutes, a.seed, a.module = 10, 7, None

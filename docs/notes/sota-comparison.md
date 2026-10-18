@@ -26,8 +26,7 @@ found; this version corrects what that got wrong: the patch has **six** entries,
   (16 exports, 13 used). **It has no `shandalar.exe`**: it is installed over a SotA install and the Shandalar program stays 2.15's. Details in "ManaLink 3.0".
 - **Recommended target: 2.15** (shandalar.exe, magic.exe, DECK.EXE and the 2.15 libraries: one coherent, complete, checked set). ManaLink 3.0's `magic.exe` and libraries are a second layer worth doing later, as one more profile, not as the first target.
 - **Where it stands (Milestone 2):** `shandalar.exe` 2.15 plays from the title screen through a new game, the map, the village, a duel against the AI (to a win or a concession, with the reward screens), a save and a load, at 640x480, 800x600 and 1024x768, with its pacing, key-wait and name-box hooks run and verified and every other hook left off; soaked for hours without a crash or a hang. The note's "Milestone 2" section has what ran, what did not, and the table of every site.
-- **Where it stands (Milestone 2):** `shandalar.exe` 2.15 plays from the title screen through a new game, the map, the village, a duel against the AI (to a win or a concession, with the reward screens), a save and a load, at 640x480, 800x600 and 1024x768, with its pacing, key-wait and name-box hooks run and verified and every other hook left off; soaked for hours without a crash or a hang. The note's "Milestone 2" section has what ran, what did not, and the table of every site.
-- **Where it stands (Milestone 2):** `shandalar.exe` 2.15 plays from the title screen through a new game, the map, the village, a duel against the AI (to a win or a concession, with the reward screens), a save and a load, at 640x480, 800x600 and 1024x768, with its pacing, key-wait and name-box hooks run and verified and every other hook left off; soaked for hours without a crash or a hang. The note's "Milestone 2" section has what ran, what did not, and the table of every site.
+- **Where it stands (Milestone 3):** one command installs it: `pentamoor-install "MTG v1.0.iso" --sota "MTG v2.00.iso" --patch SOTAV215.EXE` makes the 2.15 folder from the two discs and the patch, checks every file of it by size and SHA-256, and lifts and builds its modules with the first game's; `./pentamoor sota` then runs it with no setting, in a folder and with saves of its own. The note's "Milestone 3" section has what ran, what did not, the timings and the hours.
 - Rough size of the work: 36 to 55 hours of agent work for shandalar.exe alone with no hook features, 85 to 130 for the whole 2.15 thing (shell, controller and screen hooks, installer, CI), 15 to 25 more for ManaLink 3.0's programs. Details and risks at the end.
 
 ## What there is
@@ -35,7 +34,7 @@ found; this version corrects what that got wrong: the patch has **six** entries,
 | | |
 |---|---|
 | `MTG v2.00.iso` | the disc label "MTG v2", `Setup/DATA.TAG`: *Spells of the Ancients*, version 2.0, "September 8, 1997: UK Release Build". An **expansion**: its installer (`setup.ins`, compiled InstallShield script) asks for the original CD (`CheckOriginalCD`, `MSG_INSERTORIGINALCD`; `CdTools.dll` is the check), copies the old decks to `Old Decks` and `Old Playdeck`, reads the registry key `SOFTWARE\MicroProse\Magic: The Gathering` (value `1.0` under it), and installs into `C:\Magic` over the existing game |
-| `SOTAV215.EXE` (2.15 patch) | a WinZip self-extractor, 1,207,571 bytes, **six entries, all whole, every CRC-32 right**: `shandalar.exe` (1,740,288 B, 1997-10-31), `readme.txt` (37,224 B, 1997-11-07), `magic.exe` (1,530,368 B, 1997-10-20), `FaceData.txt` (208 B), `deckdll.dll` (265,216 B, 1997-10-20) and `cards.dat` (339,984 B, 1997-10-14). The programs are whole files, not deltas. `tools/research/sotapatch.py` reads it (the stub contains false `PK` signatures, so `zipfile` cannot), checks every entry's CRC-32 and the archive's own end record, and extracts to a folder (hashes under "Hashes"). A second copy, `sotav215.exe` (1,048,331 B), **is cut short**: its last entry (`deckdll.dll`, 89,728 packed bytes) has only 19,716 of them and `cards.dat` is not there at all; the reader reports that copy as `TRUNCATED` with no end record and extracts nothing from it (the first version of this note used it, and so missed `cards.dat` and 2.15's deck library) |
+| `SOTAV215.EXE` (2.15 patch) | a WinZip self-extractor, 1,207,571 bytes, **six entries, all whole, every CRC-32 right**: `shandalar.exe` (1,740,288 B, 1997-10-31), `readme.txt` (37,224 B, 1997-11-07), `magic.exe` (1,530,368 B, 1997-10-20), `FaceData.txt` (208 B), `deckdll.dll` (265,216 B, 1997-10-20) and `cards.dat` (339,984 B, 1997-10-14). The programs are whole files, not deltas. `tools/install/sotapatch.py` reads it (the stub contains false `PK` signatures, so `zipfile` cannot), checks every entry's CRC-32 and the archive's own end record, and extracts to a folder (hashes under "Hashes"); the installer uses its `load`. A second copy, `sotav215.exe` (1,048,331 B), **is cut short**: its last entry (`deckdll.dll`, 89,728 packed bytes) has only 19,716 of them and `cards.dat` is not there at all; the reader reports that copy as `TRUNCATED` with no end record and extracts nothing from it (the first version of this note used it, and so missed `cards.dat` and 2.15's deck library) |
 | 2.15 install | 2.0's Program folder with the six files replaced (`Readme.txt` is the patch's `readme.txt`, `CARDS.DAT` the patch's `cards.dat`, by file name ignoring case): `sources/installed_sota_215` (git-ignored). 332 files |
 | `ml_sota_us.zip` | the **ManaLink 3.0** installer for the US Spells of the Ancients (see its section): `data1.cab`, `_user1.cab`, `_sys1.cab` and the InstallShield files; extracted to `sources/installed_manalink` (Program files as the cabinet names them) and, over the 2.15 install, `sources/installed_manalink_over215` |
 
@@ -48,7 +47,7 @@ instructions in another order), so a function's being "changed" says little abou
 
 ## The installer's format
 
-`Setup/data1.cab`, `_sys1.cab` and `_user1.cab` are InstallShield 5 cabinets (signature `ISc(`, version word 0x01005100; ManaLink 3.0's have 0x01000004 and a different layout of the compressed data, below). `tools/research/iscab.py` lists and extracts them (also straight out of the `.iso`, with `tools/install/iso9660.py`):
+`Setup/data1.cab`, `_sys1.cab` and `_user1.cab` are InstallShield 5 cabinets (signature `ISc(`, version word 0x01005100; ManaLink 3.0's have 0x01000004 and a different layout of the compressed data, below). `tools/install/iscab.py` lists and extracts them (also straight out of the `.iso`, with `tools/install/iso9660.py`; it was `tools/research/iscab.py` until Milestone 3, which still runs the same command):
 
 - header: the descriptor's offset (0x200) and size; the descriptor holds the file table's offset, size, and the numbers of directories and files; the table is one `u32` offset per directory then per file, relative to the table; a directory is a NUL-terminated
   name (`Program\CardArt`); a file descriptor is 0x2a bytes: name, directory, flags (4 compressed, 2 "obfuscated", 1 split, 8 unused slot), expanded and packed sizes, DOS attributes, date and time, and the offset of the data.
@@ -59,9 +58,8 @@ instructions in another order), so a function's being "changed" says little abou
 - The disc also carries what the game reads from the CD, as 1.0's does: `Sound` (31 WAV), `StatWin` (68 AVI), `DuelSounds` (the shell's voice clips), and `Tutorial` (the Director projector `TUTORIAL.EXE`, 1.4 MB, with 13 chapter files, which 1.0's install has too, and 13 wizard videos of 1 to 35 MB), the autoplay program and
   its intro movies, and a copy of DirectX.
 
-**What an installer for it has to do**: take two discs (the 1.0 disc first, then this one; Pentamoor's installer today takes one), install 1.0 as it does now, then extract the cabinet over it (`Program` of the new folder replaces files of the old: 93 files exist in both and differ, 11 are the same, 228 are new, and 976
-of 1.0's stay, among them every sprite and most pictures: SotA **needs the 1.0 art**), apply the patch (six files: `sotapatch.py` extracts them over the Program folder, which the case-insensitive file system turns into replacements of `CARDS.DAT` and `Readme.txt`), take the CD files from the 2.0 disc as well (22 WAV), and fingerprint the programs. The registry values the original installer wrote
-have to be made up (see "What breaks").
+**What an installer for it has to do** (done in Milestone 3: `tools/install/sotainstall.py`, see its section): take two discs (the 1.0 disc first, then this one; Pentamoor's installer today takes one), install 1.0 as it does now, then extract the cabinet over it (`Program` of the new folder replaces files of the old: 93 files exist in both and differ, 11 are the same, 228 are new, and 976
+of 1.0's stay, among them every sprite and most pictures: SotA **needs the 1.0 art**), apply the patch (six files: `sotapatch.py` extracts them over the Program folder, which the case-insensitive file system turns into replacements of `CARDS.DAT` and `Readme.txt`), take the CD files from the 2.0 disc as well (22 WAV), and fingerprint the programs. (The original installer also wrote registry values; Pentamoor's installer writes none: Milestone 3.)
 
 ## The folder
 
@@ -597,12 +595,15 @@ What Milestone 1 did against the rows above: the lifter row (`rol`/`ror`, `setjm
 
 ## Hashes
 
-SHA-256 of what the numbers above were measured on (hashes are facts about files; no file is in the repository). The program rows are the build ids of `tools/lift/builds.py` and `src/port/profile.c`.
+SHA-256 of what the numbers above were measured on (hashes are facts about files; no file is in the repository). The program rows are the build ids of `tools/lift/builds.py` and `src/port/profile.c`; every 2.15 row below (and its size) is also what the installer checks the folder it makes against (`builds.KNOWN`, `builds.SIZES`), and the three cabinets of the 2.0 disc and the patch are what it checks the sources against (`builds.SOTA_DISC`, `builds.SOTA_PATCH`).
 
 | archive | bytes | SHA-256 |
 |---|---|---|
 | `SOTAV215.EXE` (the whole 2.15 patch) | 1,207,571 | `a428e981d1e920c05081a1c57f4eba0b4b75e9cda52f050cad3e33bc456b9c89` |
 | `sotav215.exe` (the copy cut short) | 1,048,331 | `c0eef9b8f12b8a500dffa716500c6b82dcf9e4f9f1c57faeacecdee02903318c` |
+| `MTG v2.00.iso` Setup/data1.cab | 55,460,517 | `cb021ce69e08b56a0bbb3acfe392f0dad7ded5d22768643a113f3115eaa8732f` |
+| `MTG v2.00.iso` Setup/_sys1.cab | 205,707 | `8dfd7bd0e89fb33e1cfe147462409cf956cbc80b81b4889ad7f680f2584e1cab` |
+| `MTG v2.00.iso` Setup/_user1.cab | 2,809,978 | `483e37b99d154024278ef549536629c02598784fe120cc48e356947477608fc0` |
 | `ml_sota_us.zip` | 5,247,436 | `14dfc87facbde757ffbe74819d60f721fe731af6f7371c38da11616527624223` |
 | ManaLink `data1.cab` | 4,591,805 | `4f94d5d7004c9810c06c658dcc892a9fd8e41e2bb62a18cc691e92adda976037` |
 | ManaLink `_user1.cab` | 44,444 | `1b778ed778aeb06cfdd73787fb4d773273f0572b7215ad6dc6bddd256057aaba` |
@@ -624,6 +625,7 @@ SHA-256 of what the numbers above were measured on (hashes are facts about files
 | MAGSND.DLL | `213b7dc2e1d0eed131d38485cba8004c1d7760f8ff0a94486b86bba5f3aeba9e` (25,088 B) | same as 2.0 | -- |
 | MAGVID.DLL | `b686bd43bb7f9ba040fc7416d8d74e59e27c3b5b1bbccd76bfc16c5505bcf90a` (45,056 B) | same as 2.0 | -- |
 | FaceMaker.exe | `b4f3d19614dcd825da846d097baa3cd9badc0c9852492bc27a8ba62c1741a493` (76,288 B) | same as 2.0 | -- |
+| MSVCRT.DLL | `3a4cb4631f9ecd6f3f6013bc0459fca2e305a0ad00dbf34cb46e6f52d96d9d62` (266,240 B) | same as 2.0 | -- |
 | FaceData.txt | `eb3c55f48861a8fef6ca556e2b199e39e41fed6269fb94a3c8690e771cde04fa` (378 B) | `3b362d357efc0aba6d29e88e4b750078aa11cf5ee838c34c989322266dc4600f` (208 B) | -- |
 | Manalink.exe | -- | -- | `7dbc75c975c3819e2367f6b09d27d56f2738d874f7f5c8d128aeb59261bb531c` (304,640 B) |
 | ManalinkInterface.dll | -- | -- | `117a42fe57fbf426f9ed204af0ca661bb5cefc16a013b10f9108788a585c5774` (46,080 B) |
@@ -636,16 +638,16 @@ All in `tools/research/`, each documented at the top, none holding game data (th
 
 | script | what |
 |---|---|
-| `iscab.py` | lists and extracts an InstallShield 5 cabinet, from a file or from a disc image; both layouts of compressed data (the 2.0 disc's chunks, ManaLink 3.0's single stream) |
-| `sotapatch.py` | lists, **verifies** and extracts the files of a WinZip self-extractor (the 2.15 patch): CRC-32 and SHA-256 of every entry, `TRUNCATED` / `CORRUPT` for an entry that is cut short or damaged, the archive's end record checked, exit status 1 and nothing written for an archive that is not whole (`--partial`, `--check`); extracts over a game folder keeping the names there |
-| `sotaoverlay.py` | copies one extracted install over another as Windows does (names compared ignoring case; `--only Program`); counts replaced, identical and added |
+| `iscab.py` | (**now `tools/install/iscab.py`, the installer uses it; this command runs it**) lists and extracts an InstallShield 5 cabinet, from a file or from a disc image; both layouts of compressed data (the 2.0 disc's chunks, ManaLink 3.0's single stream); says where a cut-short cabinet is cut |
+| `sotapatch.py` | (**now `tools/install/sotapatch.py`**) lists, **verifies** and extracts the files of a WinZip self-extractor (the 2.15 patch): CRC-32 and SHA-256 of every entry, `TRUNCATED` / `CORRUPT` for an entry that is cut short or damaged, the archive's end record checked, exit status 1 and nothing written for an archive that is not whole (`--partial`, `--check`); extracts over a game folder keeping the names there |
+| `sotaoverlay.py` | (**now `tools/install/overlay.py`**, which also has `place`, the installer's one-file version) copies one extracted install over another as Windows does (names compared ignoring case; `--only Program`); counts replaced, identical and added |
 | `sotapeinfo.py` | build identity of programs and libraries: link time, versions, sections, imports, the debug directory and its PDB path, the version resource, the source paths in the strings; `--table` for hashes |
 | `sotacmptable.py` | the rows of the two comparison tables above for any pairs of builds, as Markdown |
 | `sotamaster.py` | finds the master card table in a program and counts its records (the lifter now does this itself: `tools/lift/mastertable.py`) |
 | `sotacards.py` | the structure of `CARDS.DAT` and the differences between builds, as counts |
 | `sotastride.py` | which structure sizes a program multiplies by (the duel slot and the slots a player), from the compiler's multiplication sequences |
 | `sotastrings.py` | strings one build has that another lacks, only the technical kinds (command-line switches, registry paths, window classes, file names, source paths) |
-| `test_research.py` | tests of the readers on archives, cabinets and files made up in the test (no game file): `python3 -m pytest tools/research` |
+| `test_research.py` | tests of the `cards.dat` reader and of the three old commands, on files made up in the test (no game file): `python3 -m pytest tools/research`; the readers' own tests are `tools/install/test_sota.py` |
 | `sotatree.py` | compares two installed folders (counts by folder and extension; `--list-new` lists names) |
 | `sotacmp.py` | matches the functions of two builds of a program and reports the counts; `--json`, `--map` |
 | `sotahooks.py` | finds the addresses `src/port` is keyed to in another build, with the old and new call sites of the hooked functions |
@@ -655,11 +657,13 @@ All in `tools/research/`, each documented at the top, none holding game data (th
 | `liftsota.py` | runs the lifter on another build, with its constants replaced (`liftsota.py dll ...` for the libraries). **Superseded** by the lifter's own 2.15 support (Milestone 1): `tools/install/install_sota.py` does the lifting for a 2.15 folder |
 | `sota-runtime-experiment.patch` | the scratch changes to `src/port` of the first version of the experiment. **Obsolete since Milestone 1**: its content is in `src/port` as real, tested code (profile rows, the `msvcrt.dll` alias, the Win32 calls, the process model); kept only as a record |
 
-Reproduce (the paths are the ones this note uses; `sources/` is git-ignored):
+Reproduce (the paths are the ones this note uses; `sources/` is ignored by the repository):
 
 ```bash
-# the 2.15 install: 2.0's Program folder with the six files of the whole patch over it (a cut-short patch is refused: exit status 1, nothing written)
-cp -R sources/installed_sota sources/installed_sota_215          # or: sotaoverlay.py for a fresh copy
+# the 2.15 install, from the discs and the patch: one command (Milestone 3); it checks every file of the result by size and SHA-256
+./pentamoor-install "sources/Magic_The_Gathering_ISO/MTG v1.0.iso" --sota "sources/Magic_The_Gathering_ISO/MTG v2.00.iso" --patch sources/Magic_The_Gathering_ISO/SOTAV215.EXE
+# by hand, with the research commands (a cut-short patch is refused: exit status 1, nothing written)
+python3 tools/research/sotaoverlay.py sources/installed sources/installed_sota sources/installed_sota_215 --only Program     # the first game's folder with the 2.0 install over it
 python3 tools/research/sotapatch.py sources/Magic_The_Gathering_ISO/SOTAV215.EXE sources/installed_sota_215/Program
 # ManaLink 3.0: the cabinet, and the install it makes over 2.15
 python3 tools/research/iscab.py sources/Magic_The_Gathering_ISO/ml_sota_us/data1.cab sources/installed_manalink

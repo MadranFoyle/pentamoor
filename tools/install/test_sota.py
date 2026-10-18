@@ -9,6 +9,7 @@
 import io
 import os
 import sys
+import types
 import zipfile
 
 import pytest
@@ -20,6 +21,8 @@ import iscab  # noqa: E402
 import iso9660  # noqa: E402
 import overlay  # noqa: E402
 import sotapatch  # noqa: E402
+
+needs_symlinks = pytest.mark.skipif(sys.platform == "win32", reason="making a symbolic link needs a privilege on Windows")
 
 FILES = {"shandalar.exe": bytes(range(256)) * 40, "readme.txt": b"hello world\n" * 300, "cards.dat": os.urandom(5000), "FaceData.txt": b"x" * 208}
 
@@ -114,6 +117,7 @@ def test_extraction_keeps_the_name_that_is_already_there_ignoring_case(tmp_path)
     assert (out / "CARDS.DAT").read_bytes() == FILES["cards.dat"]
 
 
+@needs_symlinks
 def test_extraction_refuses_to_write_through_a_symbolic_link(tmp_path):
     arc = tmp_path / "patch.exe"
     arc.write_bytes(fakediscs.make_patch({"a.bin": b"data"}))
@@ -233,6 +237,7 @@ def test_place_refuses_a_path_that_could_lead_out(tmp_path, rel):
     assert os.listdir(dest) == [] and not (tmp_path / "evil.txt").exists()
 
 
+@needs_symlinks
 def test_place_does_not_write_through_a_symbolic_link(tmp_path):
     dest, outside = tmp_path / "game", tmp_path / "outside"
     (dest / "Program").mkdir(parents=True)
@@ -447,6 +452,7 @@ def test_a_cabinet_with_a_path_out_of_the_folder_writes_nothing_outside(world, t
     assert not (tmp_path / "evil.txt").exists() and not (tmp_path / "s" / "evil.txt").exists()
 
 
+@needs_symlinks
 def test_the_folder_is_not_written_through_a_symbolic_link(world, tmp_path):
     import sotainstall
     dest = install_first_game(world, tmp_path)
@@ -465,3 +471,186 @@ def test_the_real_table_of_known_files_is_the_2_15_set():
     assert [n for n, (_s, role) in known.items() if role == "lifted"] == [n.lower() for n in ("shandalar.exe", "FaceMaker.exe", "DECK.EXE", "deckdll.dll", "cardartlib.dll", "drawcardlib.dll",
                                                                                                 "CdTools.dll", "STATWIN.DLL")]
     assert builds.SOTA_PATCH["size"] == 1207571 and set(builds.SOTA_DISC["cabinets"]) == {"data1.cab", "_sys1.cab", "_user1.cab"}
+
+
+# ---- the whole command, with fakes ----------------------------------------------------------------------------------------------------------------------
+class Recorder:
+    """What install.main did after the files were made: the lifter and the module build are replaced by calls that write down their arguments."""
+
+    def __init__(self):
+        self.calls = []
+
+
+@pytest.fixture
+def command(world, tmp_path, monkeypatch, capsys):
+    """install.main() on the fake discs, in a fake release folder (no Makefile: the modules are built by modbuild), with the lifter and the compiler replaced by recorders."""
+    import install
+    import liftrun
+    import modbuild
+    root = tmp_path / "release"
+    (root / "tools").mkdir(parents=True)
+    rec = Recorder()
+    layout = install.Layout(str(root))
+    monkeypatch.setattr(install, "ROOT", str(root))
+    monkeypatch.setattr(install, "Layout", lambda: layout)
+    monkeypatch.setattr(install, "ensure_python_deps", lambda layout, allow_pip=True, assume=None: [])
+    monkeypatch.setattr(liftrun, "lift_all", lambda root, python, paths, **kw: rec.calls.append(("lift_all", kw.get("force"))))
+    monkeypatch.setattr(liftrun, "lift_sota", lambda root, game, python, paths, **kw: rec.calls.append(("lift_sota", game, kw.get("force"))))
+
+    class Compiler:
+        def describe(self):
+            return "a fake compiler"
+
+    monkeypatch.setattr(modbuild, "find_compiler", lambda *a, **kw: Compiler())
+    monkeypatch.setattr(modbuild, "build_modules", lambda programs, gen, port, native, objs, out, cc, **kw: rec.calls.append(("build", list(programs))) or {p: os.path.join(out, "game_%s.so" % p) for p in programs})
+    monkeypatch.setattr(modbuild, "smoke_test", lambda run, module: (True, ""))
+    monkeypatch.setattr(install, "link_install_folder", lambda dest: None)
+    (root / "pentamoor-run").write_text("")              # a runtime beside the launchers: a release
+
+    def run(*args):
+        capsys.readouterr()
+        install.main([str(a) for a in args], default_build=True)
+        return capsys.readouterr().out
+
+    run.rec, run.root, run.install = rec, root, install
+    return run
+
+
+def test_one_command_installs_both_games_and_builds_all_six_modules(world, command, tmp_path):
+    out = command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst")
+    sota = tmp_path / "inst_sota" / "Magic" / "Program"
+    assert (tmp_path / "inst" / "Magic" / "Program" / "MAGIC.EXE").exists()
+    want = {n.lower(): d for n, d in world.program215.items()}                                       # (the names keep the spelling the first game gave them)
+    assert {n.lower(): open(os.path.join(sota, n), "rb").read() for n in os.listdir(sota) if n.lower() in want} == want
+    # what it said, in the order it did it: the sources are checked first, then the first game, then the 2.15 folder, then the lifts and the build
+    order = [out.index(s) for s in ("expansion disc: ", "patch: SOTAV215.EXE, 6 files", "disc: MTG v1.0", "game files: ", "programs: all 3 are build v1.0", "Spells of the Ancients 2.15 into ",
+                                    "2.15 patch: 6 files", "all 15 files are the 2.15 ones", "Spells of the Ancients 2.15 installed (", "compiler: a fake compiler", "built. Play with:  ")]
+    assert order == sorted(order)
+    assert "Spells of the Ancients 2.15:  PENTAMOOR_SOTA=" in out and str(sota) in out and out.rstrip().endswith("sota")
+    assert command.rec.calls == [("lift_all", False), ("lift_sota", str(sota), False), ("build", ["magic", "deck", "duel", "shandalar", "facemaker", "sotadeck"])]
+    assert not any(p.name.lower() in ("software", "registry") for p in tmp_path.rglob("*"))                      # nothing like a registry is written
+
+
+def test_the_first_game_alone_is_installed_and_built_as_before(world, command, tmp_path):
+    out = command(world.iso1, "--dest", tmp_path / "inst")
+    assert not (tmp_path / "inst_sota").exists()
+    assert command.rec.calls == [("lift_all", False), ("build", ["magic", "deck", "duel"])]
+    assert "Spells of the Ancients 2.15 too: add --sota" in out and "built. Play with:  " in out
+
+
+def test_an_existing_2_15_folder_is_built_again_without_any_source(world, command, tmp_path):
+    command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst")
+    command.rec.calls.clear()
+    out = command("--dest", tmp_path / "inst")                      # no disc, no patch: what is there is checked and built
+    assert "not reading the disc again" in out and "is installed in" in out and "all files verified" in out
+    assert [c[0] for c in command.rec.calls] == ["lift_all", "lift_sota", "build"] and command.rec.calls[-1][1][-3:] == ["shandalar", "facemaker", "sotadeck"]
+    shutil_rm = tmp_path / "inst_sota" / "Magic" / "Program" / "shandalar.exe"
+    shutil_rm.write_bytes(b"corrupted")                              # a corrupted copy is not built: the 1.0 modules are, and it says so by leaving 2.15 out
+    command.rec.calls.clear()
+    out = command("--dest", tmp_path / "inst")
+    assert "Spells of the Ancients 2.15 is installed in" not in out and command.rec.calls == [("lift_all", False), ("build", ["magic", "deck", "duel"])]
+
+
+def test_the_second_game_goes_in_the_folder_asked_for(world, command, tmp_path):
+    out = command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst", "--sota-dest", tmp_path / "somewhere" / "sotagame")
+    assert (tmp_path / "somewhere" / "sotagame" / "Magic" / "Program" / "shandalar.exe").exists() and not (tmp_path / "inst_sota").exists()
+    assert str(tmp_path / "somewhere" / "sotagame" / "Magic" / "Program") in command.rec.calls[1][1]
+    assert "PENTAMOOR_SOTA=" + str(tmp_path / "somewhere") in out
+
+
+def refused(command, *args):
+    with pytest.raises(SystemExit) as e:
+        command(*args)
+    return str(e.value)
+
+
+def test_the_second_game_cannot_go_into_the_first_games_folder(world, command, tmp_path):
+    for sota_dest in (tmp_path / "inst", tmp_path / "inst" / "inside", tmp_path):
+        text = refused(command, world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst", "--sota-dest", sota_dest)
+        assert "needs a folder of its own" in text
+    assert not (tmp_path / "inst").exists() and command.rec.calls == []
+
+
+def test_each_missing_source_is_named_and_nothing_is_written(world, command, tmp_path):
+    inst = tmp_path / "inst"
+    text = refused(command, world.iso1, "--sota", world.iso2, "--dest", inst)
+    assert text.startswith("install: Spells of the Ancients 2.15 needs the patch as well as the expansion's disc") and "--patch is missing" in text and "SOTAV215.EXE" in text
+    assert f'pentamoor-install {world.iso1} --sota {world.iso2} --patch "path/to/SOTAV215.EXE"'.replace(world.iso1, '"%s"' % world.iso1).replace(world.iso2, '"%s"' % world.iso2) in text
+    text = refused(command, world.iso1, "--patch", world.patch, "--dest", inst)
+    assert "the patch is given, but not the expansion's disc" in text and "--sota is missing" in text and "MTG v2.00.iso" in text
+    text = refused(command, world.iso1, "--sota", tmp_path / "nothere.iso", "--patch", world.patch, "--dest", inst)
+    assert "the expansion's disc (--sota)" in text and "does not exist" in text
+    text = refused(command, world.iso1, "--sota", world.iso2, "--patch", tmp_path / "nothere.exe", "--dest", inst)
+    assert "the patch (--patch)" in text and "does not exist" in text
+    assert not inst.exists() and not (tmp_path / "inst_sota").exists() and command.rec.calls == []
+
+
+def test_the_discs_in_the_wrong_places_stop_it_before_anything_is_written(world, command, tmp_path):
+    inst = tmp_path / "inst"
+    text = refused(command, world.iso2, "--sota", world.iso1, "--patch", world.patch, "--dest", inst)         # the expansion first
+    assert "is the Spells of the Ancients disc (version 2.0), not the original game's" in text and "needs the original game's disc" in text
+    text = refused(command, world.iso2, "--dest", inst)                                                        # the expansion alone, as a first game
+    assert "not the original game's" in text and "--sota" in text
+    text = refused(command, world.iso1, "--sota", world.iso1, "--patch", world.patch, "--dest", inst)         # the first game as the expansion
+    assert "is the original game's disc (version 1.0), not the Spells of the Ancients disc" in text
+    assert not inst.exists() and command.rec.calls == []
+
+
+def test_a_cut_short_or_other_patch_stops_it_before_the_first_game_is_unpacked(world, command, tmp_path):
+    inst = tmp_path / "inst"
+    data = world.patch_bytes
+    cut = tmp_path / "cut.exe"
+    cut.write_bytes(data[:data.find(b"PK\x01\x02") - 5])
+    text = refused(command, world.iso1, "--sota", world.iso2, "--patch", cut, "--dest", inst)
+    assert "TRUNCATED" in text and "cut short" in text and "Get the patch again" in text
+    other = tmp_path / "other.exe"
+    other.write_bytes(fakediscs.make_patch({"readme.txt": b"another patch"}))
+    text = refused(command, world.iso1, "--sota", world.iso2, "--patch", other, "--dest", inst)
+    assert "is not the 2.15 patch" in text
+    assert not inst.exists() and command.rec.calls == []
+
+
+def test_a_first_game_that_is_not_the_retail_disc_is_not_built_over(world, command, tmp_path, monkeypatch):
+    import builds
+    inst = tmp_path / "inst"
+    # the extracted game does not match the build the port knows: the 2.15 folder is not made from it
+    other = [r for r in builds.KNOWN if not (r[0] == "v1.0" and r[1] == "MAGIC.EXE")] + [("v1.0", "MAGIC.EXE", "0" * 64, "lifted")]
+    monkeypatch.setattr(builds, "KNOWN", other)
+    monkeypatch.setattr(command.install, "FINGERPRINTS", builds.fingerprints("v1.0"))
+    text = refused(command, world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", inst)
+    assert "not made from them" in text and not (tmp_path / "inst_sota").exists()
+
+
+def test_the_checkout_builds_all_modules_with_one_make(world, tmp_path, monkeypatch, capsys):
+    """In a checkout (a Makefile): the lifts run, then the one `make all`, which builds the six modules."""
+    import install
+    import liftrun
+    root = tmp_path / "checkout"
+    (root / "src" / "port").mkdir(parents=True)
+    (root / "src" / "port" / "Makefile").write_text("")
+    layout = install.Layout(str(root))
+    calls = []
+    monkeypatch.setattr(install, "ROOT", str(root))
+    monkeypatch.setattr(install, "Layout", lambda: layout)
+    monkeypatch.setattr(install, "ensure_python_deps", lambda layout, allow_pip=True, assume=None: [])
+    monkeypatch.setattr(install, "link_install_folder", lambda dest: None)
+    monkeypatch.setattr(liftrun, "lift_all", lambda *a, **kw: calls.append("lift_all"))
+    monkeypatch.setattr(liftrun, "lift_sota", lambda root, game, *a, **kw: calls.append("lift_sota"))
+    monkeypatch.setattr(install.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(install.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or types.SimpleNamespace(returncode=0))
+    install.main([world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", str(tmp_path / "inst"), "--build"])
+    out = capsys.readouterr().out
+    assert calls[:2] == ["lift_all", "lift_sota"] and calls[2][0] == "make" and calls[2][-1] == "all" and len(calls) == 3
+    assert "game_shandalar, game_facemaker, game_sotadeck" in out
+
+
+def test_check_says_whether_2_15_is_installed(world, command, tmp_path, capsys):
+    import types as t
+    install = command.install
+    args = t.SimpleNamespace(compiler=None, sota_dest=None)
+    assert install.check(install.Layout(), args) in (0, 1)
+    assert "sota:   Spells of the Ancients 2.15 not installed" in capsys.readouterr().out
+    args.sota_dest = str(tmp_path / "inst_sota")
+    command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst")
+    install.check(install.Layout(), args)
+    assert "sota:   Spells of the Ancients 2.15 installed in " + str(tmp_path / "inst_sota" / "Magic" / "Program") in capsys.readouterr().out

@@ -27,10 +27,11 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 class LauncherGame(Game):
     """A Game whose process is the launcher's `sota` command (which execs the runtime, so the pid is the runtime's)."""
 
-    def __init__(self, repo, folder, overlay, **kw):
+    def __init__(self, repo, folder, overlay, env=None, **kw):
         super().__init__(repo, **kw)
         self.folder = folder
         self.fixed_overlay = overlay
+        self.env = env or {}
 
     def start(self):
         os.makedirs(self.workdir, exist_ok=True)
@@ -39,6 +40,7 @@ class LauncherGame(Game):
         os.mkfifo(self.ctl_path)
         env = {k: v for k, v in os.environ.items() if not k.startswith(("PENTAMOOR_", "PORT_"))}
         env.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy", PORT_CONTROL=self.ctl_path, PORT_RES=self.res, PORT_STUB="1")
+        env.update(self.env)
         if self.folder:
             env["PENTAMOOR_SOTA"] = self.folder
         if self.fixed_overlay:
@@ -59,12 +61,13 @@ def main():
     ap.add_argument("--workdir", default="/tmp/sota-launch-check")
     ap.add_argument("--res", default="1024x768")
     ap.add_argument("--default-overlay", action="store_true", help="leave PORT_OVERLAY unset and check which overlay folder the launcher made")
+    ap.add_argument("--env", action="append", default=[], metavar="NAME=VALUE", help="one more setting for the game (for example PORT_TRACE_IMPORTS=1 to see every call it makes in game.log)")
     a = ap.parse_args()
     w, h = (int(v) for v in a.res.split("x"))
     wd = os.path.abspath(a.workdir)
     shutil.rmtree(wd, ignore_errors=True)
     before = {n for n in ("port_overlay", "port_overlay_sota") if os.path.exists(os.path.join(REPO, n))}
-    g = LauncherGame(REPO, os.path.abspath(a.folder) if a.folder else None, None if a.default_overlay else os.path.join(wd, "overlay"), res=a.res, workdir=wd, overlay_seed=None)
+    g = LauncherGame(REPO, os.path.abspath(a.folder) if a.folder else None, None if a.default_overlay else os.path.join(wd, "overlay"), res=a.res, workdir=wd, overlay_seed=None, env=dict(e.split("=", 1) for e in a.env))
     ok = True
 
     def check(what, cond, detail=""):

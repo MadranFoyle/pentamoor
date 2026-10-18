@@ -346,7 +346,9 @@ def build_with_make(layout, args, sota=None):
     lift(layout, args, sota)
     for cmd in build_commands(sota is not None):
         say(cmd[0])
+        t0 = time.time()
         subprocess.run(cmd[1], check=True, cwd=ROOT)
+        say(f"compiled ({time.time() - t0:.0f} s)")
 
 
 def build_modules(layout, args, sota=None):
@@ -463,6 +465,14 @@ def main(argv=None, default_build=False):
     import sotainstall                                                  # (reads cabinets and the patch: needs nothing but Python)
     dest = args.dest
     sota_dest = args.sota_dest or sota_dest_for(dest)
+    a, b = os.path.realpath(dest), os.path.realpath(sota_dest)
+    try:
+        overlap = os.path.commonpath([a, b]) in (a, b)
+    except ValueError:                                                  # another drive (Windows)
+        overlap = False
+    if want_sota and overlap:
+        die(f"Spells of the Ancients 2.15 needs a folder of its own, not the first game's or one inside it or around it: --sota-dest {sota_dest} and --dest {dest} overlap. "
+            "Leave --sota-dest out to put it beside the first game's folder.")
     have_game = game_installed(dest)
     # Everything the run will read is opened and checked before anything is written: a wrong disc, a disc in the wrong place, a cut-short patch stop it here, not after the first
     # game has been unpacked.
