@@ -496,6 +496,32 @@ def command(world, tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(install, "ensure_python_deps", lambda layout, allow_pip=True, assume=None: [])
     monkeypatch.setattr(liftrun, "lift_all", lambda root, python, paths, **kw: rec.calls.append(("lift_all", kw.get("force"))))
     monkeypatch.setattr(liftrun, "lift_sota", lambda root, game, python, paths, **kw: rec.calls.append(("lift_sota", game, kw.get("force"))))
+    import licence
+
+    def lift_licence(root, game, python, paths, **kw):          # (the hash of the library is checked as the real one does; the lifter itself is not run)
+        licence.verify_library(licence.library_path(game))
+        rec.calls.append(("lift_licence", game, kw.get("force")))
+    monkeypatch.setattr(liftrun, "lift_licence", lift_licence)
+    rec.writes = []
+
+    def fake_writer(req):
+        """The fake writer module: records what it was asked and puts a plainly made-up value (the word it was given, as text) where the real library's would be."""
+        import regstore
+        rec.writes.append({"word": req.word, "export": req.export, "library": open(req.library, "rb").read(), "overlay": req.overlay, "root": req.root,
+                           "pair": regstore.Store(os.path.join(req.overlay, "registry.dat")).get(regstore.WINDOWS_KEY, regstore.PRODUCT_ID)})
+        if rec.writer_result != (0, 0):
+            return rec.writer_result[0], rec.writer_result[1], "made-up failure"
+        regstore.Store(os.path.join(req.overlay, "registry.dat")).put(regstore.LICENCE_KEY, "SerialNumber", regstore.REG_BINARY, b"made-up:%x" % req.word)
+        return 0, 0, f"export {req.export} returned 0"
+    rec.writer_result = (0, 0)
+    real_write = licence.write_value
+
+    def write_value(program, root, overlay, runtime, module, no_cd=False, say=print, writer=None):
+        os.makedirs(os.path.dirname(module), exist_ok=True)
+        open(module, "w").close()                                  # (the module the fake build did not make)
+        return real_write(program, root, overlay, runtime, module, no_cd=no_cd, say=say, writer=fake_writer)
+    monkeypatch.setattr(licence, "write_value", write_value)
+    monkeypatch.setenv("PORT_OVERLAY", str(tmp_path / "overlay_sota"))
 
     class Compiler:
         def describe(self):
@@ -505,7 +531,7 @@ def command(world, tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(modbuild, "build_modules", lambda programs, gen, port, native, objs, out, cc, **kw: rec.calls.append(("build", list(programs))) or {p: os.path.join(out, "game_%s.so" % p) for p in programs})
     monkeypatch.setattr(modbuild, "smoke_test", lambda run, module: (True, ""))
     monkeypatch.setattr(install, "link_install_folder", lambda dest: None)
-    (root / "pentamoor-run").write_text("")              # a runtime beside the launchers: a release
+    (root / ("pentamoor-run" + install.EXE)).write_text("")              # a runtime beside the launchers: a release
 
     def run(*args):
         capsys.readouterr()
@@ -516,7 +542,7 @@ def command(world, tmp_path, monkeypatch, capsys):
     return run
 
 
-def test_one_command_installs_both_games_and_builds_all_six_modules(world, command, tmp_path):
+def test_one_command_installs_both_games_and_builds_all_six_modules_and_writes_the_licence_value(world, command, tmp_path):
     out = command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst")
     sota = tmp_path / "inst_sota" / "Magic" / "Program"
     assert (tmp_path / "inst" / "Magic" / "Program" / "MAGIC.EXE").exists()
@@ -524,11 +550,14 @@ def test_one_command_installs_both_games_and_builds_all_six_modules(world, comma
     assert {n.lower(): open(os.path.join(sota, n), "rb").read() for n in os.listdir(sota) if n.lower() in want} == want
     # what it said, in the order it did it: the sources are checked first, then the first game, then the 2.15 folder, then the lifts and the build
     order = [out.index(s) for s in ("expansion disc: ", "patch: SOTAV215.EXE, 6 files", "disc: MTG v1.0", "game files: ", "programs: all 3 are build v1.0", "Spells of the Ancients 2.15 into ",
-                                    "2.15 patch: 6 files", "all 15 files are the 2.15 ones", "Spells of the Ancients 2.15 installed (", "compiler: a fake compiler", "built. Play with:  ")]
+                                    "2.15 patch: 6 files", "all 15 files are the 2.15 ones", "Spells of the Ancients 2.15 installed (", "compiler: a fake compiler",
+                                    "licence: writing the licence value the original Spells of the Ancients installer writes for an owner of the discs", "built. Play with:  ")]
     assert order == sorted(order)
     assert "Spells of the Ancients 2.15:  PENTAMOOR_SOTA=" in out and str(sota) in out and out.rstrip().endswith("sota")
-    assert command.rec.calls == [("lift_all", False), ("lift_sota", str(sota), False), ("build", ["magic", "deck", "duel", "shandalar", "facemaker", "sotadeck"])]
-    assert not any(p.name.lower() in ("software", "registry") for p in tmp_path.rglob("*"))                      # nothing like a registry is written
+    assert command.rec.calls == [("lift_all", False), ("lift_sota", str(sota), False), ("lift_licence", str(sota), False),
+                                 ("build", ["magic", "deck", "duel", "shandalar", "facemaker", "sotadeck", "senclib"])]
+    assert len(command.rec.writes) == 1 and command.rec.writes[0]["export"] == "WriteProgramFlags"
+    assert not any(p.name.lower() in ("software", "registry") for p in tmp_path.rglob("*"))                      # no registry folder is made
 
 
 def test_the_first_game_alone_is_installed_and_built_as_before(world, command, tmp_path):
@@ -541,9 +570,11 @@ def test_the_first_game_alone_is_installed_and_built_as_before(world, command, t
 def test_an_existing_2_15_folder_is_built_again_without_any_source(world, command, tmp_path):
     command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst")
     command.rec.calls.clear()
+    command.rec.writes.clear()
     out = command("--dest", tmp_path / "inst")                      # no disc, no patch: what is there is checked and built
     assert "not reading the disc again" in out and "is installed in" in out and "all files verified" in out
     assert [c[0] for c in command.rec.calls] == ["lift_all", "lift_sota", "build"] and command.rec.calls[-1][1][-3:] == ["shandalar", "facemaker", "sotadeck"]
+    assert command.rec.writes == []                                 # no disc was given in this run, so none was verified: the licence step does not run
     shutil_rm = tmp_path / "inst_sota" / "Magic" / "Program" / "shandalar.exe"
     shutil_rm.write_bytes(b"corrupted")                              # a corrupted copy is not built: the 1.0 modules are, and it says so by leaving 2.15 out
     command.rec.calls.clear()
@@ -555,6 +586,7 @@ def test_the_second_game_goes_in_the_folder_asked_for(world, command, tmp_path):
     out = command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst", "--sota-dest", tmp_path / "somewhere" / "sotagame")
     assert (tmp_path / "somewhere" / "sotagame" / "Magic" / "Program" / "shandalar.exe").exists() and not (tmp_path / "inst_sota").exists()
     assert str(tmp_path / "somewhere" / "sotagame" / "Magic" / "Program") in command.rec.calls[1][1]
+    assert command.rec.writes[0]["library"] == world.licence_library
     assert "PENTAMOOR_SOTA=" + str(tmp_path / "somewhere") in out
 
 
@@ -636,12 +668,15 @@ def test_the_checkout_builds_all_modules_with_one_make(world, tmp_path, monkeypa
     monkeypatch.setattr(install, "link_install_folder", lambda dest: None)
     monkeypatch.setattr(liftrun, "lift_all", lambda *a, **kw: calls.append("lift_all"))
     monkeypatch.setattr(liftrun, "lift_sota", lambda root, game, *a, **kw: calls.append("lift_sota"))
+    monkeypatch.setattr(liftrun, "lift_licence", lambda root, game, *a, **kw: calls.append("lift_licence"))
+    import licence
+    monkeypatch.setattr(licence, "write_value", lambda *a, **kw: calls.append("write_value"))
     monkeypatch.setattr(install.shutil, "which", lambda name: "/usr/bin/" + name)
     monkeypatch.setattr(install.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or types.SimpleNamespace(returncode=0))
     install.main([world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", str(tmp_path / "inst"), "--build"])
     out = capsys.readouterr().out
-    assert calls[:2] == ["lift_all", "lift_sota"] and calls[2][0] == "make" and calls[2][-1] == "all" and len(calls) == 3
-    assert "game_shandalar, game_facemaker, game_sotadeck" in out
+    assert calls[:3] == ["lift_all", "lift_sota", "lift_licence"] and calls[3][0] == "make" and calls[3][-1] == "all" and calls[4:] == ["write_value"] and len(calls) == 5
+    assert "game_shandalar, game_facemaker, game_sotadeck, game_senclib" in out
 
 
 def test_check_says_whether_2_15_is_installed(world, command, tmp_path, capsys):

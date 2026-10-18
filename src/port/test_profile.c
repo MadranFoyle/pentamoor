@@ -34,6 +34,7 @@ int pe_find_resource(uint32_t hinst, uint32_t type, uint32_t name, uint32_t *add
 #define ID_S_DRAWCARDLIB "c7747313d59b6fa48ec56b479dce9ed5d90f8a95fc47e93990c4369bbd2fa1f8"
 #define ID_S_CDTOOLS "0d0c2bfa87de02499f1f73f21f34824b1c2572f3e6ae0b5dca7ca343ddf1b77d"
 #define ID_S_STATWIN "c1ca59496afa786f22fcd97b94052b937910a613f9321399b4ef4dd5dec76940"
+#define ID_S_SENCLIB "03d06fc50a0bccb78356071dc8aa1401ba6dc059a113e523c8bb25ed30055264"
 
 static int hex_ok(const char *s)
 {
@@ -107,7 +108,7 @@ static void test_v10_values(void)
     const BuildProfile *m = profile_find(ID_MAGIC), *d = profile_find(ID_DUEL), *k = profile_find(ID_DECK), *dd = profile_find(ID_DECKDLL), *sw = profile_find(ID_STATWIN);
     char name[64];
 
-    CHECK(profile_count() == 13);                /* five rows of 1.0, eight of Spells of the Ancients 2.15 (test_v215_values) */
+    CHECK(profile_count() == 14);                /* five rows of 1.0, nine of Spells of the Ancients 2.15 (test_v215_values) */
     CHECK(m && d && k && dd && sw);
     if (!m || !d || !k || !dd || !sw)
         return;
@@ -217,6 +218,7 @@ static void test_v215_values(void)
         {ID_S_SHANDALAR, "shandalar.exe", "SHANDALAR", 0}, {ID_S_FACEMAKER, "FaceMaker.exe", "FACEMAKER", 0}, {ID_S_DECK, "DECK.EXE", "DECK", 0},
         {ID_S_DECKDLL, "deckdll.dll", "", 0x32000000u}, {ID_S_CARDARTLIB, "cardartlib.dll", "", 0x34000000u}, {ID_S_DRAWCARDLIB, "drawcardlib.dll", "", 0x36000000u},
         {ID_S_CDTOOLS, "CdTools.dll", "", 0x38000000u}, {ID_S_STATWIN, "STATWIN.DLL", "", 0x30000000u},
+        {ID_S_SENCLIB, "Manaball.wav", "MANABALL", 0},
     };
     size_t i, n = 0;
     char name[64];

@@ -116,6 +116,51 @@ def lift_sota(root, game, python=sys.executable, pythonpath=(), programs=None, f
     return todo
 
 
+# ---- the licence library (the installer's licence step: tools/install/licence.py) -------------------------------------------------------------------------------
+def licence_library(game):
+    """The path of DuelSounds/Manaball.wav in a 2.15 Program folder, whatever case its folder and name are spelled in (the name as the table gives it if it is not there)."""
+    here = game
+    for part in builds.SOTA_LICENCE_LIBRARY["path"].split("/"):
+        here = sota_file(here, part)
+    return here
+
+
+def licence_steps(game, generated=GENERATED):
+    """{module: [(script, [arguments])...]} for the one library of the expansion's cabinet that the installer runs to write the licence value: lifted on its own, as a program (the runtime
+    maps it as one and runs an export: src/port/main.c --call-export), into <generated>/lift_senclib. `game` is the 2.15 Program folder."""
+    spec = builds.SOTA_LICENCE_LIBRARY
+    return {spec["module"]: [("gen_dll.py", ["--main", "--dll", licence_library(game), "--out", f"{generated}/lift_{spec['module']}"])]}
+
+
+def licence_fingerprint(root, game):
+    """What the lifted licence library depends on: the lifter's own files and the library."""
+    h = hashlib.sha256()
+    files = sorted(glob.glob(os.path.join(root, "tools", "lift", "*.py"))) + [os.path.join(root, "src", "native", "layout.c"), licence_library(game)]
+    for p in files:
+        if not os.path.exists(p):
+            continue
+        h.update(os.path.basename(p).lower().encode() + b"\0")
+        with open(p, "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()
+
+
+def lift_licence(root, game, python=sys.executable, pythonpath=(), force=False, say=print):
+    """Lift the licence library (unless it was lifted from this very file already). The file is checked against its hash first: nothing but the retail file is lifted. Returns True when
+    it lifted. Raises licence.LicenceError for a file that is not the retail one."""
+    import licence
+    licence.verify_library(licence.library_path(game))
+    module = builds.SOTA_LICENCE_LIBRARY["module"]
+    stamp = licence_fingerprint(root, game)
+    if not force and is_lifted(root, module, stamp):
+        say(f"  [{module}] already lifted from this file; skipping (--force lifts it again)")
+        return False
+    paths = [os.path.join(root, "tools", "lift")] + list(pythonpath)
+    run_chain(root, module, licence_steps(game)[module], python, paths, say)
+    write_stamp(root, module, stamp)
+    return True
+
+
 def python_command(python, script_path, args, paths):
     return [python, "-c", BOOT % (list(paths),), script_path] + list(args)
 

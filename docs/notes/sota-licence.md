@@ -1,6 +1,6 @@
 # The licence value of Spells of the Ancients: what the installer did, what each bit changes, what the CD check tests
 
-*(Research note, 2026-10-17. Nothing here is built into Pentamoor: no code in this repository writes, derives, generates or encodes a `SerialNumber`, and none is meant to. The scheme is described in
+*(Research note, 2026-10-17; the section [What the installer does now](#what-the-installer-does-now) was added 2026-10-18 when option 2 below was built at the owner's decision. The research part built nothing, and no code in this repository writes, derives, generates or encodes a `SerialNumber`, and none is meant to. The scheme is described in
 words only, and no value of a serial is written down. Found by disassembly (capstone) of the original programs, by reading the installer's compiled script, and by one run of the real installer in a
 Windows 98 virtual machine started from a throwaway overlay of the maintainer's disk image; the tools for that were scratch scripts outside the repository. Not re-checked by a second person.
 Addresses are those of the 2.15 files unless a file is named. "Certain" below means seen happening or read in the code; "inferred" means concluded from the code and not seen.)*
@@ -157,6 +157,36 @@ decision for the owner; nothing of it is implemented, and `0x417deb` is not on t
 - ManaLink 3.0's `CheckDoPCD` and whether its programs ask different queries.
 - The text of `SENC_*` and `CHECKCD` (they are in the game's and installer's string resources; not read).
 
+## What the installer does now
+
+Built 2026-10-18, at the owner's decision (option 2 below). Read with [The agreed line](#options-with-an-honest-assessment).
+
+**The step.** `pentamoor-install "MTG v1.0.iso" --sota "MTG v2.00.iso" --patch SOTAV215.EXE` ends with a licence step. It runs only after the discs and the patch have been checked, the 2.15 folder has been made and the modules are built.
+It prints `licence: writing the licence value the original Spells of the Ancients installer writes for an owner of the discs`, and never prints the value. It takes the original installer's own library, `DuelSounds/Manaball.wav`
+(checked against its SHA-256 and size, three times: when the folder is made, before it is lifted and before it is run; a wrong file is refused and nothing is written), lifts it locally like the game's other libraries
+(module `game_senclib`, never committed and never in a release archive) and runs its `WriteProgramFlags` export once, through a generic mode of the runtime (`pentamoor-run -m MODULE --call-export NAME=ADDRESS ...`).
+The encoding stays inside that file. The repository holds no implementation, table or value of it, and no tool that produces one.
+
+**What the installer supplies.** The flag word the original installer's script passed: bits 8 and 22, as established above. They are named constants in `tools/install/licence.py`, **not read from the disc** (the script is compiled and was not decoded for this).
+They are the only thing the installer adds to what the library does. Bits 11 and 28 are never set. With bits 8 and 22 the game offers the 145 cards of set 1 (computed from the game's own pool function: 409, 145 and 0 cards for sets 0, 1 and 2; not seen in a card picker on screen); without the step only the 409 base cards are offered.
+
+**Options.**
+- `--no-licence-value` skips the whole step (no value is written, and the library is not even lifted). The 2.15 install then offers the base pool only, as before.
+- `--no-cd` is **opt-in and off by default**. It adds exactly one more flag to the word: bit 17, the one the game itself defines as "skip the disc check". The installer says so when it is used: `licence: --no-cd: adding the flag the game itself defines as "skip the disc check" to this install's licence value (the game will not ask for a disc)`. **What it means:** that install no longer has the game's CD check. The install still needed both of the owner's discs to be made (they are verified before anything is written), the repository and the release archives still hold no scheme and no value, and nothing is shipped that works without the discs. `--no-cd` together with `--no-licence-value` is an error, and so is either option without `--sota`.
+  What was observed: the game's own checker answers yes to the "skip the disc check" query in an install made with `--no-cd` and no in one made without it. **What was not observed:** the CD-check function itself was never reached in play, so nobody has seen the disc message appear or disappear.
+
+**Machine binding.** Each install gets its own random pair for the two Windows values (an install time in 1998 to 2000 and a product id), made once at install time and never replaced, kept in the registry file below. The runtime answers the game's two reads from that file, so the library
+sees the same pair when it writes. An install without the file falls back to the old fixed pair (and then has no `SerialNumber`). 1.0 opens no file.
+
+**The registry file.** `<overlay>/registry.dat` (`$PORT_OVERLAY`, or `port_overlay_sota` for `./pentamoor sota`): a plain text file, read and written by `src/port/regstore.c` and, for the installer, `tools/install/regstore.py` (same format). It keeps only values under
+`HKLM\SOFTWARE\MicroProse` and the two Windows values; everything else is "not found" and a write elsewhere goes nowhere, as before. Deleting the file gives the behaviour without the step.
+
+**Release archives.** `tools/release/check_archive.py` refuses `Manaball.wav`, `SencLib.dll`, `game_senclib.*` and any file with `senclib` in its name, and `registry.dat`.
+
+**What this does not do.** It does not touch the CD check beyond the opt-in flag above, it does not read or write anything outside the install folder and its overlay, and the installer's verification of the discs is software, so a determined person could skip it by running the runtime's `--call-export` mode by hand on their own files: that was equally true of the original installer.
+
+**Tested.** Three full installs from the real discs (default, `--no-cd`, `--no-licence-value`); the checker's answers to every query in each; the pool sizes above; five-minute soaks of the first two (no crash, hang or stuck screen); the installer flow, the failure cases, the registry file and the archive refusal with made-up discs and a fake writer (no game files in CI). **Not tested:** a re-run of the installer over an existing real install (only with the fake writer), and any play beyond the soaks.
+
 ## Options, with an honest assessment
 
 The agreed line: no game code, data or licence value in the runtime or the release; a 2.15 install needs the user's own discs, verified by the installer before anything is written; nothing shipped that makes
@@ -165,7 +195,7 @@ a copy playable for someone who does not own it.
 1. **Do nothing** (what is there). The port reads no value, so the game plays with the 409-card base pool; the card pickers never offer the 145 cards of set 1 (two dual lands and a clone among them) and
    the deck editor does not list them. What a player misses is a third of the pool of an original install; the game starts and plays through a duel to the map. There is no legal or ethical question. Cost: zero.
    **Honest verdict: the safe default, and a visible reduction in card variety; not a faithful reproduction of an installed original.**
-2. **The installer does what the original did, using the original's own DLL.** After both discs are verified, the installer takes `Manaball.wav` out of the owner's own expansion cabinet (it is in `data1.cab`
+2. **The installer does what the original did, using the original's own DLL. (Built 2026-10-18, see above; the assessment is as written before.)** After both discs are verified, the installer takes `Manaball.wav` out of the owner's own expansion cabinet (it is in `data1.cab`
    already read by the installer), and the runtime runs its `WriteProgramFlags` (the DLL is a small PE file the lifter already knows how to handle, like `CdTools.dll`) with the one flag word the original script
    uses, into a registry that the port keeps on disk (today a write goes nowhere). The encoding stays in the owner's own DLL; the repository holds no scheme code and no value; the only thing it would carry is
    which bits to ask for, which the script's constants give. This is the closest to "what the original installer did, on that machine, after the disc checks". Costs and risks: a persistent registry store in
@@ -182,4 +212,4 @@ a copy playable for someone who does not own it.
    they were written with. It is not needed for the single-player paths played so far, and it raises one question: keeping the image's location in the user's settings means the owner needs the image at play
    time, not only at install time (which is what the original needed too). **Honest verdict: worth doing only if a path that checks is found to matter; unneeded today.**
 
-The research suggests a split: option 1 now, and option 2 as the explicit, owner-approved step if the missing set-1 cards are found to matter, never 3 or 4.
+The research suggested a split: option 1 now, and option 2 as the explicit, owner-approved step if the missing set-1 cards are found to matter, never 3 or 4. The owner chose option 2 on 2026-10-18 and asked for the opt-in `--no-cd`; option 5 (a virtual CD drive) is not built.

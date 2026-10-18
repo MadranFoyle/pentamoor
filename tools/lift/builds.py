@@ -90,6 +90,19 @@ SOTA_PATCH = {
     "files": ["shandalar.exe", "readme.txt", "magic.exe", "FaceData.txt", "deckdll.dll", "cards.dat"],
 }
 
+# The one library of the expansion's own cabinet that the original installer ran to write the licence value (docs/notes/sota-licence.md): installed as Program/DuelSounds/Manaball.wav, internal
+# name SencLib.dll. Only the installer, after it has verified the owner's discs, lifts it (as a program of its own: the module `senclib`) and runs its export once with the runtime
+# (tools/install/licence.py). A fact about the retail file, like the rest of this table: the file is not in the repository, and it is checked by this hash before it is lifted or run.
+SOTA_LICENCE_LIBRARY = {
+    "module": "senclib",
+    "path": "DuelSounds/Manaball.wav",
+    "file": "Manaball.wav",
+    "program": "MANABALL",          # LIFT_PROGRAM: the lifter names a program after its file
+    "sha256": "03d06fc50a0bccb78356071dc8aa1401ba6dc059a113e523c8bb25ed30055264",
+    "size": 23040,
+    "export": "WriteProgramFlags",
+}
+
 # A library is lifted for a base address (the lifted code holds absolute addresses and the loader maps the library there): the same in every program that loads it, and the same as
 # `.base` in the build's rows of src/port/profile.c (a test keeps the two equal).
 LIBRARY_BASES = {

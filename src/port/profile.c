@@ -32,7 +32,9 @@
  *   FaceMaker.exe    the portrait editor it starts when a colour is chosen
  *   DECK.EXE         the stand-alone deck builder: a stub that starts the deck builder of deckdll.dll
  *   deckdll.dll, cardartlib.dll, drawcardlib.dll, CdTools.dll, STATWIN.DLL   the libraries; deckdll.dll and drawcardlib.dll carry a copy of the picture decompressor
- * (magic.exe, the "Magic Shell", is not a build the port runs. MAGSND.DLL and MAGVID.DLL are provided by the port itself, as in 1.0.) */
+ * (magic.exe, the "Magic Shell", is not a build the port runs. MAGSND.DLL and MAGVID.DLL are provided by the port itself, as in 1.0.)
+ *   Manaball.wav     the 23,040-byte library of the expansion's own cabinet (DuelSounds/Manaball.wav; internal name SencLib.dll) that the original installer ran to write the licence value; the
+ *                    installer runs one export of it once, as a program (main.c, --call-export), after the discs are verified (tools/install/licence.py). No hooks. docs/notes/sota-licence.md */
 #define ID_V215_SHANDALAR "e4e46718c451974756b66e7666ac0bf1cc9ebdbc5897eb04a87b8ea2a02353e7"
 #define ID_V215_FACEMAKER "b4f3d19614dcd825da846d097baa3cd9badc0c9852492bc27a8ba62c1741a493"
 #define ID_V215_DECK "c7ec116aecdcde9ab976cc97cba81482fc4219278f8042edf667456ede3dd8ef"
@@ -41,6 +43,7 @@
 #define ID_V215_DRAWCARDLIB "c7747313d59b6fa48ec56b479dce9ed5d90f8a95fc47e93990c4369bbd2fa1f8"
 #define ID_V215_CDTOOLS "0d0c2bfa87de02499f1f73f21f34824b1c2572f3e6ae0b5dca7ca343ddf1b77d"
 #define ID_V215_STATWIN "c1ca59496afa786f22fcd97b94052b937910a613f9321399b4ef4dd5dec76940"
+#define ID_V215_SENCLIB "03d06fc50a0bccb78356071dc8aa1401ba6dc059a113e523c8bb25ed30055264"
 
 static const BuildProfile PROFILES[] = {
     {
@@ -112,6 +115,9 @@ static const BuildProfile PROFILES[] = {
     },
     {
         .id = ID_V215_STATWIN, .build = "v2.15", .file = "STATWIN.DLL", .program = "", .base = 0x30000000,
+    },
+    {
+        .id = ID_V215_SENCLIB, .build = "v2.15", .file = "Manaball.wav", .program = "MANABALL",
     },
 };
 

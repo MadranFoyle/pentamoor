@@ -1,4 +1,8 @@
-/* main.c - run the lifted game: port MAGIC.EXE-path [game-dir] */
+/* main.c - run the lifted game: port MAGIC.EXE-path [game-dir]
+ *
+ * One other mode, for the installer: `pentamoor-run -m MODULE --call-export NAME[=ARG,ARG...] FILE.DLL [root]` maps the DLL the module was lifted from as if it were the program, runs
+ * its DllMain (DLL_PROCESS_ATTACH), calls the export NAME once with the given numbers as its stack arguments, prints "export NAME returned N" and ends. Nothing in it is specific to any
+ * library: it is how the installer runs the one export of the owner's own library that tools/install/licence.py needs (docs/notes/sota-licence.md). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +13,7 @@
 #include "plat.h"
 #include "port.h"
 #include "profile.h"
+#include "regstore.h"
 #include "sched.h"
 #include "screens.h"
 
@@ -17,6 +22,7 @@ void kernel32_init(void);
 void who_init(void);
 Image main_image;
 static const char *module_path;     /* -m: the game module (gamemod.c) */
+static const char *export_spec;     /* --call-export: "Name" or "Name=1,0x2" */
 
 #define DEFAULT_RES_W 1024
 #define DEFAULT_RES_H 768
@@ -40,6 +46,48 @@ void port_run(const Image *img)
     memset(&lift_in, 0, sizeof(lift_in));
     lf->fn(esp);
     port_log("the entry point returned");
+}
+
+/* --call-export: DllMain of the library mapped as the program, then one of its exports. Returns the process's exit status: 0 when the export ran, 4 when it is not there or the spec is bad. */
+static int run_export(const Image *img, const char *spec)
+{
+    char name[96];
+    uint32_t args[8], dll_args[3], addr, r;
+    int n = 0;
+    const char *eq = strchr(spec, '=');
+    size_t len = eq ? (size_t)(eq - spec) : strlen(spec);
+
+    if (!len || len >= sizeof(name)) {
+        fprintf(stderr, "pentamoor: --call-export wants NAME or NAME=ARG,ARG (numbers)\n");
+        return 4;
+    }
+    memcpy(name, spec, len);
+    name[len] = 0;
+    while (eq && *eq) {
+        char *end;
+        unsigned long v = strtoul(eq + 1, &end, 0);
+
+        if (end == eq + 1 || n >= 8 || (*end && *end != ',')) {
+            fprintf(stderr, "pentamoor: --call-export: the arguments are up to eight numbers separated by commas\n");
+            return 4;
+        }
+        args[n++] = (uint32_t)v;
+        eq = end;
+    }
+    port_sp = STACK_TOP - 0x100;
+    dll_args[0] = img->base;
+    dll_args[1] = 1;                            /* DLL_PROCESS_ATTACH */
+    dll_args[2] = 0;
+    guest_call(img->entry, 3, dll_args);
+    addr = pe_export(img->base, name);
+    if (!addr) {
+        fprintf(stderr, "pentamoor: %s has no export %s\n", img->path, name);
+        return 4;
+    }
+    r = guest_call(addr, n, args);
+    printf("export %s returned %u\n", name, r);
+    fflush(stdout);
+    return 0;
 }
 
 typedef struct { int argc; char **argv; } Args;
@@ -95,10 +143,18 @@ static int game_main(void *p)
         }
         snprintf(overlay, sizeof(overlay), "%s", paths_overlay_default());
         paths_init(root, overlay);
+        if (!strcmp(profile->build, "v2.15")) {         /* Spells of the Ancients 2.15 keeps the few registry values it reads and writes in its overlay (regstore.h); 1.0 and an unknown build keep none */
+            char reg[1200];
+
+            snprintf(reg, sizeof(reg), "%s/registry.dat", overlay);
+            regstore_open(reg);
+        }
     }
     if (pe_load(argv[1], &img) != 0)
         port_fatal("cannot open %s", argv[1]);
     main_image = img;
+    if (export_spec)
+        return run_export(&img, export_spec);
     if (screen_w != 640 || screen_h != 480)
         profile_write_screen_size(screen_w, screen_h);      /* the game's own layouts for 800x600 and 1024x768 follow from its two screen-size globals (0x522458, 0x52245c in MAGIC.EXE 1.0) */
     port_log("loaded %s at 0x%08x, entry 0x%08x", argv[1], img.base, img.entry);
@@ -121,8 +177,14 @@ int main(int argc, char **argv)
         args.argv = argv += 2;
         argv[0] = args.argv[-2];
     }
+    if (argc > 2 && !strcmp(argv[1], "--call-export")) {                              /* ... -m MODULE --call-export NAME[=ARGS] FILE.DLL [root] */
+        export_spec = argv[2];
+        args.argc = argc -= 2;
+        args.argv = argv += 2;
+        argv[0] = args.argv[-2];
+    }
     if (argc < 2) {
-        fprintf(stderr, "usage: %s [-m game module] path/to/Magic/Program/MAGIC.EXE [path/to/Magic]\n(PORT_HEADLESS=1: no window; the module may be named by $PENTAMOOR_MODULE instead of -m)\n", argv[0]);
+        fprintf(stderr, "usage: %s [-m game module] [--call-export NAME[=ARG,...]] path/to/Magic/Program/MAGIC.EXE [path/to/Magic]\n(PORT_HEADLESS=1: no window; the module may be named by $PENTAMOOR_MODULE instead of -m)\n", argv[0]);
         return 1;
     }
     screen_set(DEFAULT_RES_W, DEFAULT_RES_H);   /* the default screen: 1024x768 (docs/notes/resolution.md) */

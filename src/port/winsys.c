@@ -5,13 +5,16 @@
  * data in TLS, the CD library asks about drives, and the game and its deck library read two values of Windows' own registry key at start (below). Each answer is a fixed one so a
  * run is the same on every machine.
  *
- * THE REGISTRY. Nothing is stored: a key is a path and a handle, a write goes nowhere (RegSetValueExA succeeds and the value is not kept, as before), a read of anything but the table
- * below is "not found", so a program falls back to its defaults. The table holds the values the game asks Windows for: shandalar.exe 2.15 and its deck library open
+ * THE REGISTRY. A key is a path and a handle. Without a store (regstore.h: the file registry.dat in the install's overlay, opened by main.c for a Spells of the Ancients run), nothing is
+ * kept: a write goes nowhere (RegSetValueExA succeeds and the value is not kept, as before), a read of anything but the table below is "not found", so a program falls back to its
+ * defaults. The table holds the values the game asks Windows for: shandalar.exe 2.15 and its deck library open
  * HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion at start and read the two values of Windows 98 that identify the installation (when it was installed, and the product
  * id); without them the program ends at once. They are made-up values of the same kind, the same on every run.
- * WHAT THEY ARE FOR (traced in milestone 3, docs/notes/sota-comparison.md "The licence value"): the game builds a machine id from them, and a second function reads a machine-bound
+ * WITH A STORE the file backs the values under HKLM\SOFTWARE\MicroProse and those two Windows values: a read is answered from the file first (an install made by the 2.15 installer has
+ * a pair of its own there, made at install time; one without falls back to the table, as before), a write under MicroProse is kept in the file. Everything else is as without a store.
+ * WHAT THE TWO VALUES ARE FOR (traced in milestone 3, docs/notes/sota-comparison.md "The licence value"): the game builds a machine id from them, and a second function reads a machine-bound
  * value "SerialNumber" (HKLM\SOFTWARE\MicroProse\Magic: The Gathering) that only makes sense together with that id; it gates the game's CD check and the cards of two sets. This file
- * answers the two Windows values so that the program starts, and nothing else: it does not make up a SerialNumber (a read of it is "not found") and it does not pretend to be a CD.
+ * answers the two Windows values so that the program starts and keeps what the programs write; it makes up no SerialNumber, and it does not pretend to be a CD.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +22,7 @@
 #include <strings.h>
 
 #include "port.h"
+#include "regstore.h"
 #include "sched.h"
 
 #define P(a) ((char *)(G + (a)))
@@ -467,7 +471,7 @@ static int reg_known(const char *path)
     for (i = 0; i < sizeof(REG_VALUES) / sizeof(REG_VALUES[0]); i++)
         if (!strncasecmp(REG_VALUES[i].key, path, n) && (REG_VALUES[i].key[n] == 0 || REG_VALUES[i].key[n] == '\\'))
             return 1;
-    return 0;
+    return regstore_key_exists(path);
 }
 
 static uint32_t reg_open(uint32_t h, const char *sub, uint32_t out, int create)
@@ -506,37 +510,66 @@ static uint32_t RegCloseKey(const uint32_t *a)
     return 0;                                       /* (closing a key twice, or one that was never opened, was never an error here) */
 }
 
-/* RegQueryValueExA(key, name, reserved, &type, data, &size): the value if the table has it; with no buffer only the type and the size; ERROR_MORE_DATA when it does not fit. */
-static uint32_t RegQueryValueExA(const uint32_t *a)
+/* The value of `name` under the key at `path`: the store's, else the table's. */
+static int reg_lookup(const char *path, const char *name, uint32_t *type, const uint8_t **data, uint32_t *len)
 {
-    char path[300];
     size_t i;
 
-    if (!reg_path(a[0], "", path, sizeof(path)))
-        return 6;
-    if (!a[1])
-        return ERROR_FILE_NOT_FOUND;
+    if (regstore_get(path, name, type, data, len))
+        return 1;
     for (i = 0; i < sizeof(REG_VALUES) / sizeof(REG_VALUES[0]); i++) {
         const struct RegValue *v = &REG_VALUES[i];
 
-        if (strcasecmp(v->key, path) || strcasecmp(v->name, P(a[1])))
-            continue;
-        if (a[3])
-            WR32(a[3], v->type);
-        if (a[4]) {
-            if (!a[5])
-                return 87;
-            if (RD32(a[5]) < v->len) {
-                WR32(a[5], v->len);
-                return ERROR_MORE_DATA;
-            }
-            memcpy(P(a[4]), v->data, v->len);
+        if (!strcasecmp(v->key, path) && !strcasecmp(v->name, name)) {
+            *type = v->type;
+            *data = v->data;
+            *len = v->len;
+            return 1;
         }
-        if (a[5])
-            WR32(a[5], v->len);
-        return 0;
     }
-    return ERROR_FILE_NOT_FOUND;
+    return 0;
+}
+
+/* RegQueryValueExA(key, name, reserved, &type, data, &size): the value if the store or the table has it; with no buffer only the type and the size; ERROR_MORE_DATA when it does not fit. */
+static uint32_t RegQueryValueExA(const uint32_t *a)
+{
+    char path[300];
+    uint32_t type, len;
+    const uint8_t *data;
+
+    if (!reg_path(a[0], "", path, sizeof(path)))
+        return 6;
+    if (!a[1] || !reg_lookup(path, P(a[1]), &type, &data, &len))
+        return ERROR_FILE_NOT_FOUND;
+    if (a[3])
+        WR32(a[3], type);
+    if (a[4]) {
+        if (!a[5])
+            return 87;
+        if (RD32(a[5]) < len) {
+            WR32(a[5], len);
+            return ERROR_MORE_DATA;
+        }
+        memcpy(P(a[4]), data, len);
+    }
+    if (a[5])
+        WR32(a[5], len);
+    return 0;
+}
+
+/* RegSetValueExA(key, name, reserved, type, data, size): kept in the store when there is one and the value is one it keeps (regstore.h); otherwise it succeeds and goes nowhere, as it
+ * always did. A store that cannot be written is ERROR_ACCESS_DENIED. */
+static uint32_t RegSetValueExA(const uint32_t *a)
+{
+    char path[300];
+
+    if (!reg_path(a[0], "", path, sizeof(path)))
+        return 6;
+    if (!a[1] || !regstore_enabled() || !regstore_keeps(path, P(a[1])))
+        return 0;
+    if (a[5] && !a[4])
+        return 87;
+    return regstore_put(path, P(a[1]), a[3], a[5] ? (const uint8_t *)P(a[4]) : NULL, a[5]) == -2 ? 5 : 0;
 }
 
 const WinApi WINSYS_APIS[] = {
@@ -547,6 +580,6 @@ const WinApi WINSYS_APIS[] = {
     {"kernel32.dll", "SuspendThread", SuspendResumeThread}, {"kernel32.dll", "ResumeThread", SuspendResumeThread},
     {"advapi32.dll", "RegOpenKeyA", RegOpenKeyA}, {"advapi32.dll", "RegOpenKeyExA", RegOpenKeyExA}, {"advapi32.dll", "RegCreateKeyA", RegCreateKeyA},
     {"advapi32.dll", "RegCreateKeyExA", RegCreateKeyExA}, {"advapi32.dll", "RegQueryValueExA", RegQueryValueExA}, {"advapi32.dll", "RegCloseKey", RegCloseKey},
-    {"advapi32.dll", "RegSetValueExA", zero}, {"advapi32.dll", "RegFlushKey", zero},
+    {"advapi32.dll", "RegSetValueExA", RegSetValueExA}, {"advapi32.dll", "RegFlushKey", zero},
     {0, 0, 0},
 };

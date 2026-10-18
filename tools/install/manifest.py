@@ -41,7 +41,7 @@ STEAMDECK_DESKTOP = ["Install Pentamoor.desktop", "Add Pentamoor to Steam.deskto
 REQUIRED = (["tools/install/install.py", "tools/install/modbuild.py", "tools/install/liftrun.py", "tools/install/zigdl.py", "tools/install/manifest.py",
              # Spells of the Ancients 2.15: the installer's readers of the expansion's cabinets, of the patch, the folder merge, the folder maker, and the lifter's files for its programs
              "tools/install/iscab.py", "tools/install/sotapatch.py", "tools/install/overlay.py", "tools/install/sotainstall.py", "tools/install/install_sota.py",
-             "tools/install/iso9660.py", "tools/install/datax.py", "tools/install/blast.py", "tools/lift/libsigs.py", "tools/lift/mastertable.py",
+             "tools/install/iso9660.py", "tools/install/datax.py", "tools/install/blast.py", "tools/install/licence.py", "tools/install/regstore.py", "tools/lift/libsigs.py", "tools/lift/mastertable.py",
              "tools/lift/gen_handlers.py", "tools/lift/gen_dll.py", "tools/lift/x86lift.py", "tools/lift/import_signatures.py", "tools/lift/fnscan.py", "tools/lift/builds.py"]
             + LIFTER_DATA + MODULE_SOURCES)
 

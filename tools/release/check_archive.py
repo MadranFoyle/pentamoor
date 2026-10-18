@@ -3,7 +3,8 @@
 check_archive.py - unpack a release archive somewhere new and check it, with no game files:
 
   * every file is in SHA256SUMS with the right checksum, and nothing else is there;
-  * nothing made from the game, and no game module, is in it (no sources/, no *_gen.c but the hand-written stub, no MAGIC.EXE, no game_magic.so ...), and nothing that looks like
+  * nothing made from the game, and no game module, is in it (no sources/, no *_gen.c but the hand-written stub, no MAGIC.EXE, no game_magic.so ...; and none of the licence step's
+    files: the original installer's library Manaball.wav, the module made from it, an install's registry.dat), and nothing that looks like
     decompiler output (check_tree.py);
   * the installer finds the release complete (`install.py --check`) and imports pefile and capstone from the archive's own tools/pydeps, capstone's native library included;
   * `install.py --self-test` picks a compiler, builds the stub module with the archive's headers and loads it into the archive's own runtime (so the runtime starts, finds its
@@ -29,8 +30,10 @@ import check_tree  # noqa: E402
 
 FORBIDDEN_NAMES = {"magic.exe", "deck.exe", "duel.exe", "deckdll.dll", "statwin.dll", "magsnd.dll", "magvid.dll", "data.z",
                    # Spells of the Ancients 2.15 (the files of its install, and the patch and the cabinets it is made from)
-                   "shandalar.exe", "facemaker.exe", "cardartlib.dll", "drawcardlib.dll", "cdtools.dll", "cards.dat", "facedata.txt", "data1.cab", "_sys1.cab", "_user1.cab", "sotav215.exe"}
-FORBIDDEN_PATTERNS = ["*_gen.c", "*_spec.json", "game_magic.*", "game_deck.*", "game_duel.*", "game_shandalar.*", "game_facemaker.*", "game_sotadeck.*", "*.iso", "*.mdf", "*.mds", "*.sav", "*.cab"]
+                   "shandalar.exe", "facemaker.exe", "cardartlib.dll", "drawcardlib.dll", "cdtools.dll", "cards.dat", "facedata.txt", "data1.cab", "_sys1.cab", "_user1.cab", "sotav215.exe",
+                   # the licence step (tools/install/licence.py): the original installer's own library from the expansion's cabinet, and the file an install keeps its registry values in
+                   "manaball.wav", "senclib.dll", "registry.dat"}
+FORBIDDEN_PATTERNS = ["*_gen.c", "*_spec.json", "game_magic.*", "game_deck.*", "game_duel.*", "game_shandalar.*", "game_facemaker.*", "game_sotadeck.*", "game_senclib.*", "*senclib*", "*.iso", "*.mdf", "*.mds", "*.sav", "*.cab"]
 ALLOWED = {"src/port/stubgame/handlers_gen.c"}          # written by hand, not generated, not the game's
 
 
@@ -102,7 +105,7 @@ def forbidden(files):
             continue
         parts = n.lower().split("/")
         base = parts[-1]
-        modules = any(fnmatch.fnmatch(base, p) for p in ("game_magic.*", "game_deck.*", "game_duel.*", "game_shandalar.*", "game_facemaker.*", "game_sotadeck.*"))
+        modules = any(fnmatch.fnmatch(base, p) for p in ("game_magic.*", "game_deck.*", "game_duel.*", "game_shandalar.*", "game_facemaker.*", "game_sotadeck.*", "game_senclib.*"))
         if base in FORBIDDEN_NAMES or modules:
             bad.append(n)
         elif not n.startswith(THIRD_PARTY) and (parts[0] == "sources" or any(fnmatch.fnmatch(base, p) for p in FORBIDDEN_PATTERNS)):
