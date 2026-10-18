@@ -59,6 +59,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--folder", help="the Program folder of the 2.15 install (PENTAMOOR_SOTA); default: where the installer puts it")
     ap.add_argument("--workdir", default="/tmp/sota-launch-check")
+    ap.add_argument("--repo", default=REPO, help="the folder that holds the launcher: this checkout, or an unpacked release")
     ap.add_argument("--res", default="1024x768")
     ap.add_argument("--default-overlay", action="store_true", help="leave PORT_OVERLAY unset and check which overlay folder the launcher made")
     ap.add_argument("--env", action="append", default=[], metavar="NAME=VALUE", help="one more setting for the game (for example PORT_TRACE_IMPORTS=1 to see every call it makes in game.log)")
@@ -66,8 +67,8 @@ def main():
     w, h = (int(v) for v in a.res.split("x"))
     wd = os.path.abspath(a.workdir)
     shutil.rmtree(wd, ignore_errors=True)
-    before = {n for n in ("port_overlay", "port_overlay_sota") if os.path.exists(os.path.join(REPO, n))}
-    g = LauncherGame(REPO, os.path.abspath(a.folder) if a.folder else None, None if a.default_overlay else os.path.join(wd, "overlay"), res=a.res, workdir=wd, overlay_seed=None, env=dict(e.split("=", 1) for e in a.env))
+    before = {n for n in ("port_overlay", "port_overlay_sota") if os.path.exists(os.path.join(os.path.abspath(a.repo), n))}
+    g = LauncherGame(os.path.abspath(a.repo), os.path.abspath(a.folder) if a.folder else None, None if a.default_overlay else os.path.join(wd, "overlay"), res=a.res, workdir=wd, overlay_seed=None, env=dict(e.split("=", 1) for e in a.env))
     ok = True
 
     def check(what, cond, detail=""):
@@ -147,7 +148,7 @@ def main():
     finally:
         g.stop()
     if a.default_overlay:
-        after = {n for n in ("port_overlay", "port_overlay_sota") if os.path.exists(os.path.join(REPO, n))}
+        after = {n for n in ("port_overlay", "port_overlay_sota") if os.path.exists(os.path.join(os.path.abspath(a.repo), n))}
         check("saves go to port_overlay_sota, not port_overlay", "port_overlay_sota" in after and ("port_overlay" in after) == ("port_overlay" in before), "(%s)" % sorted(after))
     print("log: %s" % g.log_path)
     return 0 if ok else 1

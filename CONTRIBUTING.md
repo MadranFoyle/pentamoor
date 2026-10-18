@@ -220,7 +220,7 @@ overlay, and stop them by process id, not by name.
 | `tools/emu_spike/` | the Python Win32 layer that ran the game in a CPU emulator first; it is the specification the C layer follows |
 | `tools/registry/` | the names `docs/SYMBOL_VERIFICATION.md` verified, as a CSV, and a check of their addresses against the real executables |
 | `tools/difftest/` | check native C versions of engine functions against recorded calls of the original ([SPEC](tools/difftest/SPEC.md)) |
-| `tools/soak/` | plays many duels through the control pipe and reports crashes and hangs; the controller and screen-navigation players (all need the installed game) |
+| `tools/soak/` | plays many duels through the control pipe and reports crashes and hangs; `sota_launch_check.py` starts Spells of the Ancients 2.15 through the launcher, as installed, and plays a new game to the world; the controller and screen-navigation players (all need the installed game) |
 | `tools/display/` | checks the display work against real windows (an X server, or a hidden window on any machine; need the installed game) |
 | `tools/research/` | readers of the files of other builds of the game (`cards.dat`; the patch, cabinet and overlay commands now run `tools/install`'s readers) and the comparisons of [docs/notes/sota-comparison.md](docs/notes/sota-comparison.md); they read files you supply and are tested on files the tests make up |
 | `.github/` | the workflows (`ci.yml`, `package.yml`, `release.yml`), `ci-run.sh` and the CI's Python packages |
