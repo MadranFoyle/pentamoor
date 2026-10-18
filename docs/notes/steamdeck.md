@@ -1,7 +1,7 @@
 # Steam Deck
 
 The Steam Deck (SteamOS 3: Arch-based, x86-64, a 1280x800 screen, a read-only root file system with no C compiler or `make`, Python 3 and SDL2 present, a built-in game controller, KDE in desktop mode and
-Gamescope in Game mode) is a release target of its own: `pentamoor-<version>-steamdeck.tar.gz`. **Nothing here has been run on a real Deck.** What was run is listed under "Checked", what was not under
+Gamescope in Game mode) is a release target of its own: `pentamoor-<version>-steamdeck.tar.gz`. **Only one real-Deck session has happened so far ([On a real Deck](#on-a-real-deck-tested)); most of what follows was not run on one.** What was run is listed under "Checked", what was not under
 "Not verified" (that list is what someone with a Deck has to go through). The files are in `tools/steamdeck/` and the C is `src/port/steamdeck.c`, `textin.c`, `textfocus.c` and `front_sdl.c`; the display rules it uses (scaling, full screen toggle, settings file) are `src/port/display.c`, see [display.md](display.md).
 
 ## For a person with a Deck
@@ -130,6 +130,12 @@ The log has no game data in it (window class names and titles, and positions on 
   Enter passes the phase, and the pad works right after the real mouse was used. In all of them: the D-pad mode in the log stays `duel` (it goes through `dialog` for the "Sorcerer casts..." card the game shows for
   each of the opponent's spells; A dismisses that, wherever the cursor is), the game's (Y/N) question is never reported, no message box is shown, SDL's text input is never switched on (no on-screen keyboard), the only mouse motion in the log is what the scripts sent (hiding
   and showing the pointer as the pad takes and gives back the cursor sent none, on X11). **No failure was found.** What this leaves: the cause is in what only a Deck has (below).
+
+## On a real Deck (tested)
+
+One session, 2026-10-17 to 18, on the maintainer's own Deck. What was **not** the same as a user's setup: the game was not the release download and not the window installer. A pre-baked kit (the runtime and the game modules built beforehand on the maintainer's Mac, with the game data; local use only, never published) was sent over Wi-Fi by a script (ssh and rsync), and the Steam shortcut was written by `tools/steamdeck/add-to-steam.py` run over ssh with Steam closed, which replaced an older shortcut that pointed at a previous kit. The kit was built from `main` at 1c767cd, before the card-view binding and the Spells of the Ancients work.
+What happened: the player started it from Steam and played a whole dungeon with the controller, duels included, with no problem reported ("worked great"). An earlier test of an earlier build had reported that the controller did not work in duels; no input log was taken then, so what changed is not known (most likely a mismatch between the build and the kit that was on the Deck).
+Not recorded, so not known: whether it was Game mode or Desktop mode, which controller layout was active (the shipped one or Steam's Gamepad template), the window size and scaling, the input log (`PORT_PAD_LOG`), frame rate, battery and heat, text entry with Steam's keyboard, and anything on the release download and the window installer. Items 1 to 6 below stay open for all of that.
 
 ## Not verified (what a Deck must check)
 

@@ -64,7 +64,7 @@ The installer writes nothing outside those two folders and `port_overlay_sota/`,
 
 ### On a Steam Deck
 
-Not tried on a real Steam Deck yet: it has been checked on a virtual 1280x800 screen and with the real disc, and the steps below are what a Deck should do. Please report what happens.
+Tried once on a real Steam Deck, with a pre-baked kit and the controller: a whole dungeon, duels included, was played with no problem reported. The download and the window installer have not been run on one; the rest was checked on a virtual 1280x800 screen with the real disc, and the steps below are what a Deck should do. Please report what happens.
 
 1. In desktop mode (Steam button, Power, Switch to Desktop), download `pentamoor-<version>-steamdeck.tar.gz` from the [releases](https://github.com/MadranFoyle/pentamoor/releases) and extract it
    where it can stay, for example in a `Games` folder in your home folder.
@@ -167,7 +167,7 @@ coin toss movie. The title screen matches the original running in an emulator pi
 | macOS | tested |
 | Linux (x86-64) | tested: install, build, tests, title screen and a new game into a duel, on CachyOS with gcc, but headless (no real display or speakers). Other distributions and architectures are untried |
 | Windows (x86-64) | the runtime builds with MSYS2 MinGW-w64 and its unit tests pass in CI; CI also builds the release archive (own Python, own compiler) and has it build a stub game module and load it; the game itself has not been run there yet (`pentamoor.bat` is the launcher) |
-| Steam Deck | the download, the window installer, adding to Steam, full screen and typed text are built and checked by CI and were run on a virtual 1280x800 screen with a real pointer and keyboard and the real disc; **no real Deck** has run it ([docs/notes/steamdeck.md](docs/notes/steamdeck.md) lists what is unchecked) |
+| Steam Deck | the download, the window installer, adding to Steam, full screen and typed text are built and checked by CI and were run on a virtual 1280x800 screen with a real pointer and keyboard and the real disc; one real Deck has run a pre-baked kit with the controller (a dungeon played), but not the download or the window installer ([docs/notes/steamdeck.md](docs/notes/steamdeck.md) lists what is unchecked) |
 | iOS / iPadOS | experimental: builds as an iPad app for your own devices (Xcode), runs in the Simulator and on one real iPad Pro (one USB deploy, a dungeon played) with the real game and touch ([docs/notes/ios.md](docs/notes/ios.md)) |
 | Releases | the four archives are built and checked by CI on every push (Windows, Linux, the Steam Deck's, macOS arm64 and x86-64 in one file); the installer from a release folder, with the real disc, is tested on macOS (arm64) and Linux; the x86-64 half of the macOS build has only been compiled |
 
