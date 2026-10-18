@@ -2,6 +2,8 @@
 # pentamoor-install ["path/to/MTG v1.0.iso"] [options]: install the game from your own disc image and build its game modules, ready for ./pentamoor.
 # It is tools/install/install.py with the build switched on: in a release it extracts the game, lifts it to C and compiles the three game modules next to the runtime
 # (a few minutes, once); with no file name it asks for one. `pentamoor-install --help` lists the options (--check, --compiler, --no-download ...).
+# Spells of the Ancients 2.15 as well (the expansion's disc and the 2.15 patch, over the first game):
+#   ./pentamoor-install "MTG v1.0.iso" --sota "MTG v2.00.iso" --patch SOTAV215.EXE        then  ./pentamoor sota
 import os
 import sys
 

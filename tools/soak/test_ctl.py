@@ -173,7 +173,7 @@ def test_sota_teleport_uses_the_2_15_addresses_not_1_0s(tmp_path):
 def test_sota_soak_expects_its_own_messages_on_stderr(tmp_path):
     import argparse
     import sota_soak
-    a = argparse.Namespace(res="1024x768", seed=1, workdir=str(tmp_path / "s"), program="sources/installed_sota_215_m2/Program/shandalar.exe", module=None, repo=str(tmp_path), exe="x")
+    a = argparse.Namespace(res="1024x768", seed=1, workdir=str(tmp_path / "s"), program="sources/installed_sota/Magic/Program/shandalar.exe", module=None, repo=str(tmp_path), exe="x")
     s = sota_soak.SotaSoak(a)
     known = lambda line: any(k.match(line) for k in s.known_stderr)           # noqa: E731
     assert known("LoadLibraryA(drawcardlib.dll) -> mapped at 0x36000000") and known("process: started facemaker.exe (module game_facemaker, id 61333)")

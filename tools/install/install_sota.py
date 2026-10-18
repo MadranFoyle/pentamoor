@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-install_sota.py - lift and build Spells of the Ancients 2.15 (shandalar.exe, FaceMaker.exe and the deck builder) from a folder of your own files.   EXPERIMENTAL: milestones 1 and 2,
-docs/notes/sota-comparison.md ("Milestone 1", "Milestone 2")
+install_sota.py - check, lift and build Spells of the Ancients 2.15 (shandalar.exe, FaceMaker.exe and the deck builder) from a folder that already holds it.   EXPERIMENTAL.
+docs/notes/sota-comparison.md ("Milestone 1", "Milestone 2", "Milestone 3")
 
-    python3 tools/install/install_sota.py sources/installed_sota_215_m2 --build          # lift the three programs and build their modules (a checkout: make; a release: modbuild)
-    python3 tools/install/install_sota.py sources/installed_sota_215_m2 --check          # only say which build each file is
-    PENTAMOOR_SOTA=sources/installed_sota_215_m2/Program ./pentamoor sota                # run it
+You do not need this to install: `pentamoor-install "MTG v1.0.iso" --sota "MTG v2.00.iso" --patch SOTAV215.EXE` makes the folder from the discs and the patch (sotainstall.py) and
+lifts and builds it (install.py). This script is for a folder made another way, and for rebuilding only the 2.15 modules:
+
+    python3 tools/install/install_sota.py sources/installed_sota/Magic --build           # lift the three programs and build their modules (a checkout: make; a release: modbuild)
+    python3 tools/install/install_sota.py sources/installed_sota/Magic --check           # only say which build each file is
+    PENTAMOOR_SOTA=sources/installed_sota/Magic/Program ./pentamoor sota                 # run it
 
 The folder is what Windows has after the expansion is installed over the first game and patched: the first game's install (the pictures, sprites and sounds Spells of the Ancients
 still reads from it), with the files of the 2.0 install over it (the expansion's disc, `Program\\`), and the six files of the 2.15 patch over those. This script does not make it: it
-checks it (the SHA-256 of every program and library against tools/lift/builds.py, the table the runtime's profiles also come from) and says what is wrong. The research tools make it
-from the files themselves (`tools/research/sotapatch.py`, `iscab.py`, `sotaoverlay.py`: the "Milestone 1" section of the notes lists the commands); an installer that reads the
-two discs and the patch is the next step. magic.exe (the "Magic Shell") and ManaLink 3.0 are not part of it.
+checks it (the SHA-256 of every program and library against tools/lift/builds.py, the table the runtime's profiles also come from) and says what is wrong. magic.exe (the "Magic Shell")
+and ManaLink 3.0 are not part of it.
 """
 import argparse
 import os
@@ -62,7 +64,7 @@ def report(program, detected):
         say(f"  {name}: {known or ('missing' if bid is None else 'unknown build (sha256 ' + bid[:12] + ')')}")
     if bad:
         say("This is not Spells of the Ancients 2.15: " + "; ".join(bad) + ".")
-        say("It needs the first game's install with the expansion's 2.0 files and the 2.15 patch's six files over it (see the top of this file).")
+        say('It needs the first game\'s install with the expansion\'s 2.0 files and the 2.15 patch\'s six files over it: pentamoor-install "MTG v1.0.iso" --sota "MTG v2.00.iso" --patch SOTAV215.EXE makes it.')
     return not bad
 
 

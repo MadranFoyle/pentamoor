@@ -33,6 +33,7 @@ src/port/build_*/
 
 # the native program's own files (saves, maps), written by running it
 port_overlay/
+port_overlay_sota/
 
 # the installer's own downloads (the Zig compiler, pefile and capstone) and the release archives
 tools/local/

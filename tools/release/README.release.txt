@@ -52,6 +52,17 @@ Install and play
 
 @unix Other things to run: "./pentamoor deck" and "./pentamoor duel" run the standalone deck builder and duel program.
 @windows Other things to run: "pentamoor.bat deck" and "pentamoor.bat duel" run the standalone deck builder and duel program.
+Spells of the Ancients 2.15 (experimental)
+The expansion at its last version is installed over the first game by the same installer, from three files you own: the disc image of the first game (as above), a disc image of
+the expansion (Magic: The Gathering "Spells of the Ancients", version 2.0, usually MTG v2.00.iso) and the 2.15 patch SOTAV215.EXE (1,207,571 bytes):
+@unix     ./pentamoor-install "path/to/MTG v1.0.iso" --sota "path/to/MTG v2.00.iso" --patch "path/to/SOTAV215.EXE"
+@unix then run  ./pentamoor sota
+@windows     pentamoor-install.bat "path\to\MTG v1.0.iso" --sota "path\to\MTG v2.00.iso" --patch "path\to\SOTAV215.EXE"
+@windows then run  pentamoor.bat sota
+It takes a few minutes more than the first game alone. Everything is checked before anything is written; if a file is missing, in the wrong place or the wrong one (a cut-short patch, the
+expansion's disc given first) the installer says what it found and what it needs. The 2.15 game is a folder of its own (sources/installed_sota) with its own saves (port_overlay_sota), and
+the first game is not changed by it. The expansion's own shell (magic.exe), ManaLink and controller navigation are not part of it.
+
 The game runs at 1024x768 (PORT_RES=640x480 gives the original size). Saves go to the port_overlay folder.
 Display: F11 or Alt+Enter switches full screen on and off (on a controller: press both sticks in and hold for a second), Ctrl+F11 changes how the
 picture fills the window (fit, integer, stretch), Shift+F11 the filter (nearest, linear, sharp). The window can be resized. The choices are kept

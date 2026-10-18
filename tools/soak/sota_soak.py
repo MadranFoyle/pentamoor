@@ -4,7 +4,7 @@
     python3 tools/soak/sota_soak.py --mode duels  --minutes 20 --workdir /tmp/sota-duels
     python3 tools/soak/sota_soak.py --mode monkey --minutes 20 --workdir /tmp/sota-monkey
 
-It needs what `./pentamoor sota` needs: the 2.15 folder (`--program`, default sources/installed_sota_215_m2/Program/shandalar.exe; the first game's install with the expansion's files and
+It needs what `./pentamoor sota` needs: the 2.15 folder (`--program`, default sources/installed_sota/Magic/Program/shandalar.exe; the first game's install with the expansion's files and
 the patch over it), the modules built by tools/install/install_sota.py, and the runtime. Spells of the Ancients has no saved game to start from, so each game process starts a NEW GAME
 (title, Start New Game, the colour, FaceMaker's portrait, the name), which ends at the first encounter's ante screen, and then:
 
@@ -391,7 +391,7 @@ def main():
     ap.add_argument("--repo", default=os.path.abspath(os.path.join(here, "..", "..")))
     ap.add_argument("--exe", default="src/port/build/pentamoor-run")
     ap.add_argument("--module", default=None, help="the game module (default: game_shandalar next to --exe)")
-    ap.add_argument("--program", default="sources/installed_sota_215_m2/Program/shandalar.exe")
+    ap.add_argument("--program", default="sources/installed_sota/Magic/Program/shandalar.exe")
     ap.add_argument("--workdir", default=None)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--duels-per-game", type=int, default=2)

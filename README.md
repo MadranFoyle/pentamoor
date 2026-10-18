@@ -13,9 +13,10 @@ reimplementation of the Windows calls it makes, over SDL2. How that works is in
 ## Install and run
 
 You supply the game: a disc image of the retail *Magic: The Gathering* CD (version 1.0), as an `.iso`
-(a raw `.mdf/.mds` pair needs `mdf2iso "MTG v1.0.mdf" "MTG v1.0.iso"` first). Only version 1.0 is supported: a program of another build (a patched one, the *Spells of the Ancients* expansion) is recognised
-by its checksum and refused at start with a message (exit status 3), because the port's hooks are made for 1.0's addresses. (*Spells of the Ancients* 2.15's `shandalar.exe` is a separate, experimental build that runs from a folder you assemble yourself, with `tools/install/install_sota.py` and `./pentamoor sota`: it plays from the title screen through a new game and duels with the mouse;
-[docs/notes/sota-comparison.md](docs/notes/sota-comparison.md) says what was run and what was not.)
+(a raw `.mdf/.mds` pair needs `mdf2iso "MTG v1.0.mdf" "MTG v1.0.iso"` first). The main game is version 1.0: a program of another build (a patched one, the *Spells of the Ancients* expansion) is recognised
+by its checksum and refused at start with a message (exit status 3), because the port's hooks are made for 1.0's addresses. *Spells of the Ancients* 2.15 is a separate, experimental build with its own
+checksums, installed beside the first game from three more files you own (see [Spells of the Ancients 2.15](#spells-of-the-ancients-215-experimental)): it plays from the title screen through a new game and duels with the mouse;
+[docs/notes/sota-comparison.md](docs/notes/sota-comparison.md) says what was run and what was not.
 
 ### From a release
 
@@ -40,6 +41,22 @@ If there is no C compiler on the machine (on Linux and macOS: no gcc, clang or c
 else is downloaded. The files are not signed, so Windows SmartScreen and macOS Gatekeeper warn on the first start (`README.txt` in the download says what to click).
 The unpacked folder gets a `sources/` (your game files and the C made from them) and the three game modules; do not share those. It needs up to 1 GB while it builds (about 500 MB without the downloaded compiler), and
 `pentamoor-install --clean` afterwards deletes about 200 MB of intermediate files.
+
+### Spells of the Ancients 2.15 (experimental)
+
+The 1997 expansion, at its last version (2.15), is installed by the same command, from what you own: the original game's disc image (above), a disc image of the expansion
+(*Magic: The Gathering "Spells of the Ancients"*, version 2.0, usually `MTG v2.00.iso`) and the 2.15 patch, `SOTAV215.EXE` (1,207,571 bytes, "Version 2.15", 19 November 1997):
+
+```bash
+./pentamoor-install "MTG v1.0.iso" --sota "MTG v2.00.iso" --patch SOTAV215.EXE        # a source checkout: python3 tools/install/install.py ... --build
+./pentamoor sota                                                                      # play (pentamoor.bat sota on Windows)
+```
+
+It installs the first game as above, unpacks the expansion's own installer cabinet over a copy of it, applies the patch's six files, checks every program, library and data file of the result against the
+known 2.15 files (size and SHA-256), and lifts and builds its modules with the first game's: one run, a few minutes more. Everything is checked before anything is written, and the installer says what is wrong
+and what is needed if a source is missing (the patch needs the disc, the disc needs the patch), is in the wrong place (the expansion's disc as the first one), is the wrong one or a cut-short download.
+The 2.15 game is a separate folder, `sources/installed_sota/Magic/Program` (`--sota-dest` or `PENTAMOOR_SOTA` name another), with its saves in `port_overlay_sota/`: the first game's saves are never touched, and both can be installed and played side by side.
+The installer writes nothing outside those two folders and nothing to any registry. It needs the first game's pictures, which is why that disc comes first. The expansion's own shell (`magic.exe`), ManaLink and controller navigation are not part of it.
 
 ### On a Steam Deck
 
@@ -81,7 +98,7 @@ from your files, a game module (a `.so` or `.dylib` per program) that the runtim
 
 Other things to run:
 
-- `./pentamoor deck` and `./pentamoor duel` run the standalone deck builder and duel program.
+- `./pentamoor deck` and `./pentamoor duel` run the standalone deck builder and duel program, and `./pentamoor sota` Spells of the Ancients 2.15 (installed with `--sota` and `--patch`, above).
 - The game runs at 1024x768, using its own larger layouts; the window is scaled to what the display holds (see [Display](#display)). `PORT_RES=640x480 ./pentamoor` gives the original's size, `PORT_RES=800x600` the one between.
 - `PORT_FRAME_MS=40 ./pentamoor` changes the overworld's speed (default 60; lower is faster).
 - Saves go to `port_overlay/`, not into the game's folder.

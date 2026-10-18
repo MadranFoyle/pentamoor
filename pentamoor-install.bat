@@ -2,6 +2,7 @@
 rem pentamoor-install.bat ["path\to\MTG v1.0.iso"] [options]: install the game from your own disc image and build its game modules, ready for pentamoor.bat.
 rem Runs the same pentamoor-install Python program as the other systems: the Python that comes in the release (python\python.exe), else py -3, else python on the PATH.
 rem With no file name it asks for one: type or paste the path, or drag the .iso file onto this window.
+rem Spells of the Ancients 2.15 as well:  pentamoor-install.bat "MTG v1.0.iso" --sota "MTG v2.00.iso" --patch SOTAV215.EXE   (then pentamoor.bat sota)
 setlocal
 cd /d "%~dp0" || exit /b 1
 set "PY="

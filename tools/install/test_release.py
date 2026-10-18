@@ -399,7 +399,10 @@ def test_release_archive_layout_unix(tmp_path):
         names = {m.name[len(top) + 1:]: m for m in t.getmembers()}
     for need in ("pentamoor-run", "pentamoor", "pentamoor-install", "README.txt", "NOTICE.txt", "VERSION", "SHA256SUMS", "tools/install/install.py", "tools/install/modbuild.py",
                  "tools/lift/gen_handlers.py", "tools/lift/x86lift.py", "tools/pydeps/pefile/__init__.py", "src/native/lift_rt.h", "src/native/lift_tables.h", "src/port/modglue.c",
-                 "src/port/modules_none.c", "src/port/stubgame/handlers_gen.c", "tools/lift/fnscan.py", "tools/lift/import_signatures.py", "src/native/layout.c"):
+                 "src/port/modules_none.c", "src/port/stubgame/handlers_gen.c", "tools/lift/fnscan.py", "tools/lift/import_signatures.py", "src/native/layout.c",
+                 # Spells of the Ancients 2.15: the readers of the expansion's cabinets and of the patch, the folder maker, and the lifter's files for its programs
+                 "tools/install/iscab.py", "tools/install/sotapatch.py", "tools/install/overlay.py", "tools/install/sotainstall.py", "tools/install/install_sota.py",
+                 "tools/install/iso9660.py", "tools/install/datax.py", "tools/install/blast.py", "tools/lift/libsigs.py", "tools/lift/mastertable.py", "tools/lift/builds.py"):
         assert need in names, need
     assert not any(n.endswith(".bat") for n in names) and not any("test_" in n for n in names)
     assert names["pentamoor-run"].mode & 0o111 and names["pentamoor"].mode & 0o111 and names["pentamoor-install"].mode & 0o111
@@ -471,7 +474,11 @@ def test_release_archive_layout_windows(tmp_path):
 def test_archive_check_refuses_anything_made_from_the_game():
     import check_archive
     bad = ["sources/installed/Magic/Program/MAGIC.EXE", "tools/x/MAGIC.EXE", "game_magic.so", "game_deck.dll", "game_duel.dylib", "sources/generated/lift_deck/handlers_gen.c",
-           "foo/deckdll_gen.c", "lift_magic_all/handler_spec.json", "MTG v1.0.iso", "DECKDLL.DLL"]
+           "foo/deckdll_gen.c", "lift_magic_all/handler_spec.json", "MTG v1.0.iso", "DECKDLL.DLL",
+           # Spells of the Ancients 2.15: its programs, libraries and data, the modules built from them, the patch, the cabinets and the disc
+           "sources/installed_sota/Magic/Program/shandalar.exe", "x/FaceMaker.exe", "cardartlib.dll", "x/DrawCardLib.dll", "CdTools.dll", "Program/CARDS.DAT", "FaceData.txt",
+           "game_shandalar.dylib", "game_facemaker.so", "game_sotadeck.dll", "SOTAV215.EXE", "sotav215.exe", "Setup/data1.cab", "_user1.cab", "MTG v2.00.iso",
+           "sources/generated/lift_shandalar/handlers_gen.c", "lift_sotadeck/cardartlib_gen.c"]
     ok = ["src/port/stubgame/handlers_gen.c", "pentamoor-run", "SDL2.dll", "tools/local/ziglang/zig.exe", "python/python313.dll", "tools/pydeps/capstone/lib/libcapstone.so"]
     assert check_archive.forbidden(bad) == bad
     assert check_archive.forbidden(ok) == []
@@ -525,3 +532,45 @@ def test_launcher_in_a_release_layout_and_with_a_dropped_iso(tmp_path):
     assert (tmp_path / "installer-called").read_text() == str(iso)
     assert r.returncode == 0 and r.stdout.split() == ["-m", f"./game_magic.{ext}", "sources/installed/Magic/Program/MAGIC.EXE"], r.stderr
     assert launch("duel").stdout.split()[:2] == ["-m", f"./game_duel.{ext}"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="./pentamoor is a shell script")
+def test_launcher_runs_sota_from_its_own_folder_with_its_own_saves(tmp_path):
+    import shutil
+    shutil.copy(os.path.join(ROOT, "pentamoor"), tmp_path / "pentamoor")
+    run = tmp_path / "pentamoor-run"
+    run.write_text('#!/bin/sh\necho "overlay=$PORT_OVERLAY $@"\n')            # the stand-in shows what the runtime would be given
+    run.chmod(run.stat().st_mode | stat.S_IEXEC)
+    ext = "dylib" if sys.platform == "darwin" else "so"
+
+    def launch(*args, **env):
+        e = {k: v for k, v in os.environ.items() if not k.startswith(("PENTAMOOR_", "PORT_"))}
+        e.update(env)
+        return subprocess.run(["sh", str(tmp_path / "pentamoor"), *args], capture_output=True, text=True, stdin=subprocess.DEVNULL, env=e)
+
+    r = launch("sota")                              # nothing installed: it says what is needed, and the one command that installs it
+    assert r.returncode == 1 and "Spells of the Ancients 2.15 is not installed" in r.stderr and "--sota" in r.stderr and "--patch" in r.stderr and "SOTAV215.EXE" in r.stderr
+    assert "python3 tools/install/install.py" in r.stderr and "--build" in r.stderr             # (a checkout: no ./pentamoor-install beside the launcher)
+    (tmp_path / "pentamoor-install").write_text("")
+    assert "./pentamoor-install " in launch("sota").stderr and "--build" not in launch("sota").stderr
+    game = tmp_path / "sources" / "installed_sota" / "Magic" / "Program"        # where the installer puts it
+    game.mkdir(parents=True)
+    (game / "shandalar.exe").write_bytes(b"")
+    r = launch("sota")
+    assert r.returncode == 1 and "the game module is not built yet" in r.stderr and "--sota" in r.stderr
+    (tmp_path / f"game_shandalar.{ext}").write_bytes(b"")
+    r = launch("sota", "extra")                     # no environment variable set: the folder, the module and the saves' folder are the defaults
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.split() == ["overlay=port_overlay_sota", "-m", f"./game_shandalar.{ext}", "sources/installed_sota/Magic/Program/shandalar.exe", "extra"]
+    assert launch("shandalar").stdout.split()[0] == "overlay=port_overlay_sota"
+    assert launch("sota", PORT_OVERLAY="mine").stdout.split()[0] == "overlay=mine"          # a choice of the player's wins
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    (other / "shandalar.exe").write_bytes(b"")
+    assert launch("sota", PENTAMOOR_SOTA=str(other)).stdout.split()[3] == f"{other}/shandalar.exe"
+    (tmp_path / "sources" / "installed" / "Magic" / "Program").mkdir(parents=True)
+    for exe in ("MAGIC.EXE", "DECK.EXE", "DUEL.EXE"):                           # the first game keeps the runtime's own default, port_overlay: the launcher sets nothing for it
+        (tmp_path / "sources" / "installed" / "Magic" / "Program" / exe).write_bytes(b"")
+    for p in ("magic", "deck", "duel"):
+        (tmp_path / f"game_{p}.{ext}").write_bytes(b"")
+    assert launch().stdout.split()[0] == "overlay="

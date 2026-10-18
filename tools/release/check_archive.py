@@ -27,8 +27,10 @@ import zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_tree  # noqa: E402
 
-FORBIDDEN_NAMES = {"magic.exe", "deck.exe", "duel.exe", "deckdll.dll", "statwin.dll", "magsnd.dll", "magvid.dll", "data.z"}
-FORBIDDEN_PATTERNS = ["*_gen.c", "*_spec.json", "game_magic.*", "game_deck.*", "game_duel.*", "*.iso", "*.mdf", "*.mds", "*.sav"]
+FORBIDDEN_NAMES = {"magic.exe", "deck.exe", "duel.exe", "deckdll.dll", "statwin.dll", "magsnd.dll", "magvid.dll", "data.z",
+                   # Spells of the Ancients 2.15 (the files of its install, and the patch and the cabinets it is made from)
+                   "shandalar.exe", "facemaker.exe", "cardartlib.dll", "drawcardlib.dll", "cdtools.dll", "cards.dat", "facedata.txt", "data1.cab", "_sys1.cab", "_user1.cab", "sotav215.exe"}
+FORBIDDEN_PATTERNS = ["*_gen.c", "*_spec.json", "game_magic.*", "game_deck.*", "game_duel.*", "game_shandalar.*", "game_facemaker.*", "game_sotadeck.*", "*.iso", "*.mdf", "*.mds", "*.sav", "*.cab"]
 ALLOWED = {"src/port/stubgame/handlers_gen.c"}          # written by hand, not generated, not the game's
 
 
@@ -100,7 +102,7 @@ def forbidden(files):
             continue
         parts = n.lower().split("/")
         base = parts[-1]
-        modules = any(fnmatch.fnmatch(base, p) for p in ("game_magic.*", "game_deck.*", "game_duel.*"))
+        modules = any(fnmatch.fnmatch(base, p) for p in ("game_magic.*", "game_deck.*", "game_duel.*", "game_shandalar.*", "game_facemaker.*", "game_sotadeck.*"))
         if base in FORBIDDEN_NAMES or modules:
             bad.append(n)
         elif not n.startswith(THIRD_PARTY) and (parts[0] == "sources" or any(fnmatch.fnmatch(base, p) for p in FORBIDDEN_PATTERNS)):
