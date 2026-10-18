@@ -27,7 +27,7 @@ MODULE_SOURCES = [
 
 # Folders copied whole, with the patterns left out (tests, caches, scripts that only the developers run).
 TREES = {
-    "tools/install": {"exclude": ["test_*.py", "__pycache__", "*.pyc"]},
+    "tools/install": {"exclude": ["test_*.py", "fakediscs.py", "__pycache__", "*.pyc"]},          # fakediscs.py: the tests' made-up discs
     "tools/lift": {"exclude": ["test_*.py", "__pycache__", "*.pyc", "README.md", "compare_hosted.py", "coverage.py", "scan_diff.py"]},
 }
 
@@ -39,6 +39,9 @@ STEAMDECK_DESKTOP = ["Install Pentamoor.desktop", "Add Pentamoor to Steam.deskto
 
 # Present in every release (the installer's --check looks for these).
 REQUIRED = (["tools/install/install.py", "tools/install/modbuild.py", "tools/install/liftrun.py", "tools/install/zigdl.py", "tools/install/manifest.py",
+             # Spells of the Ancients 2.15: the installer's readers of the expansion's cabinets, of the patch, the folder merge, the folder maker, and the lifter's files for its programs
+             "tools/install/iscab.py", "tools/install/sotapatch.py", "tools/install/overlay.py", "tools/install/sotainstall.py", "tools/install/install_sota.py",
+             "tools/install/iso9660.py", "tools/install/datax.py", "tools/install/blast.py", "tools/lift/libsigs.py", "tools/lift/mastertable.py",
              "tools/lift/gen_handlers.py", "tools/lift/gen_dll.py", "tools/lift/x86lift.py", "tools/lift/import_signatures.py", "tools/lift/fnscan.py", "tools/lift/builds.py"]
             + LIFTER_DATA + MODULE_SOURCES)
 

@@ -1,6 +1,8 @@
 @echo off
 rem pentamoor.bat [deck|duel|sota] [more arguments]: run the game (or its standalone deck builder or duel program). The same as ./pentamoor. `sota` is Spells of the Ancients 2.15 (experimental):
-rem the folder that holds its shandalar.exe is %PENTAMOOR_SOTA% (default sources\installed_sota\Program), built by tools\install\install_sota.py (docs/notes/sota-comparison.md, "Milestone 1").
+rem the folder that holds its shandalar.exe is %PENTAMOOR_SOTA% (default sources\installed_sota\Magic\Program), made by the installer from the two discs and the patch:
+rem   pentamoor-install.bat "MTG v1.0.iso" --sota "MTG v2.00.iso" --patch SOTAV215.EXE        (docs/notes/sota-comparison.md, "Milestone 3")
+rem Its saves are kept apart from the first game's: PORT_OVERLAY defaults to port_overlay_sota for `sota` (port_overlay for the others).
 rem Double click it: the first time it offers to install the game (it asks for your disc image, an .iso file; type or paste the path or drag the file onto the window), then it runs it.
 rem Drop an .iso file on it, or pentamoor.bat "D:\MTG v1.0.iso", to install from that disc image first.
 rem It starts the runtime (pentamoor-run.exe, no game code in it) with the game module (game_magic.dll, game_deck.dll or game_duel.dll, the C made from your own files) for
@@ -30,7 +32,8 @@ if /i "%~1"=="sota" (
   set "PROG=shandalar"
   set "EXE=shandalar.exe"
   set "GAME=%PENTAMOOR_SOTA%"
-  if "%PENTAMOOR_SOTA%"=="" set "GAME=sources\installed_sota\Program"
+  if "%PENTAMOOR_SOTA%"=="" set "GAME=sources\installed_sota\Magic\Program"
+  if "%PORT_OVERLAY%"=="" set "PORT_OVERLAY=port_overlay_sota"
   shift
 ) else if /i "%~1"=="deck" (
   set "PROG=deck"
@@ -49,8 +52,8 @@ if "%RUN%"=="" set "RUN=%BUILD%\pentamoor-run.exe"
 set "MODULE=%PENTAMOOR_MODULE%"
 if "%MODULE%"=="" set "MODULE=%BUILD%\game_%PROG%.dll"
 
-rem Spells of the Ancients: no installer offer (it is built from a folder you assembled: python tools\install\install_sota.py)
-if "%PROG%"=="shandalar" goto checks
+rem Spells of the Ancients: no installer offer (it is built from three files and has to be told which: the checks below say how)
+if "%PROG%"=="shandalar" goto sotachecks
 
 rem not installed (or not built) yet: in a release, offer to run the installer now
 set "WHY="
@@ -85,7 +88,35 @@ if not exist "%MODULE%" (
   echo   pentamoor-install.bat     ^(from a source checkout: python tools\install\install.py "path\to\MTG v1.0.iso" --build^)
   goto failed
 )
+goto rest
 
+:sotachecks
+if not exist "%GAME%\%EXE%" (
+  echo pentamoor: Spells of the Ancients 2.15 is not installed ^(%GAME%\%EXE% is missing^). It is built from three files you own: a disc image of the original game ^(version 1.0^),
+  echo one of the expansion ^(Spells of the Ancients, MTG v2.00^) and the 2.15 patch SOTAV215.EXE:
+  call :sotahow
+  goto failed
+)
+if not exist "%RUN%" (
+  echo pentamoor: the runtime is not built yet ^(%RUN% is missing^).
+  goto failed
+)
+if not exist "%MODULE%" (
+  echo pentamoor: the game module is not built yet ^(%MODULE% is missing^):
+  call :sotahow
+  goto failed
+)
+goto rest
+
+:sotahow
+if exist "pentamoor-install.bat" (
+  echo   pentamoor-install.bat "path\to\MTG v1.0.iso" --sota "path\to\MTG v2.00.iso" --patch "path\to\SOTAV215.EXE"
+) else (
+  echo   python tools\install\install.py "path\to\MTG v1.0.iso" --sota "path\to\MTG v2.00.iso" --patch "path\to\SOTAV215.EXE" --build
+)
+exit /b 0
+
+:rest
 rem what is left of the command line after deck or duel
 set "REST="
 :next

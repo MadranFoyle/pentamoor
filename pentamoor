@@ -5,8 +5,10 @@
 # Where it looks: pentamoor-run and game_*.so beside this file (a release), else src/port/build/ (a build from source). The game: sources/installed/Magic/Program,
 # or $PENTAMOOR_GAME (the folder that holds MAGIC.EXE). Saves go to ./port_overlay. PORT_RES=640x480 gives the original's size (the default is 1024x768),
 # PENTAMOOR_RUN names another runtime binary, PENTAMOOR_MODULE another game module. On Windows: pentamoor.bat (this one too, in an MSYS2 shell).
-# ./pentamoor sota runs shandalar.exe of a Spells of the Ancients 2.15 install that tools/install/install_sota.py built (docs/notes/sota-comparison.md, "Milestone 1"): the folder that holds
-# its shandalar.exe is $PENTAMOOR_SOTA (default sources/installed_sota/Program); the module is game_shandalar beside the runtime. It starts FaceMaker.exe itself when a colour is chosen.
+# ./pentamoor sota runs shandalar.exe of the Spells of the Ancients 2.15 install (docs/notes/sota-comparison.md, "Milestone 3"), which the same installer makes from the two discs and the patch:
+#   ./pentamoor-install "MTG v1.0.iso" --sota "MTG v2.00.iso" --patch SOTAV215.EXE
+# The folder that holds its shandalar.exe is $PENTAMOOR_SOTA (default sources/installed_sota/Magic/Program); the module is game_shandalar beside the runtime. It starts FaceMaker.exe itself
+# when a colour is chosen. Its saves are kept apart from the first game's: PORT_OVERLAY defaults to port_overlay_sota for `sota` (port_overlay for the others).
 cd "$(dirname "$0")" || exit 1
 GAME=${PENTAMOOR_GAME:-sources/installed/Magic/Program}
 case "$(uname -s)" in
@@ -44,17 +46,27 @@ case "$1" in
 esac
 
 case "$1" in
-  sota|shandalar) shift; PROG=shandalar; EXE=shandalar.exe; GAME=${PENTAMOOR_SOTA:-sources/installed_sota/Program} ;;
+  sota|shandalar) shift; PROG=shandalar; EXE=shandalar.exe; GAME=${PENTAMOOR_SOTA:-sources/installed_sota/Magic/Program}; PORT_OVERLAY=${PORT_OVERLAY:-port_overlay_sota}; export PORT_OVERLAY ;;
   deck) shift; PROG=deck; EXE=DECK.EXE ;;
   duel) shift; PROG=duel; EXE=DUEL.EXE ;;
   *)    PROG=magic; EXE=MAGIC.EXE ;;
 esac
 MODULE=${PENTAMOOR_MODULE:-$BUILD/game_$PROG.$EXT}
 
-if [ "$PROG" = shandalar ]; then     # Spells of the Ancients 2.15: no installer offer (it is built from a folder the player assembled: tools/install/install_sota.py)
-  [ -f "$GAME/$EXE" ] || { echo "pentamoor: Spells of the Ancients is not set up ($GAME/$EXE is missing). Set PENTAMOOR_SOTA to the Program folder of the 2.15 install, then:  python3 tools/install/install_sota.py <its folder> --build" >&2; exit 1; }
+if [ "$PROG" = shandalar ]; then     # Spells of the Ancients 2.15: installed from three things (no installer offer: it would have to ask for all three), and this says which
+  if [ -f ./pentamoor-install ]; then
+    SOTA_INSTALL='./pentamoor-install "path/to/MTG v1.0.iso" --sota "path/to/MTG v2.00.iso" --patch "path/to/SOTAV215.EXE"'
+  else
+    SOTA_INSTALL='python3 tools/install/install.py "path/to/MTG v1.0.iso" --sota "path/to/MTG v2.00.iso" --patch "path/to/SOTAV215.EXE" --build'
+  fi
+  if [ ! -f "$GAME/$EXE" ]; then
+    echo "pentamoor: Spells of the Ancients 2.15 is not installed ($GAME/$EXE is missing). It is built from three files you own: a disc image of the original game (version 1.0), one of" >&2
+    echo "the expansion (Spells of the Ancients, MTG v2.00) and the 2.15 patch SOTAV215.EXE:" >&2
+    echo "  $SOTA_INSTALL" >&2
+    exit 1
+  fi
   [ -x "$RUN" ] || { echo "pentamoor: the runtime is not built yet ($RUN is missing)." >&2; exit 1; }
-  [ -f "$MODULE" ] || { echo "pentamoor: the game module is not built yet ($MODULE is missing):  python3 tools/install/install_sota.py <the folder that holds Program> --build" >&2; exit 1; }
+  [ -f "$MODULE" ] || { echo "pentamoor: the game module is not built yet ($MODULE is missing):" >&2; echo "  $SOTA_INSTALL" >&2; exit 1; }
   exec "$RUN" -m "$MODULE" "$GAME/$EXE" "$@"
 fi
 

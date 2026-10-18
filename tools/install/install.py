@@ -5,6 +5,7 @@ install.py - "install" the game for Pentamoor from your own copy of the disc.
     python3 tools/install/install.py "MTG v1.0.iso"            # extract the game into sources/installed/Magic
     python3 tools/install/install.py "MTG v1.0.iso" --build    # ...and lift and compile it, ready for ./pentamoor     (a source checkout: make builds the runtime and the modules)
     ./pentamoor-install "MTG v1.0.iso"                         # the same from a release: the runtime is already built, this builds the game modules
+    ./pentamoor-install "MTG v1.0.iso" --sota "MTG v2.00.iso" --patch SOTAV215.EXE     # also Spells of the Ancients 2.15 (./pentamoor sota): the first game, the expansion's disc and the patch
 
 What it does, in order: reads the disc image (a plain .iso; a folder that holds the disc's files works too) without mounting it; unpacks the game's own
 InstallShield archive (Setup/data.z, 967 files) into <dest>/Magic/Program, the same folder the Windows installer makes; copies the disc's music (Sound/*.WAV)
@@ -13,6 +14,11 @@ made from. With --build (a release always) it then lifts the game's programs int
 one, else a Zig that it downloads into tools/local; modbuild.py) and compiles the three game modules next to the runtime. The C made from your files stays on your machine
 (sources/ is ignored by the repository) and nothing of the game is ever uploaded. The only downloads are the Zig compiler, when there is no C compiler and you say yes, and
 the Python packages pefile and capstone with pip, when the release did not carry them.
+
+Spells of the Ancients 2.15 (--sota and --patch, both): after the first game the installer reads the expansion's disc (Setup/data1.cab, an InstallShield cabinet) over it, applies the
+patch's six files, checks every program, library and data file of the result against the known 2.15 files (size and SHA-256), and lifts and builds its three modules (shandalar,
+facemaker, sotadeck) with the rest. The 2.15 folder is a separate one beside the first game's (sources/installed_sota/Magic/Program), with saves of its own. Everything is checked
+before anything is written (tools/install/sotainstall.py says how); nothing is written to the registry.
 
 A raw Alcohol 120% .mdf/.mds pair is not an .iso: convert it first (`mdf2iso "MTG v1.0.mdf" "MTG v1.0.iso"`).
 """
@@ -99,7 +105,7 @@ def ask_yes(question, default=True, assume=None):
 
 def ask_disc():
     if not sys.stdin or not sys.stdin.isatty():
-        die("no disc image given. Usage: pentamoor-install \"path/to/MTG v1.0.iso\"")
+        die("no disc image given. Usage: pentamoor-install \"path/to/MTG v1.0.iso\"   (add --sota \"path/to/MTG v2.00.iso\" --patch SOTAV215.EXE for Spells of the Ancients 2.15)")
     say("Pentamoor needs your own copy of the game: a disc image of the retail Magic: The Gathering CD (version 1.0), an .iso file.")
     say("Type or paste its path, or drag the file onto this window and press Enter (leave it empty to cancel).")
     while True:
@@ -244,6 +250,59 @@ def game_installed(dest):
     return os.path.exists(os.path.join(dest, "Magic", "Program", "MAGIC.EXE"))
 
 
+def sota_dest_for(dest):
+    """Where Spells of the Ancients 2.15 goes by default: beside the first game's folder, <dest>_sota (sources/installed -> sources/installed_sota), so the two live together and a
+    save of one is never the other's (the launcher gives each its own port_overlay)."""
+    dest = os.path.normpath(dest)
+    return os.path.join(os.path.dirname(dest), os.path.basename(dest) + "_sota")
+
+
+def sota_program(sota_dest):
+    """The Program folder of a complete, verified 2.15 install in `sota_dest` (a --sota-dest: the folder that holds Magic), else None."""
+    import sotainstall
+    program = sotainstall.program_dir(os.path.join(sota_dest, "Magic"))
+    if os.path.isdir(program) and not sotainstall.problems(program):
+        return program
+    return None
+
+
+def sota_sources(args):
+    """Whether Spells of the Ancients 2.15 is asked for, and if it is half asked for, say exactly what is missing. Dies before anything is read or written."""
+    if not args.sota and not args.patch:
+        return False
+    first = shell_quote(args.disc) if args.disc else '"MTG v1.0.iso"'
+    if args.sota and not args.patch:
+        die("Spells of the Ancients 2.15 needs the patch as well as the expansion's disc: the disc alone is version 2.0, and Pentamoor runs 2.15, not 2.0.\n"
+            "--patch is missing; the patch is the file SOTAV215.EXE (\"Magic: The Gathering, version 2.15\", 1,207,571 bytes). Run again with:\n"
+            "  pentamoor-install " + first + " --sota " + shell_quote(args.sota) + ' --patch "path/to/SOTAV215.EXE"')
+    if args.patch and not args.sota:
+        die("the patch is given, but not the expansion's disc it patches. Spells of the Ancients 2.15 is the Spells of the Ancients disc (version 2.0, MTG v2.00.iso) with the patch over it,\n"
+            "installed over the original game. --sota is missing. Run again with:\n"
+            "  pentamoor-install " + first + ' --sota "path/to/MTG v2.00.iso" --patch ' + shell_quote(args.patch))
+    return True
+
+
+def shell_quote(text):
+    return '"' + text.replace('"', '\\"') + '"' if " " in text or not text else text
+
+
+def open_sota_sources(args):
+    """Open and check the expansion's disc and the patch; (disc, [(patch file name, bytes)]). Dies with the reason if either is not what it should be."""
+    import sotainstall
+    for what, path in (("the expansion's disc (--sota)", args.sota), ("the patch (--patch)", args.patch)):
+        if not os.path.exists(path):
+            die(f"{what} {path} does not exist")
+    try:
+        disc = iso9660.open_disc(args.sota)
+        sotainstall.check_expansion_disc(disc, args.sota)
+        say(f"expansion disc: {getattr(disc, 'label', '') or args.sota} (Spells of the Ancients 2.0, its three cabinets checked)")
+        patch = sotainstall.check_patch(args.patch)
+        say(f"patch: {os.path.basename(args.patch)}, {len(patch)} files, every CRC-32 and hash right")
+    except (iso9660.IsoError, sotainstall.SotaError) as e:
+        die(str(e))
+    return disc, patch
+
+
 def link_install_folder(dest):
     """The lifter and the launcher read sources/installed; point it at --dest when that is somewhere else."""
     program_dest = os.path.abspath(dest)
@@ -259,41 +318,47 @@ def link_install_folder(dest):
 
 
 # ---- building ---------------------------------------------------------------------------------------------------------------------------------------------
-def build_commands():
+def build_commands(sota=False):
     """What a source checkout's --build runs after the lifter: (message, argv) pairs. The runtime (`pentamoor-run`: everything but the game's code) and one game module
     per program (a library made only from the C the lifter wrote) are built by the one `make -C src/port` and loaded together by ./pentamoor."""
     jobs = str(max(1, min(os.cpu_count() or 1, 8)))
-    return [("compiling the runtime and the game modules src/port/build/{pentamoor-run, game_magic, game_deck, game_duel} (a few minutes)",
+    modules = "game_magic, game_deck, game_duel" + (", game_shandalar, game_facemaker, game_sotadeck" if sota else "")
+    return [("compiling the runtime and the game modules src/port/build/{pentamoor-run, %s} (a few minutes)" % modules,
              ["make", "-C", os.path.join(ROOT, "src", "port"), "-j" + jobs, "all"])]
 
 
-def lift(layout, args):
+def lift(layout, args, sota=None):
+    """Lift the first game's three programs, and, when `sota` (the Program folder of the 2.15 install) is given, the three of Spells of the Ancients 2.15."""
     paths = ensure_python_deps(layout, assume=args.yes)
     say("lifting the game's programs into C (a few minutes; the C is generated from your files and stays on your machine)")
     liftrun.lift_all(layout.root, sys.executable, paths, force=args.force)
+    if sota:
+        say("lifting Spells of the Ancients 2.15's programs (shandalar.exe, FaceMaker.exe, DECK.EXE and their libraries) into C (a few minutes more)")
+        liftrun.lift_sota(layout.root, sota, sys.executable, paths, force=args.force, say=say)
 
 
-def build_with_make(layout, args):
+def build_with_make(layout, args, sota=None):
     """A source checkout: the lifter, then make builds the runtime and the modules."""
     if not any(shutil.which(c) for c in ("cc", "gcc", "clang")):
         die("no C compiler found (install Xcode's command line tools, or gcc/clang); `--modules` can fetch one for the game modules, but the runtime needs make and a compiler")
     if shutil.which("make") is None:
         die("make was not found (the runtime is built by make; a release has it already built)")
-    lift(layout, args)
-    for cmd in build_commands():
+    lift(layout, args, sota)
+    for cmd in build_commands(sota is not None):
         say(cmd[0])
         subprocess.run(cmd[1], check=True, cwd=ROOT)
 
 
-def build_modules(layout, args):
-    """The lifter, then the Python builder compiles the three modules next to the runtime. What a release does; --modules does it in a checkout."""
+def build_modules(layout, args, sota=None):
+    """The lifter, then the Python builder compiles the three modules (six with Spells of the Ancients) next to the runtime. What a release does; --modules does it in a checkout."""
     native = layout.native
     cc = modbuild.find_compiler(native, layout.tools, explicit=args.compiler, download=not args.no_download,
                                 ask=lambda q: ask_yes(q, True, args.yes), say=say)
     say(f"compiler: {cc.describe()}")
-    lift(layout, args)
+    lift(layout, args, sota)
     os.makedirs(layout.out_dir, exist_ok=True)
-    made = modbuild.build_modules(list(modbuild.PROGRAMS), layout.generated, layout.port, native, layout.objects, layout.out_dir, cc, jobs=args.jobs, say=say)
+    made = modbuild.build_modules(list(modbuild.PROGRAMS) + (list(modbuild.SOTA_PROGRAMS) if sota else []), layout.generated, layout.port, native, layout.objects, layout.out_dir, cc,
+                                  jobs=args.jobs, say=say)
     if os.path.exists(layout.runtime):
         for prog, path in made.items():
             ok, out = modbuild.smoke_test(layout.runtime, path)
@@ -344,6 +409,8 @@ def check(layout, args):
     say(f"game:   {'installed' if game_installed(installed) else 'not installed yet'}")
     if game_installed(installed):
         say(f"build:  {build_summary(detect_builds(os.path.join(installed, 'Magic', 'Program')))}")
+    sota = sota_program(getattr(args, "sota_dest", None) or sota_dest_for(installed))
+    say("sota:   " + (f"Spells of the Ancients 2.15 installed in {sota}" if sota else 'Spells of the Ancients 2.15 not installed (--sota "MTG v2.00.iso" --patch SOTAV215.EXE)'))
     return 1 if problems else 0
 
 
@@ -363,9 +430,12 @@ def self_test(layout, args):
 
 
 def parser():
-    ap = argparse.ArgumentParser(description="Install the game for Pentamoor from your own disc image.")
-    ap.add_argument("disc", nargs="?", help="the disc image (.iso), or a folder with the disc's files (asked for if the game is not installed yet)")
+    ap = argparse.ArgumentParser(description="Install the game for Pentamoor from your own disc image; with --sota and --patch also Spells of the Ancients 2.15.")
+    ap.add_argument("disc", nargs="?", help="the disc image (.iso) of the original game, version 1.0, or a folder with the disc's files (asked for if the game is not installed yet)")
+    ap.add_argument("--sota", metavar="DISC", help="the disc image of the Spells of the Ancients expansion (MTG v2.00.iso), to install Spells of the Ancients 2.15 as well; needs --patch")
+    ap.add_argument("--patch", metavar="SOTAV215.EXE", help="the Spells of the Ancients 2.15 patch (SOTAV215.EXE, 1,207,571 bytes); needs --sota")
     ap.add_argument("--dest", default=os.path.join(ROOT, "sources", "installed"), help="where to put it (default: sources/installed, which is ignored by the repository)")
+    ap.add_argument("--sota-dest", help="where to put Spells of the Ancients 2.15 (default: beside --dest with _sota added: sources/installed_sota)")
     ap.add_argument("--build", action="store_true", help="then lift the programs to C and compile them (a source checkout: make builds the runtime and the game modules; a release: the modules)")
     ap.add_argument("--modules", action="store_true", help="a source checkout: build only the game modules, with this installer's own compiler step instead of make (what a release does)")
     ap.add_argument("--compiler", help="the C compiler to build the modules with, for example gcc or 'zig cc' (default: cc, gcc or clang if one works, else Zig downloaded into tools/local; also $PENTAMOOR_CC)")
@@ -389,8 +459,14 @@ def main(argv=None, default_build=False):
         sys.exit(self_test(layout, args))
     if args.compiler and not (args.build or args.modules or default_build or layout.release):
         die("--compiler goes with --build or --modules")
+    want_sota = sota_sources(args)
+    import sotainstall                                                  # (reads cabinets and the patch: needs nothing but Python)
     dest = args.dest
+    sota_dest = args.sota_dest or sota_dest_for(dest)
     have_game = game_installed(dest)
+    # Everything the run will read is opened and checked before anything is written: a wrong disc, a disc in the wrong place, a cut-short patch stop it here, not after the first
+    # game has been unpacked.
+    disc = disc2 = patch = None
     if args.disc is None and have_game:
         say(f"the game is already extracted in {os.path.join(dest, 'Magic')}; not reading the disc again")
     else:
@@ -399,13 +475,36 @@ def main(argv=None, default_build=False):
             die(f"{disc_path} does not exist")
         try:
             disc = iso9660.open_disc(disc_path)
-            say(f"disc: {getattr(disc, 'label', '') or disc_path}")
+            sotainstall.check_first_disc(disc, disc_path)
+        except (iso9660.IsoError, sotainstall.SotaError) as e:
+            die(str(e))
+    if want_sota:
+        disc2, patch = open_sota_sources(args)
+    if disc is not None:
+        try:
+            say(f"disc: {getattr(disc, 'label', '') or args.disc}")
             extract_archive(disc, dest, args.force)
             copy_media(disc, dest, args.force)
         except (iso9660.IsoError, datax.DataZError) as e:
             die(str(e))
-    check_programs(dest)
+    first_ok = check_programs(dest)
     say(f"installed into {os.path.join(dest, 'Magic')}")
+    sota = None
+    if want_sota:
+        if not first_ok:
+            die("Spells of the Ancients is installed over the original game, version 1.0, and the files above are not it: the 2.15 folder is not made from them. "
+                "Install the retail disc's files (--force writes them again).")
+        t0 = time.time()
+        say(f"Spells of the Ancients 2.15 into {os.path.join(sota_dest, 'Magic')}")
+        try:
+            sota = sotainstall.make_folder(sota_dest, os.path.join(dest, "Magic"), disc2, patch, force=args.force, say=say)
+        except (sotainstall.SotaError, OSError) as e:
+            die(str(e))
+        say(f"Spells of the Ancients 2.15 installed ({time.time() - t0:.0f} s)")
+    else:
+        sota = sota_program(sota_dest)
+        if sota:
+            say(f"Spells of the Ancients 2.15 is installed in {sota} (all files verified)")
     do_build = args.build or args.modules or default_build or layout.release
     if not do_build:
         say("next: python3 tools/install/install.py <the same disc> --build   (or run tools/lift/lift_all.sh and make -C src/port yourself)")
@@ -413,16 +512,22 @@ def main(argv=None, default_build=False):
     link_install_folder(dest)
     try:
         if layout.release or args.modules:
-            build_modules(layout, args)
+            build_modules(layout, args, sota)
         else:
-            build_with_make(layout, args)
+            build_with_make(layout, args, sota)
     except modbuild.BuildError as e:
         die(str(e))
     except (RuntimeError, subprocess.CalledProcessError) as e:
         die(str(e))
     if args.clean:
         clean_up(layout)
-    say("built. Play with:  " + ("pentamoor.bat" if os.name == "nt" else "./pentamoor"))
+    play = "pentamoor.bat" if os.name == "nt" else "./pentamoor"
+    say("built. Play with:  " + play)
+    if sota:
+        default = os.path.join(ROOT, "sources", "installed_sota", "Magic", "Program")
+        say("Spells of the Ancients 2.15:  " + ("" if os.path.abspath(sota) == default else f"PENTAMOOR_SOTA={sota} ") + play + " sota")
+    elif not want_sota:
+        say('(Spells of the Ancients 2.15 too: add --sota "MTG v2.00.iso" --patch SOTAV215.EXE)')
 
 
 if __name__ == "__main__":
