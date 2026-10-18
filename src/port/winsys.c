@@ -8,7 +8,10 @@
  * THE REGISTRY. Nothing is stored: a key is a path and a handle, a write goes nowhere (RegSetValueExA succeeds and the value is not kept, as before), a read of anything but the table
  * below is "not found", so a program falls back to its defaults. The table holds the values the game asks Windows for: shandalar.exe 2.15 and its deck library open
  * HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion at start and read the two values of Windows 98 that identify the installation (when it was installed, and the product
- * id); without them the program ends at once. They are made-up values of the same kind, the same on every run. They are not a licence or a serial number of anything.
+ * id); without them the program ends at once. They are made-up values of the same kind, the same on every run.
+ * WHAT THEY ARE FOR (traced in milestone 3, docs/notes/sota-comparison.md "The licence value"): the game builds a machine id from them, and a second function reads a machine-bound
+ * value "SerialNumber" (HKLM\SOFTWARE\MicroProse\Magic: The Gathering) that only makes sense together with that id; it gates the game's CD check and the cards of two sets. This file
+ * answers the two Windows values so that the program starts, and nothing else: it does not make up a SerialNumber (a read of it is "not found") and it does not pretend to be a CD.
  */
 #include <stdio.h>
 #include <stdlib.h>
