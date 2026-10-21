@@ -1993,30 +1993,35 @@ static void test_navwm_duel(void)
         API("DestroyWindow", att);
     }
 
-    /* "View card" (the controller's LB, V, the middle button): the card window under the pointer, in a duel, for a build whose card windows answer the game's own "View in full card" command */
+    /* "View card" (the controller's LB, V, the middle button): the card window under the pointer, in a duel, for a build whose card windows answer the game's own "View in full card" command
+     * (WM_COMMAND 0x6e): MAGIC.EXE 1.0 and Spells of the Ancients 2.15's shandalar.exe (the card window's procedure there answers 0x6e the same way: it sends the Full-size card window WM_USER+1) */
     {
         const BuildProfile *saved = profile;
         uint32_t msg = scratch(28), got = 0, wp = 0;
-        int k;
+        int k, b;
+        static const char *const builds[2] = {"4dc592695b6ee390485f283feb2a248cd3f3f739749c2800ab3b1100ea03845c", "e4e46718c451974756b66e7666ac0bf1cc9ebdbc5897eb04a87b8ea2a02353e7"};
 
         profile = &PROFILE_NONE;
-        CHECK(navwm_card_at(340, 420) == 0 && navwm_view_card(340, 420) == 0);          /* a build with no such command (SotA 2.15, an unknown build): nothing to post, LB stays Page Up */
-        profile = profile_find("4dc592695b6ee390485f283feb2a248cd3f3f739749c2800ab3b1100ea03845c");
-        CHECK(profile && profile->viewcard.cmd == 0x6e);
-        CHECK(navwm_card_at(340, 420) == mc[0] && navwm_card_at(309 + 133 * 2 + 5, 500) == mc[2]);       /* a permanent in your territory */
-        CHECK(navwm_card_at(892, 506) == hc[0] && navwm_card_at(892, 520) == hc[1] && navwm_card_at(892, 640) == hc[3]);   /* a strip of the hand: the card that shows there */
-        CHECK(navwm_card_at(30, 700) == 0 && navwm_card_at(5, 5) == 0 && navwm_card_at(280, 300) == 0);   /* the life total, nothing, the phase column */
-        CHECK(navwm_card_at(320, 380) == 0);                                                              /* the prompt bar over your territory's top: not a card */
-        CHECK(navwm_card_at(-5, 900) == 0);                                                               /* off the screen */
-        for (k = 0; k < 4000 && API("PeekMessageA", msg, 0, 0, 0, 1); k++)                              /* the queue: nothing of ours yet */
-            ;
-        CHECK(navwm_view_card(340, 420) == 1 && navwm_view_card(30, 700) == 0);                         /* a card: the command is posted to its window; no card: nothing */
-        for (k = 0; k < 4000 && API("PeekMessageA", msg, 0, 0, 0, 1); k++)
-            if (RD32(msg + 4) == WM_COMMAND) {
-                got = RD32(msg);
-                wp = RD32(msg + 8);
-            }
-        CHECK(got == mc[0] && (wp & 0xFFFF) == 0x6e);                                                    /* WM_COMMAND, id 0x6e, to the card: what the card's menu item sends */
+        CHECK(navwm_card_at(340, 420) == 0 && navwm_view_card(340, 420) == 0);          /* a build with no such command (an unknown build): nothing to post, LB stays Page Up */
+        for (b = 0; b < 2; b++) {
+            profile = profile_find(builds[b]);
+            CHECK(profile && profile->viewcard.cmd == 0x6e);
+            CHECK(navwm_card_at(340, 420) == mc[0] && navwm_card_at(309 + 133 * 2 + 5, 500) == mc[2]);       /* a permanent in your territory */
+            CHECK(navwm_card_at(892, 506) == hc[0] && navwm_card_at(892, 520) == hc[1] && navwm_card_at(892, 640) == hc[3]);   /* a strip of the hand: the card that shows there */
+            CHECK(navwm_card_at(30, 700) == 0 && navwm_card_at(5, 5) == 0 && navwm_card_at(280, 300) == 0);   /* the life total, nothing, the phase column */
+            CHECK(navwm_card_at(320, 380) == 0);                                                              /* the prompt bar over your territory's top: not a card */
+            CHECK(navwm_card_at(-5, 900) == 0);                                                               /* off the screen */
+            for (k = 0; k < 4000 && API("PeekMessageA", msg, 0, 0, 0, 1); k++)                              /* the queue: nothing of ours yet */
+                ;
+            CHECK(navwm_view_card(340, 420) == 1 && navwm_view_card(30, 700) == 0);                         /* a card: the command is posted to its window; no card: nothing */
+            got = wp = 0;
+            for (k = 0; k < 4000 && API("PeekMessageA", msg, 0, 0, 0, 1); k++)
+                if (RD32(msg + 4) == WM_COMMAND) {
+                    got = RD32(msg);
+                    wp = RD32(msg + 8);
+                }
+            CHECK(got == mc[0] && (wp & 0xFFFF) == 0x6e);                                                    /* WM_COMMAND, id 0x6e, to the card: what the card's menu item sends */
+        }
         profile = saved;
     }
 
@@ -2140,6 +2145,45 @@ static void test_screens(void)
     }
     CHECK(wrong == 0);
 
+
+    /* "Pick a card" (the reward list): the game's test for every pixel, at three sizes. 24 cards in rows of four (x 100, 156, 212, 268; y 16 + 21 * row), each 48 square in a 320 x 240 space, a later
+     * card over an earlier one: the pixel belongs to the last card whose square has it, and the targets' boxes must say the same for every pixel */
+    {
+        static const int sizes2[3][2] = {{640, 480}, {800, 600}, {1024, 768}};
+        int32_t xs[24], ys[24];
+        int k, wrong2 = 0, got;
+        NavTarget big2[NAV_MAXTARGETS];
+
+        for (k = 0; k < 24; k++) {
+            xs[k] = 100 + 56 * (k % 4);
+            ys[k] = 16 + 21 * (k / 4);
+        }
+        for (res = 0; res < 3; res++) {
+            int w = sizes2[res][0], h = sizes2[res][1];
+
+            got = screens_cardlist_targets(xs, ys, 24, w, h, big2, NAV_MAXTARGETS);
+            CHECK(got == 24 && big2[0].kind == NAVK_CARD && !strcmp(big2[0].label, "pick 0"));
+            for (y = 0; y < h; y++)
+                for (x = 0; x < w; x++) {
+                    int mxu = x * 320 / w, myu = y * 240 / h, game = -1, mine = -1;
+
+                    for (k = 0; k < 24; k++)
+                        if (xs[k] <= mxu && mxu < xs[k] + 0x30 && ys[k] <= myu && myu < ys[k] + 0x30)
+                            game = k;
+                    for (i = 0; i < got; i++)
+                        if (x >= big2[i].x0 && x < big2[i].x1 && y >= big2[i].y0 && y < big2[i].y1)
+                            mine = atoi(big2[i].label + 5);
+                    if (game != mine)
+                        wrong2++;
+                }
+        }
+        CHECK(wrong2 == 0);
+        CHECK(screens_cardlist_targets(xs, ys, 0, 1024, 768, big2, NAV_MAXTARGETS) == 0);
+        CHECK(screens_cardlist_targets(xs, ys, 24, 1024, 768, big2, 5) == 5);                 /* the room asked for */
+        xs[3] = 400;                                                                          /* a card that is not inside the space is no target */
+        CHECK(screens_cardlist_targets(xs, ys, 24, 1024, 768, big2, NAV_MAXTARGETS) == 23);
+    }
+
     /* the loops: which screen is on, from the passes */
     screen_w = 1024; screen_h = 768;
     CHECK(screens_kind(0.0) == SCREEN_NONE);
@@ -2199,6 +2243,133 @@ static void test_screens(void)
     screen_w = sw; screen_h = sh;
 }
 
+/* The same readings of the game's own screens under Spells of the Ancients 2.15's profile: its loops (found by their return addresses: the function ranges of tools/research and
+ * `PORT_SCREENS_TRACE=1` on the running game), its button table and text menu globals, the locals of its two loops that keep boxes. The addresses are the ones the running game gave
+ * (docs/notes/sota-comparison.md, "Milestone 4"); the layouts of the records are 1.0's (the same library). */
+static void test_screens_sota(void)
+{
+    NavTarget t[16];
+    const BuildProfile *saved = profile;
+    BuildProfile with_cardlist;
+    int sw = screen_w, sh = screen_h, n, i, rows = 0, cards = 0, buttons = 0;
+    uint32_t rec = 0x5800a0u, ebp = 0x300000u;
+
+    memcpy(&with_cardlist, profile_find("e4e46718c451974756b66e7666ac0bf1cc9ebdbc5897eb04a87b8ea2a02353e7"), sizeof(with_cardlist));
+    with_cardlist.cardlist = (ProfCardList){.loop = {0x4f041d, 0x4f0cdc}, .count_ebp = -0x7d8, .x_ebp = -0xfb0, .y_ebp = -0x1780};   /* the group is in no row (not seen in a game flow): the test gives the row one */
+    with_cardlist.hooks_verified |= HK_CARDLIST;
+    profile = &with_cardlist;
+    screen_w = 1024; screen_h = 768;
+    CHECK(profile->hooks_verified == HK_ALL);
+    /* the (Y/N) questions a click answers: 'Buy for N gold?' and 'Take this card?' (the card list's confirmation); not the sell question's address (a function nothing calls) nor 1.0's sites */
+    CHECK(yesno_site(0x4a3296) && yesno_site(0x4f0b96) && !yesno_site(0x468c0e) && !yesno_site(0x468915) && !yesno_site(0x509e4a) && !yesno_site(0x45119d) && !yesno_site(0x4b84e5));
+
+    /* the loops: which screen is on */
+    screens_note(0x5394d0, 0, SRC_TABLE, 101.0);                                            /* the title menu's pass of the table */
+    CHECK(screens_kind(101.0) == SCREEN_TITLE);
+    screens_note(0x438ff4, 0, SRC_SNAPSHOT, 102.0);                                         /* the overworld: the D-pad stays the arrow keys */
+    CHECK(screens_kind(102.0) == SCREEN_NONE);
+    screens_note(0x43900b, 0, SRC_TABLE, 102.5);
+    CHECK(screens_kind(102.5) == SCREEN_NONE);
+    screens_note(0x4b7248, 0, SRC_SNAPSHOT, 103.0);                                         /* the text menu's snapshot */
+    CHECK(screens_kind(103.0) == SCREEN_TEXTMENU);
+    screens_note(0x4a30ce, ebp, SRC_SNAPSHOT, 104.0);                                       /* Cards for Sale: its snapshot, and its passes of the table */
+    CHECK(screens_kind(104.0) == SCREEN_BUYCARDS);
+    screens_note(0x4a2d5f, ebp, SRC_TABLE, 104.1);
+    CHECK(screens_kind(104.1) == SCREEN_BUYCARDS);
+    screens_note(0x4a3402, ebp, SRC_TABLE, 104.2);
+    CHECK(screens_kind(104.2) == SCREEN_BUYCARDS);
+    screens_note(0x4aa500, ebp, SRC_TABLE, 105.0);                                          /* the clue list */
+    CHECK(screens_kind(105.0) == SCREEN_CLUES);
+    screens_note(0x4a1ccf, 0, SRC_TABLE, 106.0);                                            /* the village's pass: a table with nothing else */
+    CHECK(screens_kind(106.0) == SCREEN_TABLE);
+    screens_note(0x4899a9, 0, SRC_SNAPSHOT, 107.0);                                         /* 1.0's text menu address is not a loop here: a snapshot from it changes nothing */
+    CHECK(screens_kind(107.0) == SCREEN_NONE);
+    screens_note(0x4899a9, 0, SRC_TABLE, 108.0);
+    CHECK(screens_kind(108.0) == SCREEN_TABLE);                                             /* a table pass from anywhere else is a plain screen of buttons */
+
+    /* the button table in the game's memory (context 1: two records, one greyed) */
+    (void)put32(0x577cec, 1);
+    (void)put32(0x7270e0 + 4, 2);
+    (void)put32(0x727130 + 200, rec);
+    (void)put32(0x727130 + 204, rec + 0x54);
+    (void)put32(rec + 0x10, 294); (void)put32(rec + 0x14, 462); (void)put32(rec + 0x18, 443); (void)put32(rec + 0x1c, 64); (void)put32(rec + 0x24, 0x53952f); (void)put32(rec + 0x40, 0);
+    (void)put32(rec + 0x54 + 0x10, 294); (void)put32(rec + 0x54 + 0x14, 528); (void)put32(rec + 0x54 + 0x18, 443); (void)put32(rec + 0x54 + 0x1c, 64); (void)put32(rec + 0x54 + 0x24, 0x53952f); (void)put32(rec + 0x54 + 0x40, 3);
+    screens_note(0x5394d0, 0, SRC_TABLE, 109.0);
+    n = screens_collect(t, 16, 109.0);
+    CHECK(n == 1 && t[0].x0 == 294 && t[0].x1 == 294 + 443 + 1 && t[0].y0 == 462 && t[0].y1 == 462 + 64 + 1 && t[0].zone == 0x53952f && t[0].kind == NAVK_BUTTON);      /* 'Start New Game'; 'Load Saved Game' is greyed */
+    (void)put32(0x577cec, 99);
+    CHECK(screens_collect(t, 16, 109.0) == 0);                                              /* a context that does not exist */
+    (void)put32(0x577cec, 1);
+
+    /* the text menu: the encounter's lines as the running game had them at 1024x768 (left 396, top 409, right 630, line 17 high, 4 lines of text, 2 choices) */
+    (void)put32(0x6a0f54, 396); (void)put32(0x6a0f58, 409); (void)put32(0x728114, 630); (void)put32(0x577c4c, 17); (void)put32(0x728120, 4); (void)put32(0x728110, 2); (void)put32(0x728128, 0);
+    screens_note(0x4b7248, 0, SRC_SNAPSHOT, 110.0);
+    n = screens_collect(t, 16, 110.0);
+    CHECK(n == 2 && t[0].x0 == 396 && t[0].x1 == 631 && t[0].y0 == 409 + 4 + 4 * 17 && t[0].y1 == t[0].y0 + 17 && t[1].y0 == t[0].y1 && t[0].kind == NAVK_MENU);    /* seen: (396,481)-(631,498) and (396,498)-(631,515) */
+    CHECK(t[0].y0 == 481 && t[1].y1 == 515);
+    (void)put32(0x728128, 2);                                                               /* the second line shut */
+    n = screens_collect(t, 16, 110.0);
+    CHECK(n == 1 && t[0].y0 == 481);
+    (void)put32(0x728128, 0);
+
+    /* Cards for Sale: the count at ebp - 0xa8, the boxes at ebp - 0xa0 (16 bytes each), the ids at 0x69eb70 (-1: sold); Done is the table's */
+    (void)put32(ebp - 0xa8, 4);
+    {
+        static const int32_t boxes[16] = {153, 240, 306, 393, 348, 236, 501, 389, 544, 224, 697, 377, 739, 236, 892, 389};
+
+        for (i = 0; i < 16; i++)
+            (void)put32(ebp - 0xa0 + 4 * (uint32_t)i, (uint32_t)boxes[i]);
+    }
+    (void)put32(0x69eb70, 5); (void)put32(0x69eb70 + 4, 0xffffffffu); (void)put32(0x69eb70 + 8, 7); (void)put32(0x69eb70 + 12, 9);
+    screens_note(0x4a30ce, ebp, SRC_SNAPSHOT, 111.0);
+    n = screens_collect(t, 16, 111.0);
+    for (i = 0; i < n; i++) {
+        cards += t[i].kind == NAVK_CARD;
+        buttons += t[i].kind == NAVK_BUTTON;
+    }
+    CHECK(n == 4 && cards == 3 && buttons == 1);                                           /* the table's Done and the three cards that are not sold */
+    for (i = 0; i < n; i++)
+        if (t[i].kind == NAVK_CARD && !strcmp(t[i].label, "card 0"))
+            CHECK(t[i].x0 == 153 && t[i].x1 == 307 && t[i].y0 == 240 && t[i].y1 == 394);
+    (void)put32(ebp - 0xa8, 0);
+    CHECK(screens_collect(t, 16, 111.0) == 1);                                              /* none for sale: the table only */
+
+    /* the clue list: the count of rows with a dungeon at ebp - 0x12d4; the rows are the game's own constants (the same as 1.0's: tested above against the game's test) */
+    (void)put32(ebp - 0x12d4, 5);
+    screens_note(0x4aa500, ebp, SRC_TABLE, 112.0);
+    n = screens_collect(t, 16, 112.0);
+    rows = 0;
+    for (i = 0; i < n; i++)
+        rows += t[i].kind == NAVK_ROW;
+    CHECK(rows == 5);
+    for (i = 0; i < n; i++)
+        if (t[i].kind == NAVK_ROW && !strcmp(t[i].label, "clue 0"))
+            CHECK(t[i].x0 == 136 && t[i].y0 == 119 && t[i].x1 == 536 && t[i].y1 == 216);      /* seen at 1024x768, the first row of the left column: (136,119)-(536,216) */
+    (void)put32(ebp - 0x12d4, 13);
+    screens_note(0x4aa500, ebp, SRC_TABLE, 113.0);
+    CHECK(screens_collect(t, 16, 113.0) == 1);                                              /* a count that is no count: the table only */
+
+    /* "Pick a card": count at ebp - 0x7d8, x's at ebp - 0xfb0, y's at ebp - 0x1780 (one dword a card); the loop is the function 0x4f041d..0x4f0cdc (its snapshot at 0x4f088e) */
+    (void)put32(ebp - 0x7d8, 6);
+    for (i = 0; i < 6; i++) {
+        (void)put32(ebp - 0xfb0 + 4 * (uint32_t)i, (uint32_t)(100 + 56 * (i % 4)));
+        (void)put32(ebp - 0x1780 + 4 * (uint32_t)i, (uint32_t)(16 + 21 * (i / 4)));
+    }
+    screens_note(0x4f088e, ebp, SRC_SNAPSHOT, 114.0);
+    CHECK(screens_kind(114.0) == SCREEN_CARDLIST);
+    n = screens_collect(t, 16, 114.0);
+    CHECK(n == 6 && t[0].kind == NAVK_CARD && !strcmp(t[0].label, "pick 0") && t[0].x0 == 320 && t[0].y0 == 52 && t[0].x1 == 474 && t[0].y1 == 119);   /* seen at 1024x768: the first card (320,52): 48 * 3.2 = 154 wide, its strip down to the card of the row below */
+    CHECK(t[4].y0 == 119 && t[4].y1 == 272);                                                /* the last row's cards are whole: (320,119)-(474,272) */
+    (void)put32(ebp - 0x7d8, 0);
+    CHECK(screens_collect(t, 16, 114.0) == 0);                                              /* no cards: nothing */
+    (void)put32(ebp - 0x7d8, 100);
+    CHECK(screens_collect(t, 16, 114.0) == 0);                                              /* no count at all: nothing, not a crash */
+
+    screen_w = sw; screen_h = sh;
+    profile = saved;
+}
+
+
 int main(void)
 {
     profile = profile_find("4dc592695b6ee390485f283feb2a248cd3f3f739749c2800ab3b1100ea03845c");       /* MAGIC.EXE 1.0: the screens and the (Y/N) sites below are its addresses */
@@ -2241,6 +2412,7 @@ int main(void)
     test_navwm_duel();
     test_navwm_deck();
     test_screens();
+    test_screens_sota();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

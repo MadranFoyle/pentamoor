@@ -113,12 +113,12 @@ static Override overrides[24];
 static int noverrides;
 
 /* A hook that runs before a lifted function (which then runs as usual): the host's place to wait or to look, without taking the function over. */
-static struct { uint32_t addr; HostGuestFn fn; } prehooks[8];
+static struct { uint32_t addr; HostGuestFn fn; } prehooks[16];
 static int nprehooks;
 
 void port_prehook(uint32_t addr, HostGuestFn fn)
 {
-    if (nprehooks == 8)
+    if (nprehooks == 16)
         port_fatal("too many pre-call hooks");
     prehooks[nprehooks].addr = addr;
     prehooks[nprehooks++].fn = fn;

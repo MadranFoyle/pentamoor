@@ -2,6 +2,7 @@
  * would hit is read from where the game keeps it, in guest memory, at the addresses of the build's profile (profile.c; as pace.c and textfocus.c do for theirs). The numbers in the comments
  * are those of MAGIC.EXE 1.0. docs/notes/controller-screens.md. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "navwm.h"
@@ -34,7 +35,7 @@ typedef struct { ProfRange range; int kind; } Loop;
 /* the loops, in the profile's ranges: pace.map_loop (the overworld: walking is the arrow keys (the D-pad stays that), its buttons are for the stick), textmenu.loop (the text menu), buycards.loop
  * ("Cards for Sale": the Done button is in the table, the cards are boxes in the function's locals), clues.loop (Dungeon & Castle Clues: the arrows and Done are in the table, the twelve rows are
  * tested by the loop itself), title.loop (the title menu: a table screen, told apart because Escape leaves the game there: pad.c's Back button) */
-#define NLOOPS 5
+#define NLOOPS 6
 static void loops_of(const BuildProfile *p, Loop out[NLOOPS])
 {
     out[0] = (Loop){p->pace.map_loop, SCREEN_NONE};
@@ -42,6 +43,7 @@ static void loops_of(const BuildProfile *p, Loop out[NLOOPS])
     out[2] = (Loop){p->buycards.loop, SCREEN_BUYCARDS};
     out[3] = (Loop){p->clues.loop, SCREEN_CLUES};
     out[4] = (Loop){p->title.loop, SCREEN_TITLE};
+    out[5] = (Loop){p->cardlist.loop, SCREEN_CARDLIST};
 }
 
 /* The locals of the "Cards for Sale" loop (0x509517; the frame is the one lift_out.ebp holds when the loop calls out): the number of cards (buycards.count_ebp, ebp - 0xa8), and for each a box at
@@ -56,6 +58,11 @@ static uint32_t cur_ebp;
 #define LIVE_S 0.4                      /* a loop that has not passed for this long is not the screen that is on */
 
 /* ---- the pieces ---------------------------------------------------------------------------------------------------------------------------------------- */
+#define PICK_MAX 64                     /* cards of a "Pick a card" list that are read */
+#define PICK_W 320                      /* its space: 320 x 240 units, a card 0x30 square */
+#define PICK_H 240
+#define PICK_CARD 0x30
+
 static int clamp_box(NavTarget *t, int x0, int y0, int x1, int y1, int sw, int sh)
 {
     if (x0 < 0) x0 = 0;
@@ -115,6 +122,31 @@ int screens_card_targets(const int32_t *boxes, const int32_t *ids, int n, int sw
     return k;
 }
 
+/* A "Pick a card" list: the game turns the mouse into 320 x 240 units (x * 320 / width, y * 240 / height, truncated) and a card is hit by x <= mx < x + 0x30 and y <= my < y + 0x30; a later card in the list
+ * is drawn over (and wins over) an earlier one. So the part of a card a click reaches is its square less the squares of later cards: the columns are 0x38 apart (the squares do not meet sideways) and
+ * a column's cards overlap down, so a card's visible part ends where the next card of its column begins. The smallest screen coordinate whose unit is at least u is ceil(u * size / range). */
+int screens_cardlist_targets(const int32_t *xs, const int32_t *ys, int n, int sw, int sh, NavTarget *t, int max)
+{
+    int i, j, k = 0;
+
+    for (i = 0; i < n && i < PICK_MAX && k < max; i++) {
+        int y1 = ys[i] + PICK_CARD;
+
+        if (xs[i] < 0 || ys[i] < 0 || xs[i] + PICK_CARD > PICK_W || ys[i] + PICK_CARD > PICK_H)
+            continue;
+        for (j = i + 1; j < n && j < PICK_MAX; j++)             /* a later card whose square meets this one's */
+            if (xs[j] < xs[i] + PICK_CARD && xs[j] + PICK_CARD > xs[i] && ys[j] < y1 && ys[j] + PICK_CARD > ys[i] && ys[j] > ys[i])
+                y1 = ys[j];
+        if (!clamp_box(&t[k], (xs[i] * sw + PICK_W - 1) / PICK_W, (ys[i] * sh + PICK_H - 1) / PICK_H, ((xs[i] + PICK_CARD) * sw + PICK_W - 1) / PICK_W, (y1 * sh + PICK_H - 1) / PICK_H, sw, sh))
+            continue;
+        t[k].kind = NAVK_CARD;
+        t[k].zone = 4;
+        snprintf(t[k].label, sizeof(t[k].label), "pick %d", i);
+        k++;
+    }
+    return k;
+}
+
 /* x, y in the game's 640x480 units are floor(mx * 640 / sw): the smallest screen coordinate whose unit is at least u */
 static int unit_to_screen(int u, int range, int screen) { return (u * screen + range - 1) / range; }
 
@@ -154,12 +186,34 @@ static const Loop *loop_of(uint32_t ret, Loop loops[NLOOPS])
     return NULL;
 }
 
+/* PORT_SCREENS_TRACE=1: each place a loop passes the button table or takes the mouse snapshot from, once (the return address, the frame, and the kind of screen the profile calls it, -1 for none):
+ * how the loops of a new build are found (CONTRIBUTING.md, "Adding a build": put a screen on, read the address, look it up in the function list). */
+static void trace_loop(uint32_t ret, uint32_t ebp, int src, int kind)
+{
+    static uint32_t seen[64];
+    static int n, on = -1;
+    int i;
+    uint32_t key = ret ^ (src == SRC_SNAPSHOT ? 0x80000000u : 0);
+
+    if (on < 0)
+        on = getenv("PORT_SCREENS_TRACE") != NULL;
+    if (!on)
+        return;
+    for (i = 0; i < n; i++)
+        if (seen[i] == key)
+            return;
+    if (n < 64)
+        seen[n++] = key;
+    fprintf(stderr, "screens: %s from 0x%x ebp 0x%x kind %d\n", src == SRC_TABLE ? "table" : "snapshot", ret, ebp, kind);
+}
+
 void screens_note(uint32_t ret, uint32_t ebp, int src, double now)
 {
     Loop loops[NLOOPS];
     const Loop *l = loop_of(ret, loops);
     int kind;
 
+    trace_loop(ret, ebp, src, l ? l->kind : -1);
     if (l)
         kind = l->kind;
     else if (src == SRC_TABLE)
@@ -245,6 +299,24 @@ static int collect_buycards(NavTarget *out, int max)
     return k + screens_card_targets(boxes, ids, n, screen_w, screen_h, out + k, max - k);
 }
 
+static int collect_cardlist(NavTarget *out, int max)
+{
+    const ProfCardList *c = &profile->cardlist;
+    int32_t xs[PICK_MAX], ys[PICK_MAX];
+    int n, i;
+
+    if (!frame_ok(cur_ebp) || !c->x_ebp)
+        return 0;
+    n = rds32(cur_ebp + (uint32_t)c->count_ebp);
+    if (n < 1 || n > PICK_MAX)
+        return 0;
+    for (i = 0; i < n; i++) {
+        xs[i] = rds32(cur_ebp + (uint32_t)c->x_ebp + 4 * (uint32_t)i);
+        ys[i] = rds32(cur_ebp + (uint32_t)c->y_ebp + 4 * (uint32_t)i);
+    }
+    return screens_cardlist_targets(xs, ys, n, screen_w, screen_h, out, max);
+}
+
 static int collect_clues(NavTarget *out, int max)
 {
     int n, k = collect_table(out, max);
@@ -265,6 +337,7 @@ int screens_collect(NavTarget *out, int max, double now)
     case SCREEN_TEXTMENU: return collect_textmenu(out, max);
     case SCREEN_BUYCARDS: return collect_buycards(out, max);
     case SCREEN_CLUES: return collect_clues(out, max);
+    case SCREEN_CARDLIST: return collect_cardlist(out, max);
     default: return 0;
     }
 }

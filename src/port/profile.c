@@ -24,8 +24,10 @@
 #define ID_V10_STATWIN "95bd14de41e8fff84217cdf627a48392da5e7be9c3d064a68e04ed1455334bd7"
 
 /* Spells of the Ancients 2.15 (the expansion's 2.0 install with the six files of the 2.15 patch over it; docs/notes/sota-comparison.md). Every address of 1.0 is different here, and
- * none of the port's hooks (frame pacing, the controller's reading of the screens, the (Y/N) questions, the name box) has been ported to it: the rows hold their picture decompressor
- * (`lzw`: the game cannot show a picture without it) and, for the game itself, the programs it starts, and nothing else. `.hooks_verified = 0` says so. The `lzw` values are the
+ * the port's hooks were found again for it by running it, and only what was run and seen is in the row: Milestone 2 the frame pacing, the key wait with the "Buy" question, the name box and
+ * the screen size; Milestone 4 the controller's reading of the screens (the button table, the text menu, Cards for Sale, the clue list, the title menu), the "Take this card?" question and the card
+ * window's view command. `.hooks_verified` says which groups; the card picker's list (`.cardlist`, `HK_CARDLIST`) was found and not seen working in a game flow, so no row holds it, and the sell
+ * question has no site (its function is never called). The other files hold their picture decompressor (`lzw`: the game cannot show a picture without it) and nothing else. The `lzw` values are the
  * decompressor's state in each copy of its code (tools/research/sotalzw.py reads them from the files: `block` is 1.0's dictionary block 0x532860 plus the delta it prints). The
  * libraries are lifted at the bases of tools/lift/builds.py (LIBRARY_BASES).
  *   shandalar.exe    the game: overworld, towns, duels, and the deck builder (deckdll.dll) in the same process
@@ -47,7 +49,7 @@
 
 static const BuildProfile PROFILES[] = {
     {
-        .id = ID_V10_MAGIC, .build = "v1.0", .file = "MAGIC.EXE", .program = "MAGIC", .hooks_verified = HK_ALL,
+        .id = ID_V10_MAGIC, .build = "v1.0", .file = "MAGIC.EXE", .program = "MAGIC", .hooks_verified = HK_ALL & ~HK_CARDLIST,       /* every group but the card list, which only 2.15 has (and which 2.15's row does not hold yet: Milestone 4) */
         .lzw = {.header = 0x70d000, .read = 0x70d484, .read2 = 0x70d1fc, .block = 0x532860,
                 .in_ptr = 0x706500, .in_end = 0x5327b0, .refill = 0x67f43c, .callback = 0x50e8b0},
         .pace = {.tick_fn = 0x5016f9, .ticks = 0x530da0, .frame_ret = 0x4e7873, .map_loop = {0x4e73a0, 0x4e7936}},
@@ -82,11 +84,18 @@ static const BuildProfile PROFILES[] = {
         .id = ID_V10_STATWIN, .build = "v1.0", .file = "STATWIN.DLL", .program = "", .base = 0x30000000,
     },
     {
-        .id = ID_V215_SHANDALAR, .build = "v2.15", .file = "shandalar.exe", .program = "SHANDALAR", .hooks_verified = HK_DISPLAY | HK_PACE | HK_KEYS,
+        .id = ID_V215_SHANDALAR, .build = "v2.15", .file = "shandalar.exe", .program = "SHANDALAR", .hooks_verified = HK_DISPLAY | HK_PACE | HK_KEYS | HK_BUTTONS | HK_TEXTMENU | HK_BUYCARDS | HK_CLUES | HK_TITLE | HK_VIEWCARD,
         .pace = {.tick_fn = 0x48a3a5, .ticks = 0x566f3c, .frame_ret = 0x438f85, .map_loop = {0x438a70, 0x439059}, .idle_fn = 0x4eab14, .idle_ms = 16},
-        .buttons = {.pass = 0x4ba087, .mouse_var = 0x9199b0},
-        .keys = {.wait = 0x4b84d7, .pop = 0x4a8ea2, .wait_loop_ret = 0x4b84e5, .sites = {0x4a3296}, .nsites = 1, .name_loop = {0x53aecd, 0x53b129}},
+        .buttons = {.pass = 0x4ba087, .mouse_var = 0x9199b0, .snapshot = 0x4eab14,
+                    .ctx_cur = 0x577cec, .ctx_count = 0x7270e0, .ctx_ptrs = 0x727130,
+                    .rec_x = 0x10, .rec_y = 0x14, .rec_w = 0x18, .rec_h = 0x1c, .rec_handler = 0x24, .rec_type = 0x40},
+        .textmenu = {.loop = {0x4b6fe7, 0x4b753c}, .left = 0x6a0f54, .top = 0x6a0f58, .right = 0x728114, .line_h = 0x577c4c, .first = 0x728120, .count = 0x728110, .mask = 0x728128},
+        .buycards = {.loop = {0x4a28c7, 0x4a347c}, .ids = 0x69eb70, .count_ebp = -0xa8, .boxes_ebp = -0xa0},
+        .clues = {.loop = {0x4aa415, 0x4ab73e}, .count_ebp = -0x12d4},
+        .title = {.loop = {0x538e74, 0x53952f}},
+        .keys = {.wait = 0x4b84d7, .pop = 0x4a8ea2, .wait_loop_ret = 0x4b84e5, .sites = {0x4a3296, 0x4f0b96}, .nsites = 2, .name_loop = {0x53aecd, 0x53b129}},
         .display = {.width = 0x57a7d0, .height = 0x57a7d4},
+        .viewcard = {.cmd = 0x6e},
         .programs = {{"facemaker.exe", "game_facemaker"}, {"deck.exe", "game_sotadeck"}, {"shandalar.exe", "game_shandalar"}},
         .lzw = {.header = 0x91e000, .read = 0x91e484, .read2 = 0x91e1fc, .block = 0x582070,
                 .in_ptr = 0x915cd0, .in_end = 0x581fc0, .refill = 0x726b1c, .callback = 0x55d9e0},

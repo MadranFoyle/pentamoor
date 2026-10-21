@@ -48,9 +48,12 @@ On the Full-size card window itself (tried at 1024x768 with the real game): a le
 box grows over the picture, for a long text: a game option, the first line is checked while it is on), "Help for this card..." and "Help...". A, Y (double click) and B on a card in the duel are what they always were:
 play or tap it, pay its mana, open its menu. So there is no bigger view in the game than this window (and its expanded text box).
 
-**What the port does.** The view button posts that same command, `WM_COMMAND` 0x6e, to the card window under the pointer (`navwm_view_card`; `profile->viewcard.cmd`, a per-build number: 1.0's `MAGIC.EXE` and `DUEL.EXE` have it,
-Spells of the Ancients 2.15 draws its card menu from a resource and has no such command, so LB stays Page Up there). The game then does what it does for its own menu: the card is in the Full-size card window within a
-frame, and stays there until the pointer has rested on another card for three seconds. Nothing is written to the game's memory and no key or mouse message is invented. Three ways to ask:
+**What the port does.** The view button posts that same command, `WM_COMMAND` 0x6e, to the card window under the pointer (`navwm_view_card`; `profile->viewcard.cmd`, a per-build number: 1.0's `MAGIC.EXE` and `DUEL.EXE` and Spells of the Ancients 2.15's
+`shandalar.exe` have it, 0x6e in all three, an unknown build none and its LB stays Page Up). The game then does what it does for its own menu: the card is in the Full-size card window within a
+frame, and stays there until the pointer has rested on another card for three seconds. **In Spells of the Ancients 2.15** the same: its `MAGICGAME_CardClass` window procedure (`0x5102bc`, registered by `0x50fc30`) answers `WM_COMMAND` with the
+menu's command 0x6e (`0x511132`) by sending the Full-size card window (`MAGICGAME_FullCardClass`, created at `0x448cb2`, handle in `0x83ba94`) message `WM_USER + 1` with the card's two numbers, as 1.0's does. (The earlier note's "2.15 draws its card menu from a resource, so
+there is no such command" was a guess from `MENUS.TXT` and the lack of a resource menu in the executable: the menu text is data, the command is in the procedure. Found by reading the procedure's jump table, then run: the pointer put on a card of the hand and of both
+territories, LB, and the big card was another picture 0.6 s later, where the game's own hover takes three seconds; V and the middle button the same; the picture LB gave was the one the hover gave after its wait; `tools/soak/sota_pad_play.py` runs `card_view.py`'s checks on a 2.15 duel.) Nothing is written to the game's memory and no key or mouse message is invented. Three ways to ask:
 
 | | |
 |---|---|
@@ -79,7 +82,21 @@ the command posted to the card's window, none in a build without it or with a di
 sizes), `test_profile`, and `python3 tools/soak/card_view.py [--res 640x480|800x600|1024x768] [--deck] [--game duel]`: a duel at the pad's pace, LB, V and the middle button on a card of the hand and permanents of both
 sides (the big card changes within 0.6 s, as the game's own hover does only after its wait, to the same picture), LB with no card is Page Up, the second press (the window dimmed, the card centred), and every kind of
 press ending it with the input log showing the game was sent nothing, the window then identical to before, A on Done passing the phase; `--deck` checks the deck builder (its card follows at once, LB and RB are as they were).
-Not verified: with a real controller, in Spells of the Ancients, at the small size where the game pops the card window up (`0x6fe444` is 2 there: read in the code, not seen), and on a real display.
+Not verified: with a real controller, at the small size where the game pops the card window up (`0x6fe444` is 2 there: read in the code, not seen), and on a real display.
+
+## Spells of the Ancients 2.15
+
+The pad, the cursor, walking, text entry and the view button are the same code for `shandalar.exe` 2.15; what differs is only which addresses of the game the screens' reading uses (the build's profile, `src/port/profile.c`: every group is marked verified) and the screens 2.15 has that 1.0 does not. The table of what was played with controller steps only, screen by screen, and what was not, is in [sota-comparison.md](sota-comparison.md), "Milestone 4"; the way the D-pad reads 2.15's screens in [controller-screens.md](controller-screens.md), "Spells of the Ancients 2.15". In short:
+
+| Control | In 2.15 |
+|---|---|
+| D-pad | the title, difficulty and colour screens, the encounter's and the castle's text menus, the map's right-click menu (nine lines), the save and load screens (ten slots), a village's nine buttons, Cards for Sale, the deck editor's cards and buttons and its dialogs, Wiz Stats, the clue list, the world map, a duel's windows and dialogs and menus (43 targets on a board); on the map and in castles the arrow keys |
+| A, B | a left and a right click as in 1.0; the game's questions with a Y/N (buying a card, a duel card picker's "Take this card?") are answered by A (yes) and B (no) while the hint line is up |
+| Stick | FaceMaker's portrait screen (no D-pad targets there), the map, free pointing; the card list a spell puts up is the stick's too (below) |
+| LB | the view-card button, as in 1.0 (above) |
+| Back | the map's "Ready to Quit?"; at the title menu held for half a second |
+
+Things the D-pad does not do in 2.15: the card pickers' lists (`0x4f041d`) are found but their group is not in the build's row (not seen working in a game flow; the stick and A work there), FaceMaker, and the castle, tower and dungeon mazes (arrow keys, as in 1.0).
 
 ## The cursor
 

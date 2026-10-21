@@ -22,7 +22,7 @@ typedef struct {
     int kind, x, y;
     uint32_t vk, sc;
     int down, ch, repeat;
-    uint32_t call[5];            /* type 3: a guest function to start on a thread of its own: address, then up to four arguments */
+    uint32_t call[6];            /* type 3: a guest function to start on a thread of its own: address, then up to five arguments */
     int ncall;
 } Ev;
 
@@ -80,7 +80,7 @@ void front_push_call(uint32_t addr, const uint32_t *args, int n)
     Ev e = {0};
     int i;
 
-    e.type = 3; e.call[0] = addr; e.ncall = n > 4 ? 4 : n;
+    e.type = 3; e.call[0] = addr; e.ncall = n > 5 ? 5 : n;
     for (i = 0; i < e.ncall; i++)
         e.call[1 + i] = args[i];
     push(&e);
@@ -377,7 +377,7 @@ static void deliver(const Ev *e)
     } else if (e->type == 4) {
         wm_inject_char(e->ch);
     } else if (e->type == 3) {
-        uint32_t args[4];
+        uint32_t args[5];
         int i;
 
         for (i = 0; i < e->ncall; i++)

@@ -96,6 +96,15 @@ typedef struct ProfClues {
     int32_t count_ebp;      /* how many rows have a dungeon: the local at ebp + count_ebp */
 } ProfClues;
 
+/* "Pick a card" (screens.c): the card list of the game's reward screen, the card trade and the like (one function in 2.15, 0x4f041d). It lays its cards out in a 320 x 240 space (each 0x30 square, in
+ * columns that start at x 0x64 and step 0x38; a card is drawn over the one above it) and keeps their places in locals of its frame (offsets from ebp): how many, and an x and a y for each. The
+ * mouse is turned into the same space (x * 320 / width, y * 240 / height) and tested against those squares, the last card that fits winning. Only 2.15 has the group. */
+typedef struct ProfCardList {
+    ProfRange loop;
+    int32_t count_ebp;      /* how many cards are drawn: the local at ebp + count_ebp */
+    int32_t x_ebp, y_ebp;   /* their x and y: arrays of dwords at ebp + x_ebp and ebp + y_ebp */
+} ProfCardList;
+
 /* The title menu (screens.c, main.c): its loop, the one screen where Escape leaves the game with no question */
 typedef struct ProfTitle {
     ProfRange loop;
@@ -116,7 +125,7 @@ typedef struct ProfDisplay { uint32_t width, height; } ProfDisplay;
 
 /* The duel's card windows (navwm.c, front.c): the command the game's own right-click menu of a card sends for its "View in full card" item (the line "Show full card" at the small screen size, the same
  * command). The card's window procedure answers it by sending the Full-size card window the card, which is what the game does itself after the pointer has rested on a card for three seconds;
- * the controller's view button posts it, so that the big card is shown at once. 0: this build has no such item (Spells of the Ancients draws its card menu from a resource), the button stays Page Up. */
+ * the controller's view button posts it, so that the big card is shown at once. 0: this build has no such item, the button stays Page Up (1.0's MAGIC.EXE and DUEL.EXE and Spells of the Ancients 2.15's shandalar.exe have it, 0x6e). */
 typedef struct ProfViewCard { uint32_t cmd; } ProfViewCard;
 
 /* The programs a program of the build may start (spawn.c: _spawnl, WinExec, CreateProcessA): the file name it asks for (lower case, no folder) and the game module (file name
@@ -136,7 +145,8 @@ enum {
     HK_KEYS = 64,           /* .keys (wait for a key, the yes/no sites, the name box loop) */
     HK_DISPLAY = 128,       /* .display */
     HK_VIEWCARD = 256,      /* .viewcard */
-    HK_ALL = 511
+    HK_CARDLIST = 512,      /* .cardlist */
+    HK_ALL = 1023
 };
 
 /* One file of one build. */
@@ -146,7 +156,7 @@ typedef struct BuildProfile {
     const char *file;       /* "MAGIC.EXE" */
     const char *program;    /* the program this file is: "MAGIC", "DUEL", "DECK" (LIFT_PROGRAM); "" for a library */
     uint32_t base;          /* a library: the address it is lifted for and mapped at; 0 for a program */
-    int hooks_verified;     /* a mask of HK_*: the groups of hook addresses below (pace, buttons, textmenu, buycards, clues, title, keys, display, viewcard) that were checked against the running game
+    int hooks_verified;     /* a mask of HK_*: the groups of hook addresses below (pace, buttons, textmenu, buycards, clues, cardlist, title, keys, display, viewcard) that were checked against the running game
                              * (HK_ALL for 1.0). A group that is not in the mask is not ported: the row holds none of its addresses and its hook stays off (a test keeps the two together).
                              * `lzw` is not a hook: the game cannot show a picture without it. */
     ProfProgram programs[PROFILE_MAX_PROGRAMS];     /* what this program may start; {NULL, NULL} ends the list */
@@ -156,6 +166,7 @@ typedef struct BuildProfile {
     ProfTextMenu textmenu;
     ProfBuyCards buycards;
     ProfClues clues;
+    ProfCardList cardlist;
     ProfTitle title;
     ProfKeys keys;
     ProfDisplay display;
