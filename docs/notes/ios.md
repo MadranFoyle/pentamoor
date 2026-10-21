@@ -191,6 +191,8 @@ SDL turns a finger into the left button at once, which has no right button and c
 The map is told from the rest by the overworld loop's own frame pacing (`pace_map_active`: it has made a frame in the last 0.35 s; it idles between inputs and a finger down wakes it, which the log shows). The time-out values are at the top of `touch.h`. Hover previews,
 a trackpad mode, an on-screen help are not here: a proper touch design comes later. With `PORT_PAD_LOG=stderr` (`SIMCTL_CHILD_PORT_PAD_LOG=stderr`) each finger and each button it makes is logged.
 
+**Spells of the Ancients 2.15** (the same app with the 2.15 module; the iOS build scripts and the app's launcher are still the first game's): touch was exercised only through the control pipe's finger steps (`tools/soak/sota_touch.py`: `tdown`, `tmove`, `tup` with `PORT_TOUCH=1`, so touch.c and front.c are the real code from the finger on and the game is the real 2.15; the iPad, its screen and a real finger were not): a tap on "Buy Cards" and on a card, then the game's "Buy for N gold? (Y/N)": **a long press (a right click) answers no, a tap (a left click) answers yes**, and the hint line says so; in the deck editor a long press on a card opens its menu ("Sell Card for N") and a tap on the row sells; in a duel a long press on a card of the hand opens its menu. The 2.15 card pickers' "Take this card? (Y/N)" is the same kind of question (the same code). Not tested on a device or in the Simulator.
+
 ### The scene life cycle (the one real problem found)
 
 Xcode 27's SDK makes iOS 27 refuse an app linked against it that does not use UIKit's scene life cycle: "Application failed to launch: UIScene life cycle is required for apps built with this SDK" (seen in the Simulator's log; the app is gone after

@@ -15,7 +15,7 @@ reimplementation of the Windows calls it makes, over SDL2. How that works is in
 You supply the game: a disc image of the retail *Magic: The Gathering* CD (version 1.0), as an `.iso`
 (a raw `.mdf/.mds` pair needs `mdf2iso "MTG v1.0.mdf" "MTG v1.0.iso"` first). The main game is version 1.0: a program of another build (a patched one, the *Spells of the Ancients* expansion) is recognised
 by its checksum and refused at start with a message (exit status 3), because the port's hooks are made for 1.0's addresses. *Spells of the Ancients* 2.15 is a separate, experimental build with its own
-checksums, installed beside the first game from three more files you own (see [Spells of the Ancients 2.15](#spells-of-the-ancients-215-experimental)): it plays from the title screen through a new game and duels with the mouse;
+checksums, installed beside the first game from three more files you own (see [Spells of the Ancients 2.15](#spells-of-the-ancients-215-experimental)): it plays from the title screen through a new game, the map, the villages and duels with the mouse, with a controller (the D-pad, A and B, the stick, the same view button) and with touch;
 [docs/notes/sota-comparison.md](docs/notes/sota-comparison.md) says what was run and what was not.
 
 ### From a release
@@ -56,7 +56,7 @@ It installs the first game as above, unpacks the expansion's own installer cabin
 known 2.15 files (size and SHA-256), and lifts and builds its modules with the first game's: one run, a few minutes more. Everything is checked before anything is written, and the installer says what is wrong
 and what is needed if a source is missing (the patch needs the disc, the disc needs the patch), is in the wrong place (the expansion's disc as the first one), is the wrong one or a cut-short download.
 The 2.15 game is a separate folder, `sources/installed_sota/Magic/Program` (`--sota-dest` or `PENTAMOOR_SOTA` name another), with its saves in `port_overlay_sota/`: the first game's saves are never touched, and both can be installed and played side by side.
-The installer writes nothing outside those two folders and `port_overlay_sota/`, and nothing to Windows' registry (there is none). It needs the first game's pictures, which is why that disc comes first. The expansion's own shell (`magic.exe`), ManaLink and controller navigation are not part of it.
+The installer writes nothing outside those two folders and `port_overlay_sota/`, and nothing to Windows' registry (there is none). It needs the first game's pictures, which is why that disc comes first. The expansion's own shell (`magic.exe`) and ManaLink are not part of it. The controller works as in the first game (below) on the screens `docs/notes/controller-screens.md` lists for 2.15; the two things it cannot do there are the card lists some duel spells put up and FaceMaker's portrait screen (stick and A).
 
 **The licence value.** The original Spells of the Ancients installer, after it had checked both discs and copied the files, ran a small library from its own cabinet (installed as `DuelSounds/Manaball.wav`) to write a machine-bound value into the registry of the computer; the game reads it to decide which cards it offers and whether it asks for a disc. Pentamoor's installer does the same, once, at the end, only for the install it has just made from your verified discs, and says so when it does ("writing the licence value the original Spells of the Ancients installer writes for an owner of the discs"): it lifts that library from your own copy (checked by its SHA-256 first), runs its writer with the same flag word the original used, and the value goes into `port_overlay_sota/registry.dat`, bound to a random machine id made for that install only. The scheme, the value and the library are not in this repository or in the downloads, and nothing writes the value at any other time: not the game, not the launcher. Without it (`--no-licence-value`, or deleting `registry.dat`) the game plays with its base pool of 409 cards; with it the card pickers also offer the 145 cards of the game's "set 1". How it works, what was measured and what was not: [docs/notes/sota-licence.md](docs/notes/sota-licence.md).
 
@@ -126,7 +126,7 @@ or Switch pad: anything SDL knows as a game controller, plugged in before or whi
 | Right trigger + left stick | walk on the map in the direction you push |
 | Right stick | arrow keys (castles, dungeons) |
 
-The game's own "(Y/N)" questions (buying a card in a village, for one) are answered with a key; with a mouse or a controller the left button (A) is yes and the right one (B) is no, and the screen says so.
+The game's own "(Y/N)" questions (buying a card in a village, and in Spells of the Ancients 2.15 "Take this card?" in a duel's card lists) are answered with a key; with a mouse, a finger or a controller the left button (A, a tap) is yes and the right one (B, a long press) is no, and the screen says so.
 On a keyboard and mouse the same view is **V** or the **middle mouse button** with the pointer on a card; a second press shows the card enlarged. Typing a name needs a keyboard (on a Steam Deck, Steam's keyboard: Steam + X). `PORT_NOPAD=1` turns the controller off. Details and what is not tested: [docs/notes/controller.md](docs/notes/controller.md).
 
 ### Display

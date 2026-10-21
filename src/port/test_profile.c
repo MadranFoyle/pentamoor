@@ -202,6 +202,8 @@ static int hook_groups(const BuildProfile *p)
         g |= HK_BUYCARDS;
     if (p->clues.loop.hi || p->clues.count_ebp)
         g |= HK_CLUES;
+    if (p->cardlist.loop.hi || p->cardlist.count_ebp || p->cardlist.x_ebp || p->cardlist.y_ebp)
+        g |= HK_CARDLIST;
     if (p->title.loop.hi)
         g |= HK_TITLE;
     if (p->keys.wait || p->keys.pop || p->keys.wait_loop_ret || p->keys.nsites || p->keys.name_loop.hi)
@@ -245,13 +247,23 @@ static void test_v215_values(void)
         if (hook_groups(p))
             n++;
     }
-    CHECK(profile_find(ID_MAGIC)->hooks_verified == HK_ALL && hook_groups(profile_find(ID_MAGIC)) == HK_ALL);     /* MAGIC.EXE 1.0: every group verified */
+    CHECK(profile_find(ID_MAGIC)->hooks_verified == (HK_ALL & ~HK_CARDLIST) && hook_groups(profile_find(ID_MAGIC)) == (HK_ALL & ~HK_CARDLIST));     /* MAGIC.EXE 1.0: every group verified but the card list, which only 2.15 has */
     CHECK(n == 3);                                          /* MAGIC.EXE 1.0, DUEL.EXE 1.0 (the view-card command only) and shandalar.exe 2.15 hold hook addresses */
-    CHECK(profile_find(ID_MAGIC)->viewcard.cmd == 0x6e && profile_find(ID_DUEL)->viewcard.cmd == 0x6e && !sh->viewcard.cmd);   /* the game's own menu item "View in full card"; 2.15 has none to post */
-    CHECK(sh && sh->display.width == 0x57a7d0u && sh->display.height == 0x57a7d4u && hook_groups(sh) == (HK_DISPLAY | HK_PACE | HK_KEYS) && sh->hooks_verified == (HK_DISPLAY | HK_PACE | HK_KEYS));
+    CHECK(profile_find(ID_MAGIC)->viewcard.cmd == 0x6e && profile_find(ID_DUEL)->viewcard.cmd == 0x6e && sh->viewcard.cmd == 0x6e);   /* the game's own menu item "View in full card": the card window's procedure answers it the same way in 2.15 */
+    CHECK(sh && sh->display.width == 0x57a7d0u && sh->display.height == 0x57a7d4u && hook_groups(sh) == (HK_ALL & ~HK_CARDLIST) && sh->hooks_verified == (HK_ALL & ~HK_CARDLIST));   /* Milestone 4: every group but the card list was run and seen */
     CHECK(sh->pace.tick_fn == 0x48a3a5u && sh->pace.ticks == 0x566f3cu && sh->pace.frame_ret == 0x438f85u && sh->pace.map_loop.lo == 0x438a70u && sh->pace.map_loop.hi == 0x439059u);
     CHECK(sh->pace.idle_fn == 0x4eab14u && sh->pace.idle_ms == 16 && !profile_find(ID_MAGIC)->pace.idle_ms && !profile_find(ID_MAGIC)->pace.idle_fn);   /* 1.0 does not nap */
-    CHECK(sh->buttons.pass == 0x4ba087u && sh->buttons.mouse_var == 0x9199b0u && !sh->buttons.snapshot);
+    CHECK(sh->buttons.pass == 0x4ba087u && sh->buttons.mouse_var == 0x9199b0u && sh->buttons.snapshot == 0x4eab14u);
+    CHECK(sh->buttons.ctx_cur == 0x577cecu && sh->buttons.ctx_count == 0x7270e0u && sh->buttons.ctx_ptrs == 0x727130u);
+    CHECK(sh->buttons.rec_x == 0x10 && sh->buttons.rec_y == 0x14 && sh->buttons.rec_w == 0x18 && sh->buttons.rec_h == 0x1c && sh->buttons.rec_handler == 0x24 && sh->buttons.rec_type == 0x40);   /* the same records as 1.0's */
+    CHECK(sh->textmenu.loop.lo == 0x4b6fe7u && sh->textmenu.loop.hi == 0x4b753cu && sh->textmenu.left == 0x6a0f54u && sh->textmenu.top == 0x6a0f58u && sh->textmenu.right == 0x728114u);
+    CHECK(sh->textmenu.line_h == 0x577c4cu && sh->textmenu.first == 0x728120u && sh->textmenu.count == 0x728110u && sh->textmenu.mask == 0x728128u);
+    CHECK(sh->buycards.loop.lo == 0x4a28c7u && sh->buycards.loop.hi == 0x4a347cu && sh->buycards.ids == 0x69eb70u && sh->buycards.count_ebp == -0xa8 && sh->buycards.boxes_ebp == -0xa0);
+    CHECK(sh->clues.loop.lo == 0x4aa415u && sh->clues.loop.hi == 0x4ab73eu && sh->clues.count_ebp == -0x12d4);
+    CHECK(!sh->cardlist.loop.hi && !sh->cardlist.x_ebp && !profile_find(ID_MAGIC)->cardlist.loop.hi && !profile_find(ID_MAGIC)->cardlist.x_ebp);      /* the card list's group is in no row: found (0x4f041d), not seen working in a game flow */
+    CHECK(sh->title.loop.lo == 0x538e74u && sh->title.loop.hi == 0x53952fu);
+    /* the (Y/N) sites: "Buy for N gold?" and "Take this card?" were run and answered; the sell site 0x468c0e is in a function nothing calls (and 0x468915 is the colour filter's key menu), neither is a site */
+    CHECK(sh->keys.nsites == 2 && sh->keys.sites[0] == 0x4a3296u && sh->keys.sites[1] == 0x4f0b96u);
     CHECK(sh && fm && dd && dc);
     if (!sh || !fm || !dd || !dc)
         return;
@@ -351,15 +363,19 @@ static void test_hooks(void)
     CHECK(hooks_are(none, 0, deckdll_over, 3));
     /* Spells of the Ancients 2.15: no hook of any kind, the picture decompressor of each file that has one; two libraries have a copy and both are overridden */
     {
-        static const uint32_t shandalar_hooks[] = {0x4ba087, 0x4eab14, 0x4a8ea2, 0x4a8ea2, 0x4b84d7, 0x4a8ea2};
+        static const uint32_t shandalar_hooks[] = {0x4ba087, 0x4eab14, 0x4a8ea2, 0x4a8ea2, 0x4ba087, 0x4eab14, 0x4b84d7, 0x4a8ea2};
         static const uint32_t shandalar_over[] = {0x91e000, 0x91e484, 0x91e1fc, 0x48a3a5};
         static const uint32_t facemaker_over[] = {0x428000, 0x428484, 0x4281fc};
         static const uint32_t both_over[] = {0x321e9000, 0x321e9484, 0x321e91fc, 0x36155000, 0x36155484, 0x361551fc};
 
         profile = profile_find(ID_S_SHANDALAR);
         install_all();
-        CHECK(hooks_are(shandalar_hooks, 6, shandalar_over, 4));
-        CHECK(yesno_site(0x4a3296) && !yesno_site(0x468c0e) && !yesno_site(0x4f0b96) && !yesno_site(0x509e4a) && !yesno_site(0x45119d) && !yesno_site(0x4b84e5));     /* only "Buy for N gold?" was run: the sell (0x468c0e) and take (0x4f0b96) sites are matched by code shape but were not seen answering, so they are not in the row */
+        CHECK(hooks_are(shandalar_hooks, 8, shandalar_over, 4));
+        CHECK(yesno_site(0x4a3296) && yesno_site(0x4f0b96) && !yesno_site(0x468c0e) && !yesno_site(0x468915) && !yesno_site(0x509e4a) && !yesno_site(0x45119d) && !yesno_site(0x4b84e5));     /* "Buy for N gold?" and "Take this card?" were run and answered; 0x468c0e is the sell question of a function nothing calls (0x468915 is its colour filter's key menu): not sites */
+        screens_note(0x5394d0, 0, SRC_TABLE, 5.0);
+        CHECK(screens_kind(5.0) == SCREEN_TITLE);                                      /* the title menu's loop */
+        screens_note(0x4b7248, 0, SRC_SNAPSHOT, 6.0);
+        CHECK(screens_kind(6.0) == SCREEN_TEXTMENU);                                   /* the text menu's */
         CHECK(profile_write_screen_size(800, 600) == 2);      /* the screen-size globals 0x57a7d0 and 0x57a7d4 */
         profile = profile_find(ID_S_FACEMAKER);
         install_all();

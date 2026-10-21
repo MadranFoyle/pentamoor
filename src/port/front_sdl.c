@@ -868,11 +868,11 @@ static void run_step(const Step *s)
         fprintf(stderr, "  hit (%d,%d) -> window 0x%x\n", x, y, h);
     } else if (!strcmp(s->cmd, "call")) {         /* call ADDR [ARG...]: start a guest function; an argument "main" is the main window */
         char *save, *tok, buf[512];
-        uint32_t addr = 0, args[4];
+        uint32_t addr = 0, args[5];
         int n = -1;
 
         snprintf(buf, sizeof(buf), "%s", s->arg);
-        for (tok = strtok_r(buf, " ", &save); tok && n < 4; tok = strtok_r(NULL, " ", &save), n++) {
+        for (tok = strtok_r(buf, " ", &save); tok && n < 5; tok = strtok_r(NULL, " ", &save), n++) {
             uint32_t v = !strcmp(tok, "main") ? 0xFFFFFFF0u : (uint32_t)strtoul(tok, NULL, 0);
 
             if (n < 0)

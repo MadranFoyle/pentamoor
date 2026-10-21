@@ -15,7 +15,7 @@
 #include "nav.h"
 
 /* what screens_kind says is on */
-enum { SCREEN_NONE, SCREEN_TABLE, SCREEN_TEXTMENU, SCREEN_BUYCARDS, SCREEN_CLUES, SCREEN_TITLE };      /* SCREEN_TITLE: the title menu, a table screen like SCREEN_TABLE (the D-pad reads the same) */
+enum { SCREEN_NONE, SCREEN_TABLE, SCREEN_TEXTMENU, SCREEN_BUYCARDS, SCREEN_CLUES, SCREEN_TITLE, SCREEN_CARDLIST };      /* SCREEN_TITLE: the title menu, a table screen like SCREEN_TABLE (the D-pad reads the same) */
 
 void screens_install(void);                  /* the hooks (MAGIC.EXE only) */
 /* A loop of the game passed (src: SRC_TABLE the button table's pass, SRC_SNAPSHOT the mouse snapshot); ret is the address the call returns to, which says which loop it is, and ebp the frame
@@ -36,6 +36,9 @@ int screens_record_target(int x, int y, int w, int h, int type, int screen_w, in
 int screens_textmenu_targets(int x0, int x1, int top, int lh, int first, int count, uint32_t mask, int screen_w, int screen_h, NavTarget *t, int max);
 /* the cards of the shop's "Cards for Sale" row: the game's four boxes (x0, y0, x1, y1, both ends in) and which of them still hold a card (the id is not -1). */
 int screens_card_targets(const int32_t *boxes, const int32_t *ids, int n, int screen_w, int screen_h, NavTarget *t, int max);
+/* the cards of a "Pick a card" list (Spells of the Ancients 2.15): the game lays n cards out in a 320 x 240 space, each 0x30 square at (xs[i], ys[i]), a card over the one above it in its column; the part of a card
+ * that a click reaches is what no later card covers. Fills t[] (kind NAVK_CARD, label "pick i"); returns how many. */
+int screens_cardlist_targets(const int32_t *xs, const int32_t *ys, int n, int screen_w, int screen_h, NavTarget *t, int max);
 /* the clue list's rows: the game turns the mouse into 640x480 units (x * 640 / screen_w, y * 480 / screen_h) and tests two columns of six rows 62 high; `count` rows have a dungeon in them. */
 int screens_clue_targets(int count, int screen_w, int screen_h, NavTarget *t, int max);
 

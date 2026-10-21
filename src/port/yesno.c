@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "front.h"
+#include "padlog.h"
 #include "port.h"
 #include "profile.h"
 #include "sched.h"
@@ -49,7 +50,11 @@ static int swallow_up;                           /* the release of a press that 
 static uint32_t wait_enter(const uint32_t *a)
 {
     (void)a;
-    in_question = yesno_site(RD32(port_sp));     /* the hook runs with the return address on top of the stack, as in pace.c */
+    uint32_t ret = RD32(port_sp);
+
+    in_question = yesno_site(ret);               /* the hook runs with the return address on top of the stack, as in pace.c */
+    if (padlog_on())                             /* PORT_PAD_LOG: every wait for a key, and whether it is one of the profile's questions (a build's sites are found by looking at these) */
+        padlog("the game waits for a key (called from 0x%x): %s", ret, in_question ? "a (Y/N) question of the profile" : "not a profile question");
     return 0;
 }
 

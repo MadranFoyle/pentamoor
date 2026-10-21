@@ -194,3 +194,24 @@ def test_sota_saveload_and_soak_scripts_parse_and_agree_on_addresses():
     for name in ("sota_soak.py", "sota_saveload.py"):
         ast.parse(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), name)).read())
     assert sota_soak.PARTY_TILE == (0x912870, 0x912874) and sota_soak.LOCATIONS == 0x721e30
+
+
+def test_sota_pad_play_parses_and_uses_2_15_addresses():
+    import ast
+    import sota_pad_play
+    import sota_soak
+    ast.parse(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sota_pad_play.py")).read())
+    assert (sota_pad_play.GOLD, sota_pad_play.FOOD, sota_pad_play.HOVER) == (0x57a7bc, 0x57a7c0, 0x5780bc)             # Gold is an export of shandalar.exe 2.15; 1.0's are 0x522444, 0x522448, 0x519ff4
+    assert sota_pad_play.LIVES == sota_soak.LIVES == 0x8f67d0
+    assert sota_pad_play.K_MENU == 9 and sota_pad_play.K_CARD == 1                                                    # nav.h's NAVK_ numbers
+
+
+def test_sota_pad_play_goal_helpers():
+    import types
+    import sota_pad_play as sp
+    tl = [types.SimpleNamespace(id=7, label="a"), types.SimpleNamespace(id=9, label="b")]
+    assert sp.target_of(types.SimpleNamespace(h=9))(tl).label == "b"
+    assert sp.target_of(types.SimpleNamespace(h=5))(tl) is None and sp.target_of(None)(tl) is None
+    t = [types.SimpleNamespace(x0=700, y0=10, label="r"), types.SimpleNamespace(x0=100, y0=10, label="l"), types.SimpleNamespace(x0=20, y0=5, label="m")]
+    s = types.SimpleNamespace(w=1024)
+    assert [x.label for x in sp.five(s, t)] == ["l", "r"] and [x.label for x in sp.left(s, t)] == ["m"]

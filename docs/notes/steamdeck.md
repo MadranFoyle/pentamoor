@@ -45,6 +45,8 @@ SDL's own pieces, which need nothing from us: Steam launches a non-Steam game wi
 SDL reads it when the controller subsystem starts, as for any SDL program (the front end does not touch it), and `SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` is set on a Deck
 (`front_sdl.c`: the pad keeps working while Steam's overlay, a notification or Gamescope itself has the focus).
 
+**Spells of the Ancients 2.15 on a Deck** (`./pentamoor sota`, from a terminal or a Steam shortcut to that command; the Deck's window installer and the shortcut writer are still the first game's): the pad works as above and on the same screens (the map, the villages and their shops, the deck editor, duels, dialogs and the game's menus: [controller-screens.md](controller-screens.md), "Spells of the Ancients 2.15"); the one new thing is FaceMaker, the portrait screen of a new game, which has no buttons for the D-pad (the left stick puts the cursor on the portrait and A clicks). Typing a name: the same Steam keyboard. Run headless with SDL's dummy drivers and controller steps only (`tools/soak/sota_pad_play.py`), not on a Deck.
+
 ## What the program does on a Deck
 
 All of it only on a Deck or Gamescope (`src/port/steamdeck.c`, `deck_here`: env `SteamDeck=1`, which Steam sets for the games it starts on a Deck; `ID=steamos`, `NAME` containing "SteamOS" or
