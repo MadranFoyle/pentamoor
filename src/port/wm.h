@@ -43,6 +43,8 @@ typedef struct Window {
     Class *cls;
     char *title;
     int visible, enabled, invalid, erase, builtin, ownerdraw;
+    int subclassed;              /* a standard control (BUTTON, STATIC ...) that the program gave a window procedure of its own (SetWindowLong GWL_WNDPROC): the procedure sees the messages, and the control still looks as Windows draws it */
+    int painting;                /* a WM_PAINT has been handed out and not yet answered (BeginPaint, or DispatchMessage returning): the update region still exists for GetUpdateRect and GetUpdateRgn, though `invalid` is clear */
     uint32_t tid;
     uint8_t *extra;
     int nextra;
@@ -53,6 +55,9 @@ typedef struct Window {
     int nitems, sel;
     int scroll[4][3];            /* [bar][min, max, pos] */
     int top;                     /* a list box: the first item shown (LB_SETTOPINDEX) */
+    int spin_set, spin_lo, spin_hi, spin_pos;   /* a spin button (msctls_updown32): its range and position (UDM_SETRANGE, UDM_SETPOS), 0 to 100 until set */
+    uint32_t spin_buddy;                         /* ... and the edit box it types its position into (UDM_SETBUDDY; UDS_AUTOBUDDY: the window made just before it) */
+    int edit_limit;                              /* an edit box: the most characters it takes (EM_LIMITTEXT; 0: no limit set) */
     int own_mouse;               /* a dialog whose procedure does the clicks on its list boxes and combo boxes itself (the file dialog): they are not the standard ones'  */
     int own_keys;                /* a dialog whose procedure reads Enter and Esc itself (a message box: the default button need not be IDOK): the dialog manager does not turn them into IDOK and IDCANCEL */
     int lb_icons;                /* a list box whose items are drawn with a folder or file icon (an item's data: 1 a folder), as the file dialog's list is */
@@ -102,6 +107,9 @@ void wm_show(uint32_t hwnd, int cmd);
 uint32_t wm_control_message(Window *w, const char *cls, uint32_t msg, uint32_t wp, uint32_t lp);
 Window *wm_dlg_item(uint32_t hdlg, uint32_t id);
 void wm_button_auto_check(Window *w);          /* a click on an automatic check box or radio button */
+void wm_spin_click(Window *w, int up);                 /* a click on a spin button's upper or lower arrow */
+void wm_set_focus(uint32_t hwnd);                      /* the keyboard focus (user32.c), as the dialog manager moves it with Tab */
+void wm_query_ctl_colors(Window *parent, Window *c);   /* ask the parent's procedure how the control is coloured (WM_CTLCOLORSTATIC and the rest) and keep the answer for when it is drawn */
 
 /* a drop-down combo box (controls.c): the list is drawn over everything (ui.c) and takes the mouse and keys while it is down */
 enum { COMBO_CLOSED_H = 21 };

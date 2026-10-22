@@ -295,6 +295,21 @@ int plat_child_state(long id, int *exit_code)
     return 1;
 }
 
+int plat_pid_alive(long pid)
+{
+    HANDLE h;
+    int alive;
+
+    if (pid <= 0)
+        return 0;
+    h = OpenProcess(SYNCHRONIZE, FALSE, (DWORD)pid);
+    if (!h)
+        return GetLastError() == ERROR_ACCESS_DENIED;
+    alive = WaitForSingleObject(h, 0) == WAIT_TIMEOUT;
+    CloseHandle(h);
+    return alive;
+}
+
 int plat_make_control(const char *path)
 {
     FILE *f = fopen(path, "ab");

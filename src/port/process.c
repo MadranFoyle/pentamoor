@@ -99,7 +99,7 @@ static char *put(ProcChild *c, size_t *at, const char *s)
 }
 
 void proc_child(ProcChild *c, const ProcPlan *plan, const char *runtime, const char *module_dir, const char *host_exe, const char *root, const char *overlay, int width,
-                int height, const char *control, const char *shm)
+                int height, const char *control, const char *shm, const char *family)
 {
     size_t at = 0;
     char tmp[1400], stem[64];
@@ -131,6 +131,10 @@ void proc_child(ProcChild *c, const ProcPlan *plan, const char *runtime, const c
     }
     if (shm && *shm) {
         snprintf(tmp, sizeof(tmp), "PORT_SHM=%s", shm);
+        c->set[ns++] = put(c, &at, tmp);
+    }
+    if (family && *family) {
+        snprintf(tmp, sizeof(tmp), "PORT_FAMILY=%s", family);          /* the programs above the new one: see proc_instances_enter_text */
         c->set[ns++] = put(c, &at, tmp);
     }
     c->set[ns] = NULL;
@@ -207,7 +211,13 @@ int proc_start(const char *application, const char *command_line, long *id)
         return 2;
     }
     k32_shared_flush(shm_folder());                          /* what this program has in its named memory is what the new one finds there */
-    proc_child(&child, &plan, runtime, module_dir, host, paths_root(), paths_overlay(), screen_w, screen_h, control, shm_dir);
+    {
+        char family[400];
+        const char *mine = getenv("PORT_FAMILY");
+
+        snprintf(family, sizeof(family), "%s%s%ld", mine && *mine ? mine : "", mine && *mine ? "," : "", (long)getpid());      /* the programs above the new one: mine, and mine's */
+        proc_child(&child, &plan, runtime, module_dir, host, paths_root(), paths_overlay(), screen_w, screen_h, control, shm_dir, family);
+    }
     if (child.control)
         plat_make_control(child.control);                        /* the pipe the child reads */
     for (i = 0; i < MAX_CHILDREN && children[i].used; i++)
@@ -266,6 +276,145 @@ int proc_wait(long id)
     sched_block(child_ready, (void *)(intptr_t)id, -1);         /* the other guest threads, and the window, go on while it runs */
     proc_done(id, &code);
     return code;
+}
+
+/* ---- one running copy of the game --------------------------------------------------------------------------------------------------------------------------------------- */
+static int in_family(const char *family, long pid)
+{
+    const char *p = family;
+
+    while (p && *p) {
+        char *end;
+        long v = strtol(p, &end, 10);
+
+        if (end == p)
+            break;
+        if (v == pid)
+            return 1;
+        p = *end == ',' ? end + 1 : end;
+    }
+    return 0;
+}
+
+int proc_instances_enter_text(const char *text, long self, const char *program, const char *family, int (*alive)(long), char *out, size_t cap, long *blocker_pid, char *blocker_file,
+                              size_t blocker_cap)
+{
+    const char *p = text;
+    size_t n = 0;
+
+    if (cap)
+        out[0] = 0;
+    while (p && *p) {
+        const char *eol = strchr(p, '\n');
+        size_t len = eol ? (size_t)(eol - p) : strlen(p);
+        char line[160], file[96];
+        long pid;
+
+        snprintf(line, sizeof(line), "%.*s", (int)len, p);
+        p += len + (eol ? 1 : 0);
+        if (sscanf(line, "%ld %95s", &pid, file) != 2 || pid <= 0 || pid == self || !alive(pid))
+            continue;                                                   /* a line that is not one, this process's own from an earlier run, a program that is gone */
+        if (!in_family(family, pid)) {
+            if (blocker_pid)
+                *blocker_pid = pid;
+            if (blocker_file && blocker_cap)
+                snprintf(blocker_file, blocker_cap, "%s", file);
+            return 1;
+        }
+        n += (size_t)snprintf(out + n, n < cap ? cap - n : 0, "%ld %s\n", pid, file);
+    }
+    snprintf(out + (n < cap ? n : cap), n < cap ? cap - n : 0, "%ld %s\n", self, program);
+    return 0;
+}
+
+void proc_instances_leave_text(const char *text, long self, char *out, size_t cap)
+{
+    const char *p = text;
+    size_t n = 0;
+
+    if (cap)
+        out[0] = 0;
+    while (p && *p) {
+        const char *eol = strchr(p, '\n');
+        size_t len = eol ? (size_t)(eol - p) : strlen(p);
+        long pid = 0;
+
+        if (!(sscanf(p, "%ld", &pid) == 1 && pid == self) && len && n + len + 2 < cap) {
+            memcpy(out + n, p, len);
+            out[n + len] = '\n';
+            n += len + 1;
+            out[n] = 0;
+        }
+        p += len + (eol ? 1 : 0);
+    }
+}
+
+static char instance_path[1200];
+
+static char *read_whole(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    char *buf;
+    size_t n;
+
+    if (!f)
+        return NULL;
+    buf = malloc(8192);
+    n = buf ? fread(buf, 1, 8191, f) : 0;
+    fclose(f);
+    if (buf)
+        buf[n] = 0;
+    return buf;
+}
+
+static void write_whole(const char *path, const char *text)
+{
+    char tmp[1260];
+    FILE *f;
+
+    snprintf(tmp, sizeof(tmp), "%s.%ld", path, (long)getpid());
+    f = fopen(tmp, "wb");
+    if (!f)
+        return;
+    fputs(text, f);
+    fclose(f);
+    if (rename(tmp, path) != 0) {
+        remove(path);                                                  /* (Windows will not rename over a file) */
+        if (rename(tmp, path) != 0)
+            remove(tmp);
+    }
+}
+
+static void instance_leave(void)
+{
+    char *text = read_whole(instance_path), out[8192];
+
+    if (!text)
+        return;
+    proc_instances_leave_text(text, (long)getpid(), out, sizeof(out));
+    write_whole(instance_path, out);
+    free(text);
+}
+
+int proc_instance_enter(const char *overlay, const char *program, char *msg, size_t cap)
+{
+    char *text, out[8192], other[96];
+    long who = 0;
+    const char *family = getenv("PORT_FAMILY");
+
+    snprintf(instance_path, sizeof(instance_path), "%s/instances.dat", overlay);
+    paths_mkdirs(overlay);
+    text = read_whole(instance_path);
+    if (proc_instances_enter_text(text, (long)getpid(), program, family ? family : "", plat_pid_alive, out, sizeof(out), &who, other, sizeof(other))) {
+        free(text);
+        snprintf(msg, cap, "pentamoor: Spells of the Ancients is already running here (%s, process %ld); %s is not started a second time (the original brings the running program's window forward "
+                 "and ends the same way; PORT_NO_INSTANCE_LOCK=1 turns this off)", other, who, program);
+        return 1;
+    }
+    free(text);
+    write_whole(instance_path, out);
+    atexit(instance_leave);
+    return 0;
 }
 
 /* ---- the arguments this process was started with --------------------------------------------------------------------------------- */

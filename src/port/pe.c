@@ -33,6 +33,23 @@ static const uint8_t *file_rva(const uint8_t *file, uint32_t nt, uint32_t rva)
 static uint32_t le32(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
 static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }
 
+
+/* A variable the C runtime exports, not a function: the import table entry holds its address. `_adjust_fdiv` is the Pentium FDIV bug flag the compiler's floating point divisions read (0: the
+ * processor divides correctly, so the workaround is not used). */
+static uint32_t data_import(const char *dll, const char *name)
+{
+    static uint32_t adjust_fdiv;
+
+    if (!strcmp(name, "_adjust_fdiv") && (!strcmp(dll, "msvcrt.dll") || !strcmp(dll, "msvcrtd.dll"))) {
+        if (!adjust_fdiv) {
+            adjust_fdiv = heap_alloc(4);
+            WR32(adjust_fdiv, 0);
+        }
+        return adjust_fdiv;
+    }
+    return 0;
+}
+
 static void add_import(const char *dll, const char *name, uint32_t slot)
 {
     Import *im;
@@ -74,7 +91,11 @@ static void add_import(const char *dll, const char *name, uint32_t slot)
         im->fn = api ? api->fn : NULL;
     }
     im->forward = forward;
-    WR32(slot, forward ? forward : im->stub);
+    {
+        uint32_t data = forward ? 0 : data_import(dll, name);
+
+        WR32(slot, forward ? forward : data ? data : im->stub);
+    }
     nimports++;
 }
 

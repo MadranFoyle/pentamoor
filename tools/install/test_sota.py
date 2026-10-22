@@ -469,7 +469,7 @@ def test_the_real_table_of_known_files_is_the_2_15_set():
     assert len(known) == 15 and set(builds.SIZES) == {s for s, _ in known.values()}              # every 2.15 file has a hash and a size
     assert {n.lower() for n in builds.SOTA_PATCH["files"]} <= set(known)                          # the patch's six are all known by hash
     assert [n for n, (_s, role) in known.items() if role == "lifted"] == [n.lower() for n in ("shandalar.exe", "FaceMaker.exe", "DECK.EXE", "deckdll.dll", "cardartlib.dll", "drawcardlib.dll",
-                                                                                                "CdTools.dll", "STATWIN.DLL")]
+                                                                                                "CdTools.dll", "STATWIN.DLL", "magic.exe")]
     assert builds.SOTA_PATCH["size"] == 1207571 and set(builds.SOTA_DISC["cabinets"]) == {"data1.cab", "_sys1.cab", "_user1.cab"}
 
 
@@ -555,7 +555,7 @@ def test_one_command_installs_both_games_and_builds_all_six_modules_and_writes_t
     assert order == sorted(order)
     assert "Spells of the Ancients 2.15:  PENTAMOOR_SOTA=" in out and str(sota) in out and out.rstrip().endswith("sota")
     assert command.rec.calls == [("lift_all", False), ("lift_sota", str(sota), False), ("lift_licence", str(sota), False),
-                                 ("build", ["magic", "deck", "duel", "shandalar", "facemaker", "sotadeck", "senclib"])]
+                                 ("build", ["magic", "deck", "duel", "shandalar", "facemaker", "sotadeck", "shell", "senclib"])]
     assert len(command.rec.writes) == 1 and command.rec.writes[0]["export"] == "WriteProgramFlags"
     assert not any(p.name.lower() in ("software", "registry") for p in tmp_path.rglob("*"))                      # no registry folder is made
 
@@ -573,7 +573,7 @@ def test_an_existing_2_15_folder_is_built_again_without_any_source(world, comman
     command.rec.writes.clear()
     out = command("--dest", tmp_path / "inst")                      # no disc, no patch: what is there is checked and built
     assert "not reading the disc again" in out and "is installed in" in out and "all files verified" in out
-    assert [c[0] for c in command.rec.calls] == ["lift_all", "lift_sota", "build"] and command.rec.calls[-1][1][-3:] == ["shandalar", "facemaker", "sotadeck"]
+    assert [c[0] for c in command.rec.calls] == ["lift_all", "lift_sota", "build"] and command.rec.calls[-1][1][-4:] == ["shandalar", "facemaker", "sotadeck", "shell"]
     assert command.rec.writes == []                                 # no disc was given in this run, so none was verified: the licence step does not run
     shutil_rm = tmp_path / "inst_sota" / "Magic" / "Program" / "shandalar.exe"
     shutil_rm.write_bytes(b"corrupted")                              # a corrupted copy is not built: the 1.0 modules are, and it says so by leaving 2.15 out
@@ -654,7 +654,7 @@ def test_a_first_game_that_is_not_the_retail_disc_is_not_built_over(world, comma
 
 
 def test_the_checkout_builds_all_modules_with_one_make(world, tmp_path, monkeypatch, capsys):
-    """In a checkout (a Makefile): the lifts run, then the one `make all`, which builds the six modules."""
+    """In a checkout (a Makefile): the lifts run, then the one `make all`, which builds the seven modules."""
     import install
     import liftrun
     root = tmp_path / "checkout"
@@ -676,7 +676,7 @@ def test_the_checkout_builds_all_modules_with_one_make(world, tmp_path, monkeypa
     install.main([world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", str(tmp_path / "inst"), "--build"])
     out = capsys.readouterr().out
     assert calls[:3] == ["lift_all", "lift_sota", "lift_licence"] and calls[3][0] == "make" and calls[3][-1] == "all" and calls[4:] == ["write_value"] and len(calls) == 5
-    assert "game_shandalar, game_facemaker, game_sotadeck, game_senclib" in out
+    assert "game_shandalar, game_facemaker, game_sotadeck, game_shell, game_senclib" in out
 
 
 def test_check_says_whether_2_15_is_installed(world, command, tmp_path, capsys):

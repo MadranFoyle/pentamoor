@@ -149,7 +149,13 @@ uint8_t *ttf_glyph(const TTFont *f, double em, unsigned char ch, int *w, int *h,
 void text_on_rgb(uint8_t *rgb, int w, int h, int x, int y, const char *s, int size, const uint8_t color[3]);
 int text_extent(const char *s, int size);
 void ui_font_metrics(const char *face, int pt, int bold, int *height, int *ascent, int *avg);
-int ui_pixel_size(int pt);
+int ui_pixel_size(int pt);                    /* pt > 0: points at 96 dpi; pt < 0: that many pixels */
+int gdi_font_object(uint32_t hfont, const char **face, int *bold, int *px);   /* the face and pixel size a control with this font is drawn in; 0 if hfont is not a font */
+int ui_standard_control(const Window *w);     /* ui.c: a standard control (BUTTON, STATIC, ...) that nothing subclassed */
+int ui_in_modal_dialog(const Window *w);      /* the window is a modal dialog, or inside one */
+const Window *ui_dialog_of(const Window *w);  /* the dialog a window is in (or is), NULL for an ordinary window */
+uint32_t wm_pressed_button(void);             /* the push button the mouse is holding down */
+void ui_draw_control(uint8_t *rgb, int sw, int sh, const Window *w, uint32_t pressed);
 uint32_t gdi_dialog_font(const char *face, int pt);
 int ui_dlu_x(int v, int avg);                  /* dialog units to pixels, as Windows 98 rounds them */
 int ui_dlu_y(int v, int height);

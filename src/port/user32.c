@@ -393,6 +393,10 @@ uint32_t wm_default_proc(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp)
         wm_destroy(hwnd);
         return 0;
     }
+    if (msg == 0x112 && (wp & 0xFFF0u) == 0xF060u) {      /* WM_SYSCOMMAND SC_CLOSE (the Magic Shell's own close button sends it to itself): DefWindowProc turns it into WM_CLOSE */
+        wm_send(hwnd, WM_CLOSE, 0, 0);
+        return 0;
+    }
     if (msg == 0x112 && (wp & 0xFFF0u) == 0xF010u) {      /* WM_SYSCOMMAND SC_MOVE (0xF012 is a drag by the mouse): the modal loop that moves the window with the pointer */
         int x0, y0, x1, y1, px0 = 0, py0 = 0, grab_x, grab_y;
         Window *par = win->parent ? wm_window(win->parent) : NULL;
@@ -428,7 +432,7 @@ uint32_t wm_default_proc(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp)
         if (!strcasecmp(win->cname, "MCIWNDCLASS"))
             return wm_movie_message(win, msg, wp, lp);
         if (!strcasecmp(win->cname, "BUTTON") || !strcasecmp(win->cname, "STATIC") || !strcasecmp(win->cname, "EDIT") ||
-            !strcasecmp(win->cname, "COMBOBOX") || !strcasecmp(win->cname, "LISTBOX") || !strcasecmp(win->cname, "SCROLLBAR"))
+            !strcasecmp(win->cname, "COMBOBOX") || !strcasecmp(win->cname, "LISTBOX") || !strcasecmp(win->cname, "SCROLLBAR") || !strcasecmp(win->cname, "msctls_updown32"))
             return wm_control_message(win, win->cname, msg, wp, lp);
         if (!strcmp(win->cname, "#32770") && msg == WM_CLOSE) {
             win->ended = 1;
@@ -660,7 +664,7 @@ static void geometry_changed(Window *win, int ox, int oy, int ow, int oh)
 {
     uint32_t hwnd = win->hwnd;
 
-    if (!win->proc)
+    if (!win->proc && !win->dlgproc)         /* (a modeless dialog's procedure lays out its controls in WM_SIZE too: the Magic Shell's pages do) */
         return;
     if (win->w != ow || win->h != oh) {
         int cw, ch;
@@ -871,7 +875,7 @@ static uint32_t SetWindowLongA(const uint32_t *a)
     if (!w)
         return 0;
     switch (idx) {
-    case -4: old = w->proc; w->proc = a[2]; w->builtin = 0; return old;
+    case -4: old = w->proc; w->proc = a[2]; w->subclassed = w->subclassed || w->builtin; w->builtin = 0; return old;
     case -16: old = w->style; w->style = a[2]; return old;
     case -20: old = w->exstyle; w->exstyle = a[2]; return old;
     case -21: old = w->userdata; w->userdata = a[2]; return old;
@@ -939,6 +943,39 @@ static Window **children_top_down(uint32_t parent, int *n)
         out[k + 1] = t;
     }
     return out;
+}
+
+/* EnumChildWindows(parent, function, lParam): the function (BOOL CALLBACK f(HWND, LPARAM)) is called for each child of the window and then for the children of that child, in stacking order, top
+ * first, until it returns FALSE. A window destroyed by an earlier call is not called. Returns TRUE (the value is not used). */
+static int enum_children(uint32_t parent, uint32_t fn, uint32_t lparam, int depth)
+{
+    int n, i;
+    Window **kids = children_top_down(parent, &n);
+    uint32_t *handles = malloc((size_t)(n + 1) * sizeof(*handles));
+    int go = 1;
+
+    for (i = 0; i < n; i++)
+        handles[i] = kids[i]->hwnd;
+    free(kids);
+    for (i = 0; i < n && go; i++) {
+        uint32_t args[2] = {handles[i], lparam};
+
+        if (!wm_window(handles[i]))
+            continue;
+        if (!guest_call(fn, 2, args))
+            go = 0;
+        else if (depth < 16)
+            go = enum_children(handles[i], fn, lparam, depth + 1);
+    }
+    free(handles);
+    return go;
+}
+
+static uint32_t EnumChildWindows(const uint32_t *a)
+{
+    if (a[1] && wm_window(a[0]))
+        enum_children(a[0], a[1], a[2], 0);
+    return 1;
 }
 
 static uint32_t GetTopWindow(const uint32_t *a)
@@ -1032,6 +1069,7 @@ static uint32_t GetClassNameA(const uint32_t *a)
 }
 
 static uint32_t SetFocus(const uint32_t *a) { uint32_t old = focus_hwnd; focus_hwnd = a[0]; return old; }
+void wm_set_focus(uint32_t hwnd) { focus_hwnd = hwnd; wm_dirty = 1; }
 static uint32_t GetFocus(const uint32_t *a) { (void)a; return focus_hwnd; }
 static uint32_t SetActiveWindow(const uint32_t *a) { active_hwnd = a[0]; return 0; }
 static uint32_t SetCapture(const uint32_t *a) { capture_hwnd = a[0]; return 0; }
@@ -1064,7 +1102,79 @@ static uint32_t GetWindowTextA(const uint32_t *a)
     return (uint32_t)n;
 }
 
+/* GetWindowTextLengthA(hwnd): the length of the window's text, without the terminator (0 for a window that is not there). */
+static uint32_t GetWindowTextLengthA(const uint32_t *a)
+{
+    Window *w = wm_window(a[0]);
+
+    return w && w->title ? (uint32_t)strlen(w->title) : 0;
+}
+
+/* ---- characters (the ANSI code page 1252) --------------------------------------------------------------------------------------------- */
+static int ansi_is_lower(unsigned c) { return (c >= 'a' && c <= 'z') || (c >= 0xDF && c <= 0xFF && c != 0xF7) || c == 0x9A || c == 0x9C || c == 0x9E; }
+static int ansi_is_upper(unsigned c) { return (c >= 'A' && c <= 'Z') || (c >= 0xC0 && c <= 0xDE && c != 0xD7) || c == 0x8A || c == 0x8C || c == 0x8E || c == 0x9F; }
+
+static unsigned ansi_lower(unsigned c)
+{
+    if (c >= 'A' && c <= 'Z')
+        return c + 32;
+    if (c >= 0xC0 && c <= 0xDE && c != 0xD7)
+        return c + 32;
+    return c == 0x8A ? 0x9A : c == 0x8C ? 0x9C : c == 0x8E ? 0x9E : c == 0x9F ? 0xFF : c;
+}
+
+static unsigned ansi_upper(unsigned c)
+{
+    if (c >= 'a' && c <= 'z')
+        return c - 32;
+    if (c >= 0xE0 && c <= 0xFE && c != 0xF7)
+        return c - 32;
+    return c == 0x9A ? 0x8A : c == 0x9C ? 0x8C : c == 0x9E ? 0x8E : c == 0xFF ? 0x9F : c;
+}
+
+/* CharLowerA / CharUpperA(text): a string is converted where it is and its address returned; a value whose high word is zero is one character (in the low word), and the converted
+ * character comes back the same way. Letters are those of code page 1252 (the German sharp s, 0xDF, has no capital; 0xFF is capital 0x9F). */
+static uint32_t case_map(uint32_t arg, unsigned (*map)(unsigned))
+{
+    uint32_t i;
+
+    if (arg <= 0xFFFFu)
+        return map(arg & 0xFFu);
+    for (i = 0; G[arg + i]; i++)
+        G[arg + i] = (uint8_t)map(G[arg + i]);
+    return arg;
+}
+static uint32_t CharLowerA(const uint32_t *a) { return case_map(a[0], ansi_lower); }
+static uint32_t CharUpperA(const uint32_t *a) { return case_map(a[0], ansi_upper); }
+
+/* IsCharAlphaNumericA(char): a letter or digit of code page 1252 (the superscript digits count as digits, as they do for Windows). */
+static uint32_t IsCharAlphaNumericA(const uint32_t *a)
+{
+    unsigned c = a[0] & 0xFFu;
+
+    return (c >= '0' && c <= '9') || ansi_is_lower(c) || ansi_is_upper(c) || c == 0xAA || c == 0xB5 || c == 0xBA || c == 0xB2 || c == 0xB3 || c == 0xB9;
+}
+
+/* ShowScrollBar(window, bar, show): a scroll bar control (SB_CTL, 2) is a window of its own and is shown or hidden as one; the bars of an ordinary window (SB_HORZ, SB_VERT, SB_BOTH) are
+ * not drawn here, so there is nothing to show. */
+static uint32_t ShowScrollBar(const uint32_t *a)
+{
+    Window *w = wm_window(a[0]);
+
+    if (w && a[1] == 2 && w->cname && !strcasecmp(w->cname, "SCROLLBAR")) {
+        if (w->visible != (a[2] != 0)) {
+            w->visible = a[2] != 0;
+            w->invalid = 1;
+            wm_dirty = 1;
+        }
+    }
+    return 1;
+}
+
 /* ---- cursor, keyboard state ------------------------------------------------------------------------------------------------------ */
+static uint32_t cursor_now;
+static uint32_t SetCursor(const uint32_t *a) { uint32_t old = cursor_now; cursor_now = a[0]; return old; }
+static uint32_t GetCursor(const uint32_t *a) { (void)a; return cursor_now; }
 static uint32_t LoadCursorA(const uint32_t *a) { return gdi_new_object(GDI_CURSOR, a[1], 0); }
 static uint32_t LoadIconA(const uint32_t *a) { return gdi_new_object(GDI_ICON, a[1], 0); }
 static uint32_t LoadAcceleratorsA(const uint32_t *a) { return gdi_new_object(GDI_ACCEL, a[1], 0); }
@@ -1116,6 +1226,14 @@ static uint32_t DispatchMessageA(const uint32_t *a)
 
         guest_call(lp, 4, args);
         return 0;
+    }
+    if (msg == WM_PAINT) {
+        uint32_t r = wm_send(hwnd, msg, wp, lp);
+        Window *w = wm_window(hwnd);
+
+        if (w)
+            w->painting = 0;                           /* answered (a procedure that never began a paint leaves no update region behind) */
+        return r;
     }
     return wm_send(hwnd, msg, wp, lp);
 }
@@ -1173,14 +1291,26 @@ static int next_message(int remove, uint32_t hwnd_filter, Msg *out)
             return 1;
         }
     }
+    for (i = 0; remove && i < nwindows; i++) {  /* a standard control on an ordinary window that needs painting: Windows asks the parent how to colour it (WM_CTLCOLOR...) each time it draws it; the compositor
+                                                 * draws the control later (compose.c), so the answer is taken here, on the thread that owns the window, and kept */
+        Window *w = windows[i], *p;
+
+        if (w && (w->builtin || w->subclassed) && w->invalid && w->visible && (!w->proc || w->subclassed) && !w->dlgproc && !w->ownerdraw && w->cname && w->tid == sched_tid() && (p = wm_window(w->parent)) && (p->proc || p->dlgproc) &&
+            !ui_in_modal_dialog(p)) {
+            w->invalid = 0;
+            wm_query_ctl_colors(p, w);
+            wm_dirty = 1;
+        }
+    }
     for (i = 0; i < nwindows; i++) {
         Window *w = windows[i];
 
-        if (in_filter(WM_PAINT) && w && w->invalid && w->visible && (w->proc || w->dlgproc) && w->tid == sched_tid() && has_client_area(w)) {
+        if (in_filter(WM_PAINT) && w && w->invalid && w->visible && (w->proc || w->dlgproc) && !w->ownerdraw && w->tid == sched_tid() && has_client_area(w)) {
             uint32_t hwnd = w->hwnd;
 
             if (remove) {
                 w->invalid = 0;
+                w->painting = 1;                              /* the update region stays until the procedure's BeginPaint (or its return): a paint routine reads it first (GetUpdateRect) */
                 if (w->erase && w->proc && !w->dlgproc) {
                     /* Windows sends WM_ERASEBKGND ahead of the WM_PAINT it hands out for a window whose update region is marked for erasing,
                      * whether or not the procedure then begins a paint. STATWIN.DLL's window never does: it answers WM_PAINT with an
@@ -1376,6 +1506,8 @@ uint32_t wm_key_target(void)
     if (held)
         return held;
     w = wm_window(focus_hwnd);
+    if (w && !w->proc && w->visible && w->enabled && w->cname && !strcasecmp(w->cname, "EDIT") && !wm_top_dialog())
+        return w->hwnd;                                     /* an edit box on an ordinary window or page that has the focus takes the keys (modal dialogs have their own path) */
     while (w && (!w->proc || !w->visible))
         w = wm_window(w->parent);
     return w ? w->hwnd : wm_main_hwnd();
@@ -1412,6 +1544,7 @@ static uint32_t BeginPaint(const uint32_t *a)
         WR32(a[1] + (uint32_t)i, 0);
     if (win) {
         win->invalid = 0;
+        win->painting = 0;                          /* BeginPaint validates the update region */
         gdi_forget_texts(win);                      /* the text on a window is what its latest paint wrote */
         if (win->erase) {                           /* the update region was marked for erasing */
             win->erase = 0;
@@ -1440,7 +1573,7 @@ static uint32_t GetUpdateRect(const uint32_t *a)
     Window *w = wm_window(a[0]);
     int cw = 0, ch = 0;
 
-    if (w && w->invalid && w->visible && has_client_area(w)) {
+    if (w && (w->invalid || w->painting) && w->visible && has_client_area(w)) {
         wm_client_size(w, &cw, &ch);
         if (a[1])
             put_rect(a[1], 0, 0, cw, ch);
@@ -1460,7 +1593,7 @@ static uint32_t GetUpdateRgn(const uint32_t *a)
 
     if (!w || !r)
         return 0;
-    painting = w->invalid && w->visible && has_client_area(w);
+    painting = (w->invalid || w->painting) && w->visible && has_client_area(w);
     if (painting)
         wm_client_size(w, &cw, &ch);
     r->l = 0; r->t = 0; r->r = painting ? cw : 0; r->b = painting ? ch : 0;
@@ -1508,12 +1641,14 @@ const WinApi USER32_APIS[] = {
     {"user32.dll", "IsWindowVisible", IsWindowVisible}, {"user32.dll", "IsIconic", zero}, {"user32.dll", "EnableWindow", EnableWindow},
     {"user32.dll", "SetWindowRgn", one}, {"user32.dll", "LockWindowUpdate", one}, {"user32.dll", "BringWindowToTop", BringWindowToTop},
     {"user32.dll", "SetForegroundWindow", one}, {"user32.dll", "GetWindowThreadProcessId", GetWindowThreadProcessId},
-    {"user32.dll", "EnumChildWindows", zero}, {"user32.dll", "GetClassNameA", GetClassNameA},
+    {"user32.dll", "EnumChildWindows", EnumChildWindows}, {"user32.dll", "GetClassNameA", GetClassNameA},
     {"user32.dll", "MessageBeep", one}, {"user32.dll", "FindWindowA", zero}, {"user32.dll", "FindWindowExA", zero},
     {"user32.dll", "SetFocus", SetFocus}, {"user32.dll", "GetFocus", GetFocus}, {"user32.dll", "SetActiveWindow", SetActiveWindow},
     {"user32.dll", "SetCapture", SetCapture}, {"user32.dll", "GetCapture", GetCapture}, {"user32.dll", "ReleaseCapture", ReleaseCapture},
     {"user32.dll", "SetWindowTextA", SetWindowTextA}, {"user32.dll", "GetWindowTextA", GetWindowTextA}, {"user32.dll", "ShowCursor", zero},
-    {"user32.dll", "SetCursor", zero}, {"user32.dll", "LoadCursorA", LoadCursorA}, {"user32.dll", "LoadIconA", LoadIconA},
+    {"user32.dll", "SetCursor", SetCursor}, {"user32.dll", "GetCursor", GetCursor}, {"user32.dll", "LoadCursorA", LoadCursorA}, {"user32.dll", "LoadIconA", LoadIconA},
+    {"user32.dll", "GetWindowTextLengthA", GetWindowTextLengthA}, {"user32.dll", "CharLowerA", CharLowerA}, {"user32.dll", "CharUpperA", CharUpperA},
+    {"user32.dll", "IsCharAlphaNumericA", IsCharAlphaNumericA}, {"user32.dll", "ShowScrollBar", ShowScrollBar},
     {"user32.dll", "DestroyIcon", one}, {"user32.dll", "DestroyCursor", one}, {"user32.dll", "LoadAcceleratorsA", LoadAcceleratorsA},
     {"user32.dll", "TranslateAcceleratorA", zero}, {"user32.dll", "GetDoubleClickTime", GetDoubleClickTime},
     {"user32.dll", "GetCursorPos", GetCursorPos}, {"user32.dll", "SetCursorPos", SetCursorPos}, {"user32.dll", "WindowFromPoint", WindowFromPoint},

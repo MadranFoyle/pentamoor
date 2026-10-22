@@ -17,7 +17,7 @@ the Python packages pefile and capstone with pip, when the release did not carry
 
 Spells of the Ancients 2.15 (--sota and --patch, both): after the first game the installer reads the expansion's disc (Setup/data1.cab, an InstallShield cabinet) over it, applies the
 patch's six files, checks every program, library and data file of the result against the known 2.15 files (size and SHA-256), and lifts and builds its three modules (shandalar,
-facemaker, sotadeck) with the rest. The 2.15 folder is a separate one beside the first game's (sources/installed_sota/Magic/Program), with saves of its own. Everything is checked
+facemaker, sotadeck, shell) with the rest. The 2.15 folder is a separate one beside the first game's (sources/installed_sota/Magic/Program), with saves of its own. Everything is checked
 before anything is written (tools/install/sotainstall.py says how).
 
 The licence value (tools/install/licence.py, docs/notes/sota-licence.md): after the discs are verified, the files are made and the modules are built, the installer does what the original
@@ -336,19 +336,19 @@ def build_commands(sota=False, with_licence=False):
     """What a source checkout's --build runs after the lifter: (message, argv) pairs. The runtime (`pentamoor-run`: everything but the game's code) and one game module
     per program (a library made only from the C the lifter wrote) are built by the one `make -C src/port` and loaded together by ./pentamoor."""
     jobs = str(max(1, min(os.cpu_count() or 1, 8)))
-    modules = "game_magic, game_deck, game_duel" + (", game_shandalar, game_facemaker, game_sotadeck" if sota else "") + (", game_senclib" if sota and with_licence else "")
+    modules = "game_magic, game_deck, game_duel" + (", game_shandalar, game_facemaker, game_sotadeck, game_shell" if sota else "") + (", game_senclib" if sota and with_licence else "")
     return [("compiling the runtime and the game modules src/port/build/{pentamoor-run, %s} (a few minutes)" % modules,
              ["make", "-C", os.path.join(ROOT, "src", "port"), "-j" + jobs, "all"])]
 
 
 def lift(layout, args, sota=None, with_licence=False):
-    """Lift the first game's three programs, and, when `sota` (the Program folder of the 2.15 install) is given, the three of Spells of the Ancients 2.15; with `with_licence`, also the one
+    """Lift the first game's three programs, and, when `sota` (the Program folder of the 2.15 install) is given, the four of Spells of the Ancients 2.15 (the game, the portrait editor, the deck builder and the Magic Shell); with `with_licence`, also the one
     library of the expansion's cabinet that the licence step runs (it is checked by its hash first)."""
     paths = ensure_python_deps(layout, assume=args.yes)
     say("lifting the game's programs into C (a few minutes; the C is generated from your files and stays on your machine)")
     liftrun.lift_all(layout.root, sys.executable, paths, force=args.force)
     if sota:
-        say("lifting Spells of the Ancients 2.15's programs (shandalar.exe, FaceMaker.exe, DECK.EXE and their libraries) into C (a few minutes more)")
+        say("lifting Spells of the Ancients 2.15's programs (shandalar.exe, magic.exe, FaceMaker.exe, DECK.EXE and their libraries) into C (a few minutes more)")
         liftrun.lift_sota(layout.root, sota, sys.executable, paths, force=args.force, say=say)
         if with_licence:
             say("lifting the library of the expansion's cabinet that writes the licence value (the original installer's own, a few seconds)")

@@ -1471,7 +1471,7 @@ static uint32_t SetDIBits(const uint32_t *a)
 
     if (!bmp)
         return 0;
-    parse_bitmapinfo(a[6], 0, &di);
+    parse_bitmapinfo(a[5], 0, &di);                    /* SetDIBits(hdc, bitmap, first line, lines, bits, BITMAPINFO, usage) */
     rgb = buffer_rgb(&di, a[4], lines, &ok);
     if (!ok)
         return 0;

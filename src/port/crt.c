@@ -414,13 +414,14 @@ static void find_fill(const FindSearch *s, const FindEntry *e, uint32_t out)
 
 static void find_errno(uint32_t code) { WR32(cell(&errno_cell), code); }
 
-static uint32_t crt_findfirst(const uint32_t *a)
+/* Start a search: the slot of a new search with its first name still to be read (next 0), or -1 with `*err` the Windows error (2: no file matches, 4: too many searches). */
+static int find_open(const char *spec_in, int *err)
 {
     char spec[300], *sep, *q;
     FindCollect c = {0};
     int i, drive_root;
 
-    snprintf(spec, sizeof(spec), "%s", P(a[0]));
+    snprintf(spec, sizeof(spec), "%s", spec_in);
     for (q = spec; *q; q++)
         if (*q == '/')
             *q = '\\';
@@ -428,8 +429,8 @@ static uint32_t crt_findfirst(const uint32_t *a)
     for (i = 0; i < 16 && searches[i].used; i++)
         ;
     if (i == 16) {
-        find_errno(24);                                         /* EMFILE */
-        return 0xFFFFFFFFu;
+        *err = 4;
+        return -1;
     }
     memset(&searches[i], 0, sizeof(searches[i]));
     if (sep) {
@@ -449,14 +450,26 @@ static uint32_t crt_findfirst(const uint32_t *a)
         qsort(c.e, (size_t)c.n, sizeof(*c.e), find_cmp);
     if (!c.n) {
         free(c.e);
-        find_errno(2);                                          /* ENOENT */
-        return 0xFFFFFFFFu;
+        *err = 2;
+        return -1;
     }
     searches[i].used = 1;
     searches[i].entries = c.e;
     searches[i].n = c.n;
+    searches[i].next = 0;
+    return i;
+}
+
+static uint32_t crt_findfirst(const uint32_t *a)
+{
+    int err = 0, i = find_open(P(a[0]), &err);
+
+    if (i < 0) {
+        find_errno(err == 4 ? 24u : 2u);                        /* EMFILE, ENOENT */
+        return 0xFFFFFFFFu;
+    }
+    find_fill(&searches[i], &searches[i].entries[0], a[1]);
     searches[i].next = 1;
-    find_fill(&searches[i], &c.e[0], a[1]);
     return (uint32_t)i;
 }
 
@@ -480,6 +493,78 @@ static uint32_t crt_findclose(const uint32_t *a)
         return 0;
     }
     return 0xFFFFFFFFu;
+}
+
+/* The same search for Windows itself: FindFirstFileA(pattern, &WIN32_FIND_DATAA) gives a handle (INVALID_HANDLE_VALUE, with the last error ERROR_FILE_NOT_FOUND, when no name matches),
+ * FindNextFileA(handle, &data) the next name (FALSE and ERROR_NO_MORE_FILES at the end), FindClose(handle) ends the search. WIN32_FIND_DATAA: attributes, three FILETIMEs, size high and
+ * low, two reserved dwords, cFileName[260], cAlternateFileName[14]; names come in order, "." and ".." where Windows lists them. */
+#define FIND_HANDLE_BASE 0x7E900000u
+
+static void win_find_fill(const FindSearch *s, const FindEntry *e, uint32_t out)
+{
+    char guest[600], host[1200];
+    struct stat st;
+    uint64_t when = 0;
+    uint32_t size = 0;
+    int k;
+
+    snprintf(guest, sizeof(guest), "%s%s%s", s->dir, s->dir[0] ? "\\" : "", e->name);
+    if (!e->is_dir && paths_host(guest, 0, host, sizeof(host)) && !stat(host, &st)) {
+        size = (uint32_t)st.st_size;
+        when = ((uint64_t)st.st_mtime + 11644473600ull) * 10000000ull;           /* FILETIME: 100 ns since 1601 */
+    }
+    guest_zero(out, 318);
+    WR32(out, e->is_dir ? 0x10u : 0x20u);
+    for (k = 0; k < 3; k++) {
+        WR32(out + 4 + 8u * (uint32_t)k, (uint32_t)when);
+        WR32(out + 8 + 8u * (uint32_t)k, (uint32_t)(when >> 32));
+    }
+    WR32(out + 32, size);                                                         /* (a file of 4 GB or more is not in a game's folder: the high dword stays 0) */
+    strncpy(P(out + 44), e->name, 259);
+    P(out + 44)[259] = 0;
+}
+
+static uint32_t win_find_first(const uint32_t *a)
+{
+    int err = 0, i = find_open(P(a[0]), &err);
+
+    if (i < 0) {
+        k32_set_last_error(err == 4 ? 4u : 2u);                 /* ERROR_TOO_MANY_OPEN_FILES, ERROR_FILE_NOT_FOUND */
+        return 0xFFFFFFFFu;
+    }
+    win_find_fill(&searches[i], &searches[i].entries[0], a[1]);
+    searches[i].next = 1;
+    return FIND_HANDLE_BASE + (uint32_t)i;
+}
+
+static uint32_t win_find_next(const uint32_t *a)
+{
+    uint32_t i = a[0] - FIND_HANDLE_BASE;
+    FindSearch *s = i < 16 && searches[i].used ? &searches[i] : NULL;
+
+    if (!s) {
+        k32_set_last_error(6);                                  /* ERROR_INVALID_HANDLE */
+        return 0;
+    }
+    if (s->next >= s->n) {
+        k32_set_last_error(18);                                 /* ERROR_NO_MORE_FILES */
+        return 0;
+    }
+    win_find_fill(s, &s->entries[s->next++], a[1]);
+    return 1;
+}
+
+static uint32_t win_find_close(const uint32_t *a)
+{
+    uint32_t i = a[0] - FIND_HANDLE_BASE;
+
+    if (i < 16 && searches[i].used) {
+        free(searches[i].entries);
+        searches[i].used = 0;
+        return 1;
+    }
+    k32_set_last_error(6);
+    return 0;
 }
 
 /* _spawnl(mode, path, arg0, arg1, ..., NULL): start a program (process.h). _P_WAIT (0) returns its exit code, _P_NOWAIT (1, 3: the id is the handle) and _P_DETACH (4) return a handle at once,
@@ -515,6 +600,7 @@ static uint32_t crt_spawnl(const uint32_t *a)
 const WinApi CRT_APIS[] = {
     {"msvcrtd.dll", "_spawnl", crt_spawnl},
     {"msvcrtd.dll", "qsort", crt_qsort}, {"msvcrtd.dll", "strcoll", crt_strcoll}, {"msvcrtd.dll", "_isctype", crt_isctype},
+    {"kernel32.dll", "FindFirstFileA", win_find_first}, {"kernel32.dll", "FindNextFileA", win_find_next}, {"kernel32.dll", "FindClose", win_find_close},
     {"msvcrtd.dll", "_findfirst", crt_findfirst}, {"msvcrtd.dll", "_findnext", crt_findnext}, {"msvcrtd.dll", "_findclose", crt_findclose},
     {"msvcrtd.dll", "__set_app_type", zero}, {"msvcrtd.dll", "_controlfp", controlfp}, {"msvcrtd.dll", "__setusermatherr", zero},
     {"msvcrtd.dll", "_XcptFilter", zero}, {"msvcrtd.dll", "_except_handler3", one}, {"msvcrtd.dll", "__p__fmode", p_fmode},

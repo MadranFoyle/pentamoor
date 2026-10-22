@@ -61,7 +61,7 @@ static void paint(Scene *s, Window *win, int ox, int oy)
             const uint8_t *alpha = win->movie ? movie_window_alpha(win) : NULL;      /* a see-through clip leaves what is under it where it is black */
             uint8_t *touched = NULL;
 
-            if (!alpha && win->see_through) {      /* a window that erased nothing: only what it drew is on top of its parent */
+            if (!alpha && (win->see_through || win->subclassed)) {      /* a window that erased nothing: only what it drew is on top of its parent */
                 touched = malloc((size_t)sf->w * (size_t)sf->h);
                 surface_touched(sf, touched);
                 alpha = touched;
@@ -105,8 +105,18 @@ static void paint(Scene *s, Window *win, int ox, int oy)
             kids[k + 1] = t;
         }
         for (j = 0; j < nk; j++)
-            if (kids[j]->visible && !kids[j]->is_dialog)          /* a dialog owned by this window is drawn from the dialog stack, not here (it would come out twice, offset) */
-                paint(s, kids[j], x + win->nc_l, y + win->nc_t);
+            if (kids[j]->visible && !kids[j]->is_dialog) {         /* a dialog owned by this window is drawn from the dialog stack, not here (it would come out twice, offset) */
+                /* the standard controls on an ordinary window or in a modeless dialog (not a modal one: ui_dialog draws those) are Windows' to draw: radio and check boxes, labels, list and
+                 * edit boxes, scroll bars (the Magic Shell's pages); the push buttons of an ordinary window are draw_buttons's. A control the program subclassed is drawn the same, and what
+                 * its own procedure drew on top of it (a focus rectangle) shows over it */
+                if (ui_standard_control(kids[j]) && !ui_in_modal_dialog(win) && kids[j]->w > 0 && kids[j]->h > 0 &&
+                    (ui_dialog_of(win) || strcasecmp(kids[j]->cname, "BUTTON") || ((kids[j]->style & 0xF) != 0 && (kids[j]->style & 0xF) != 1))) {
+                    ui_draw_control(s->rgb, SCREEN_W, SCREEN_H, kids[j], wm_pressed_button());
+                    if (kids[j]->subclassed)
+                        paint(s, kids[j], x + win->nc_l, y + win->nc_t);
+                } else
+                    paint(s, kids[j], x + win->nc_l, y + win->nc_t);
+            }
         free(kids);
     }
 }
@@ -126,7 +136,7 @@ static void draw_buttons(Scene *s)
         char label[128];
         size_t o = 0, k;
 
-        if (!w || strcasecmp(w->cname, "BUTTON") || w->proc || w->ownerdraw || !w->visible || w->w <= 0 || w->h <= 0 || ((w->style & 0xF) != 0 && (w->style & 0xF) != 1))
+        if (!w || strcasecmp(w->cname, "BUTTON") || (w->proc && !w->subclassed) || w->ownerdraw || !w->visible || w->w <= 0 || w->h <= 0 || ((w->style & 0xF) != 0 && (w->style & 0xF) != 1))
             continue;
         for (a = w; a->parent && wm_window(a->parent);) {
             a = wm_window(a->parent);

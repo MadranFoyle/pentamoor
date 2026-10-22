@@ -1,5 +1,5 @@
 #!/bin/sh
-# ./pentamoor [deck|duel|sota] [more arguments]: run the game (or its standalone deck builder or duel program; `sota` is Spells of the Ancients 2.15, experimental: see below).
+# ./pentamoor [deck|duel|sota [shell|shandalar]] [more arguments]: run the game (or its standalone deck builder or duel program; `sota` is Spells of the Ancients 2.15, experimental: see below).
 # ./pentamoor "path/to/MTG v1.0.iso": install the game from that disc image first (also offered when the game is not installed yet), then run it.
 # It starts the runtime (pentamoor-run, no game code in it) with the game module (game_magic.so, .dylib or .dll: the C made from your own files) for that program.
 # Where it looks: pentamoor-run and game_*.so beside this file (a release), else src/port/build/ (a build from source). The game: sources/installed/Magic/Program,
@@ -9,6 +9,8 @@
 #   ./pentamoor-install "MTG v1.0.iso" --sota "MTG v2.00.iso" --patch SOTAV215.EXE
 # The folder that holds its shandalar.exe is $PENTAMOOR_SOTA (default sources/installed_sota/Magic/Program); the module is game_shandalar beside the runtime. It starts FaceMaker.exe itself
 # when a colour is chosen. Its saves are kept apart from the first game's: PORT_OVERLAY defaults to port_overlay_sota for `sota` (port_overlay for the others).
+# `./pentamoor sota` starts the adventure directly (shandalar.exe, as before: `sota shandalar` says the same). `./pentamoor sota shell` starts the Magic Shell (magic.exe, module game_shell), the
+# program the original starts first: its pages (Duel, Tools, World, Help, Player) start the adventure, which starts the shell again when it is left (docs/notes/sota-comparison.md, "Milestone 5").
 cd "$(dirname "$0")" || exit 1
 GAME=${PENTAMOOR_GAME:-sources/installed/Magic/Program}
 case "$(uname -s)" in
@@ -46,14 +48,19 @@ case "$1" in
 esac
 
 case "$1" in
-  sota|shandalar) shift; PROG=shandalar; EXE=shandalar.exe; GAME=${PENTAMOOR_SOTA:-sources/installed_sota/Magic/Program}; PORT_OVERLAY=${PORT_OVERLAY:-port_overlay_sota}; export PORT_OVERLAY ;;
+  sota|shandalar)
+    shift; PROG=shandalar; EXE=shandalar.exe; GAME=${PENTAMOOR_SOTA:-sources/installed_sota/Magic/Program}; PORT_OVERLAY=${PORT_OVERLAY:-port_overlay_sota}; export PORT_OVERLAY
+    case "$1" in
+      shell) shift; PROG=shell; EXE=magic.exe ;;
+      shandalar) shift ;;
+    esac ;;
   deck) shift; PROG=deck; EXE=DECK.EXE ;;
   duel) shift; PROG=duel; EXE=DUEL.EXE ;;
   *)    PROG=magic; EXE=MAGIC.EXE ;;
 esac
 MODULE=${PENTAMOOR_MODULE:-$BUILD/game_$PROG.$EXT}
 
-if [ "$PROG" = shandalar ]; then     # Spells of the Ancients 2.15: installed from three things (no installer offer: it would have to ask for all three), and this says which
+if [ "$PROG" = shandalar ] || [ "$PROG" = shell ]; then     # Spells of the Ancients 2.15: installed from three things (no installer offer: it would have to ask for all three), and this says which
   if [ -f ./pentamoor-install ]; then
     SOTA_INSTALL='./pentamoor-install "path/to/MTG v1.0.iso" --sota "path/to/MTG v2.00.iso" --patch "path/to/SOTAV215.EXE"'
   else

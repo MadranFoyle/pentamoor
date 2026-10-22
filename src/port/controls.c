@@ -129,6 +129,189 @@ void wm_list_add(Window *w, const char *text, uint32_t data)
 #define IDX_OK(wp) ((int32_t)(wp) >= 0 && (int32_t)(wp) < w->nitems)
 
 /* The built-in behaviour of BUTTON, STATIC, EDIT, COMBOBOX and LISTBOX windows. */
+/* ---- spin buttons (msctls_updown32) and the text they type into --------------------------------------------------------------------------------------- */
+enum { UDS_WRAP = 1, UDS_SETBUDDYINT = 2, UDS_AUTOBUDDY = 0x10, EN_CHANGE_CODE = 0x300 };
+
+static void spin_init(Window *w)
+{
+    if (!w->spin_set) {
+        w->spin_set = 1;
+        w->spin_lo = 0;
+        w->spin_hi = 100;
+    }
+}
+
+static Window *spin_buddy(Window *w)
+{
+    int i, n = wm_window_count(), found = -1;
+
+    if (w->spin_buddy)
+        return wm_window(w->spin_buddy);
+    if (!(w->style & UDS_AUTOBUDDY))
+        return NULL;
+    for (i = 0; i < n; i++) {                       /* the window made just before it, among its parent's children */
+        Window *c = wm_window_at_index(i);
+
+        if (c == w)
+            break;
+        if (c && c->parent == w->parent)
+            found = i;
+    }
+    return found >= 0 ? wm_window_at_index(found) : NULL;
+}
+
+static int spin_clamp(Window *w, int v)
+{
+    int lo = w->spin_lo < w->spin_hi ? w->spin_lo : w->spin_hi, hi = w->spin_lo < w->spin_hi ? w->spin_hi : w->spin_lo;
+
+    return v < lo ? lo : v > hi ? hi : v;
+}
+
+static void spin_show(Window *w)                    /* UDS_SETBUDDYINT: the position is the buddy's text */
+{
+    Window *b = spin_buddy(w);
+    char buf[16];
+
+    if (b && (w->style & UDS_SETBUDDYINT)) {
+        snprintf(buf, sizeof(buf), "%d", w->spin_pos);
+        free(b->title);
+        b->title = strdup(buf);
+        b->invalid = 1;
+        wm_dirty = 1;
+    }
+}
+
+/* The position: with an integer buddy what its text says, kept inside the range (an empty or non-numeric text is an error and leaves the position). */
+static int spin_read(Window *w, int *err)
+{
+    Window *b = spin_buddy(w);
+
+    *err = 0;
+    if (b && (w->style & UDS_SETBUDDYINT) && b->title) {
+        char *end;
+        long v = strtol(b->title, &end, 10);
+
+        if (end != b->title && *end == 0)
+            w->spin_pos = spin_clamp(w, (int)v);
+        else
+            *err = 1;
+    }
+    return w->spin_pos;
+}
+
+static void edit_changed(Window *e)                  /* EN_CHANGE, to the edit box's parent */
+{
+    wm_post(e->parent, WM_COMMAND, (EN_CHANGE_CODE << 16) | (e->id & 0xFFFF), e->hwnd);
+}
+
+void wm_spin_click(Window *w, int up)
+{
+    int err, v, lo, hi;
+    Window *b;
+
+    spin_init(w);
+    v = spin_read(w, &err);
+    lo = w->spin_lo < w->spin_hi ? w->spin_lo : w->spin_hi;
+    hi = w->spin_lo < w->spin_hi ? w->spin_hi : w->spin_lo;
+    if (w->spin_lo > w->spin_hi)                      /* a reversed range: the up arrow goes towards the lower number */
+        up = !up;
+    v += up ? 1 : -1;
+    if (v > hi)
+        v = (w->style & UDS_WRAP) ? lo : hi;
+    else if (v < lo)
+        v = (w->style & UDS_WRAP) ? hi : lo;
+    w->spin_pos = v;
+    spin_show(w);
+    w->invalid = 1;
+    wm_dirty = 1;
+    wm_post(w->parent, (w->style & 4) ? 0x114u : 0x115u, (4u) | ((uint32_t)(v & 0xFFFF) << 16), w->hwnd);   /* WM_VSCROLL (WM_HSCROLL), SB_THUMBPOSITION and the position */
+    b = spin_buddy(w);
+    if (b && (w->style & UDS_SETBUDDYINT))
+        edit_changed(b);
+}
+
+static uint32_t spin_message(Window *w, uint32_t msg, uint32_t wp, uint32_t lp)
+{
+    int err;
+
+    spin_init(w);
+    switch (msg) {
+    case 0x465:                                       /* UDM_SETRANGE: the upper limit in the low word, the lower in the high one */
+        w->spin_hi = (int16_t)(lp & 0xFFFF);
+        w->spin_lo = (int16_t)(lp >> 16);
+        w->spin_pos = spin_clamp(w, w->spin_pos);
+        return 0;
+    case 0x466:                                       /* UDM_GETRANGE */
+        return ((uint32_t)w->spin_lo << 16) | ((uint32_t)w->spin_hi & 0xFFFF);
+    case 0x46F:                                       /* UDM_SETRANGE32 */
+        w->spin_lo = (int)wp;
+        w->spin_hi = (int)lp;
+        w->spin_pos = spin_clamp(w, w->spin_pos);
+        return 0;
+    case 0x470:                                       /* UDM_GETRANGE32: two integers in guest memory */
+        if (wp)
+            WR32(wp, (uint32_t)w->spin_lo);
+        if (lp)
+            WR32(lp, (uint32_t)w->spin_hi);
+        return 0;
+    case 0x467: case 0x471: {                         /* UDM_SETPOS (the position in the low word), UDM_SETPOS32 */
+        int old = w->spin_pos;
+
+        w->spin_pos = spin_clamp(w, msg == 0x467 ? (int16_t)(lp & 0xFFFF) : (int)lp);
+        spin_show(w);
+        return (uint32_t)old & 0xFFFF;
+    }
+    case 0x468: {                                     /* UDM_GETPOS: the position, and in the high word 1 if the buddy's text is not a number */
+        int v = spin_read(w, &err);
+
+        return ((uint32_t)err << 16) | ((uint32_t)v & 0xFFFF);
+    }
+    case 0x472: {                                     /* UDM_GETPOS32 */
+        int v = spin_read(w, &err);
+
+        if (lp)
+            WR32(lp, (uint32_t)err);
+        return (uint32_t)v;
+    }
+    case 0x469: {                                     /* UDM_SETBUDDY */
+        uint32_t old = w->spin_buddy;
+
+        w->spin_buddy = wp;
+        return old;
+    }
+    case 0x46A:                                       /* UDM_GETBUDDY */
+        return spin_buddy(w) ? spin_buddy(w)->hwnd : 0;
+    }
+    return 0;
+}
+
+/* a character typed into an edit box: printable ones are added (digits only with ES_NUMBER), Backspace takes the last one off (the port keeps no caret or selection) */
+static uint32_t edit_char(Window *w, uint32_t ch)
+{
+    size_t n = strlen(w->title);
+    int limit = w->edit_limit > 0 ? w->edit_limit : 32767;
+
+    if (!w->enabled)
+        return 0;
+    if (ch == 8 && n > 0) {
+        w->title[n - 1] = 0;
+    } else if (ch >= 32 && ch < 256 && ch != 127 && (int)n < limit && (!(w->style & 0x2000) || (ch >= '0' && ch <= '9'))) {
+        char *t = realloc(w->title, n + 2);
+
+        if (!t)
+            return 0;
+        w->title = t;
+        t[n] = (char)ch;
+        t[n + 1] = 0;
+    } else {
+        return 0;
+    }
+    w->invalid = 1;
+    wm_dirty = 1;
+    edit_changed(w);
+    return 0;
+}
+
 uint32_t wm_control_message(Window *w, const char *cls, uint32_t msg, uint32_t wp, uint32_t lp)
 {
     int cb = !strcasecmp(cls, "COMBOBOX");
@@ -156,6 +339,17 @@ uint32_t wm_control_message(Window *w, const char *cls, uint32_t msg, uint32_t w
         return w->hfont;
     if (msg == WM_ENABLE) {
         w->enabled = wp != 0;
+        return 0;
+    }
+    if (!strcasecmp(cls, "msctls_updown32"))
+        return spin_message(w, msg, wp, lp);
+    if (!strcasecmp(cls, "EDIT")) {
+        if (msg == 0x102)             /* WM_CHAR */
+            return edit_char(w, wp);
+        if (msg == 0xC5) {            /* EM_LIMITTEXT */
+            w->edit_limit = (int)wp;
+            return 0;
+        }
         return 0;
     }
     if (!strcasecmp(cls, "BUTTON")) {
@@ -754,49 +948,58 @@ static void parse_dialog(const uint8_t *d, Dlg *out)
 
 /* What the dialog's own procedure says about the colours of its controls (WM_CTLCOLORSTATIC and the rest: a text colour, a background brush, or a null brush for text
  * over its artwork), asked once the dialog has been set up. Windows asks again every time a control is drawn; the answers the game gives do not change. */
+void wm_query_ctl_colors(Window *dlg, Window *c)
+{
+    uint32_t msg, hdc, brush;
+
+    if (!c || !c->cname)
+        return;
+    if (!strcasecmp(c->cname, "STATIC"))
+        msg = 0x138;
+    else if (!strcasecmp(c->cname, "BUTTON"))
+        msg = (c->style & 0xF) == 7 && !ui_in_modal_dialog(c) ? 0x138u : 0x135u;      /* (Windows 98 asks for a group box's colours as it does for a label's: WM_CTLCOLORSTATIC; the modal dialogs of the first game were matched to the real thing with the button message, and keep it) */
+    else if (!strcasecmp(c->cname, "EDIT"))
+        msg = 0x133;
+    else if (!strcasecmp(c->cname, "LISTBOX"))
+        msg = 0x134;
+    else
+        return;
+    hdc = gdi_color_query_dc();
+    brush = wm_send(dlg->hwnd, msg, hdc, c->hwnd);
+    gdi_color_query_result(hdc, brush, c->ctl_fg, c->ctl_bg, &c->ctl_transparent, &c->ctl_has_bg);
+    c->ctl_has_fg = 1;
+    c->ctl_valid = 1;
+}
+
 static void ctl_colors(Window *dlg)
 {
     int i, n = wm_window_count();
 
     for (i = 0; i < n; i++) {
         Window *c = wm_window_at_index(i);
-        uint32_t msg;
-        uint32_t hdc, brush;
 
         if (!c || c->parent != dlg->hwnd || !c->cname)
             continue;
-        if (!strcasecmp(c->cname, "STATIC"))
-            msg = 0x138;
-        else if (!strcasecmp(c->cname, "BUTTON"))
-            msg = 0x135;
-        else if (!strcasecmp(c->cname, "EDIT"))
-            msg = 0x133;
-        else if (!strcasecmp(c->cname, "LISTBOX"))
-            msg = 0x134;
-        else
-            continue;
-        hdc = gdi_color_query_dc();
-        brush = wm_send(dlg->hwnd, msg, hdc, c->hwnd);
-        gdi_color_query_result(hdc, brush, c->ctl_fg, c->ctl_bg, &c->ctl_transparent, &c->ctl_has_bg);
-        c->ctl_has_fg = 1;
-        c->ctl_valid = 1;
+        wm_query_ctl_colors(dlg, c);
     }
 }
 
 static uint32_t dialog_stack[8];
 static int ndialogs;
 
-/* Run the modal dialog a template (in host memory) describes: its window and controls are made, `proc` (a guest address) gets WM_INITDIALOG, and the messages are
- * served until EndDialog; returns EndDialog's result. DialogBoxParamA reads the template from the program's resources, the file dialogs (filedlg.c) build theirs. */
-uint32_t wm_dialog_box(const uint8_t *tmpl_bytes, uint32_t tmpl, uint32_t parent, uint32_t proc, uint32_t param)
+/* Make the dialog a template (in host memory) describes: its window and controls, then WM_INITDIALOG to `proc` (a guest address) and the colours its controls are given. A modal dialog
+ * (DialogBox) is shown at once, centred, and put on the dialog stack; a modeless one (CreateDialog) is shown only if its template says WS_VISIBLE, and a child window (the Magic Shell's
+ * pages are WS_CHILD dialogs inside its main window) is where the template puts it in its parent. */
+static Window *dialog_make(const uint8_t *tmpl_bytes, uint32_t tmpl, uint32_t parent, uint32_t proc, uint32_t param, int modal)
 {
     uint32_t hdlg, first = 0, args[4];
     Dlg dd;
     Window *win;
-    int i, w, h, bx, by, cw, ch;
+    int i, w, h, bx, by, cw, ch, child;
     uint32_t dlg_font = 0;
 
     parse_dialog(tmpl_bytes, &dd);
+    child = (dd.style & WS_CHILD) != 0 && !modal;
     {   /* dialog units: a quarter of the font's average character width across, an eighth of its height down (the system font's 8 x 16 without DS_SETFONT) */
         int height = 16, avg = 8, nl = 0, nt = 0;
         const char *face = dd.pt ? dd.face : "MS Sans Serif";
@@ -818,11 +1021,15 @@ uint32_t wm_dialog_box(const uint8_t *tmpl_bytes, uint32_t tmpl, uint32_t parent
         ch = ui_dlu_y(dd.cy, by);
         w = cw + 2 * nl;
         h = ch + nt + nl;
-        {   /* a template at 0, 0 is centred on the screen, and moved so that its top left corner stays visible when it is bigger (the Stats window is wider than 640) */
+        {   /* a template at 0, 0 is centred on the screen, and moved so that its top left corner stays visible when it is bigger (the Stats window is wider than 640); a child is where it says */
             int px = (screen_w - w) / 2, py = (screen_h - h) / 2;
 
-            px = px < 0 ? 0 : px;
-            py = py < 0 ? 0 : py;
+            if (child) {
+                px = ui_dlu_x(dd.x, bx);
+                py = ui_dlu_y(dd.y, by);
+            }
+            px = px < 0 && !child ? 0 : px;
+            py = py < 0 && !child ? 0 : py;
             win = wm_new_window("#32770", parent, dd.style, dd.exstyle, px, py, w, h, dd.title, 0, param);
         }
         win->nc_l = win->nc_r = win->nc_b = nl;
@@ -832,9 +1039,9 @@ uint32_t wm_dialog_box(const uint8_t *tmpl_bytes, uint32_t tmpl, uint32_t parent
         gdi_resize_surface(win);             /* the surface covers the client area, now that the frame is known */
     }
     win->dlgproc = proc;
-    win->visible = 1;
+    win->visible = modal || (dd.style & WS_VISIBLE) != 0;
     win->ended = 0;
-    win->is_dialog = 1;
+    win->is_dialog = modal;
     win->invalid = win->erase = 1;       /* a dialog is drawn when it is shown (those that paint themselves, like the deck builder's Stats, do it on WM_PAINT) */
     hdlg = win->hwnd;
     if (dd.pt)                           /* DS_SETFONT: Windows makes the dialog's font and sets it on every control */
@@ -851,12 +1058,23 @@ uint32_t wm_dialog_box(const uint8_t *tmpl_bytes, uint32_t tmpl, uint32_t parent
         if (!first && (it->style & WS_TABSTOP))
             first = c->hwnd;
     }
-    if (ndialogs < 8)
+    if (modal && ndialogs < 8)
         dialog_stack[ndialogs++] = hdlg;
-    port_trace("DialogBoxParam: template %u '%s' with %d controls, proc 0x%08x", tmpl, dd.title, dd.count, proc);
+    port_trace("%s: template %u '%s' with %d controls, proc 0x%08x", modal ? "DialogBoxParam" : "CreateDialogParam", tmpl, dd.title, dd.count, proc);
+    free(dd.items);
     args[0] = hdlg; args[1] = WM_INITDIALOG; args[2] = first; args[3] = param;
     guest_call(proc, 4, args);
     ctl_colors(win);
+    return win;
+}
+
+/* Run the modal dialog: its window and controls are made, `proc` gets WM_INITDIALOG, and the messages are served until EndDialog; returns EndDialog's result. DialogBoxParamA reads the
+ * template from the program's resources, the file dialogs (filedlg.c) build theirs. */
+uint32_t wm_dialog_box(const uint8_t *tmpl_bytes, uint32_t tmpl, uint32_t parent, uint32_t proc, uint32_t param)
+{
+    Window *win = dialog_make(tmpl_bytes, tmpl, parent, proc, param, 1);
+    uint32_t hdlg = win->hwnd;
+
     while (!win->ended) {
         uint32_t msgbuf[7];
         extern int wm_next_message_for(uint32_t *out);
@@ -880,7 +1098,6 @@ uint32_t wm_dialog_box(const uint8_t *tmpl_bytes, uint32_t tmpl, uint32_t parent
         uint32_t r = win->result;
 
         wm_destroy(hdlg);
-        free(dd.items);
         return r;
     }
 }
@@ -894,6 +1111,93 @@ static uint32_t DialogBoxParamA(const uint32_t *a)
         return 0xFFFFFFFFu;
     }
     return wm_dialog_box(G + addr, a[1], a[2], a[3], a[4]);
+}
+
+/* CreateDialogParamA(instance, template, parent, procedure, parameter): the same dialog, modeless: the window is returned (0, and the last error ERROR_RESOURCE_NAME_NOT_FOUND, if the
+ * template is not in the program) and the caller's own message loop serves it. */
+static uint32_t CreateDialogParamA(const uint32_t *a)
+{
+    uint32_t addr, size;
+    Window *win;
+
+    if (!pe_find_resource(a[0], 5, a[1], &addr, &size)) {
+        port_trace("CreateDialogParam(template=%s): no such resource", a[1] > 0xFFFF ? P(a[1]) : "(number)");
+        k32_set_last_error(1814);                          /* ERROR_RESOURCE_NAME_NOT_FOUND */
+        return 0;
+    }
+    win = dialog_make(G + addr, a[1], a[2], a[3], a[4], 0);
+    return win->hwnd;
+}
+
+/* The tab stops of a dialog in the order the template gave them (the order the controls were made in): the next (or previous) one that can take the focus after `from`, or `from`. */
+static uint32_t next_tab_stop(Window *dlg, uint32_t from, int back)
+{
+    int i, n = wm_window_count(), at = -1, step = back ? -1 : 1, k;
+
+    for (i = 0; i < n; i++) {
+        Window *c = wm_window_at_index(i);
+
+        if (c && c->hwnd == from)
+            at = i;
+    }
+    for (k = 1; k <= n; k++) {
+        int j = ((at < 0 ? (back ? n : -1) : at) + step * k % n + n) % n;
+        Window *c = wm_window_at_index(j);
+
+        if (c && c->parent == dlg->hwnd && (c->style & WS_TABSTOP) && c->visible && c->enabled)
+            return c->hwnd;
+    }
+    return from;
+}
+
+/* IsDialogMessageA(dialog, &msg): the keyboard interface of a modeless dialog, for a message that is for the dialog or one of its controls. Esc is IDCANCEL, Enter presses the default push
+ * button (the focused one, if it is a push button, else the one the template made the default, else IDOK), Tab and Shift+Tab move between the tab stops; the key is then used up (TRUE).
+ * Any other message is the caller's to translate and dispatch (FALSE). */
+static uint32_t IsDialogMessageA(const uint32_t *a)
+{
+    Window *dlg = wm_window(a[0]), *target;
+    uint32_t hwnd = RD32(a[1]), msg = RD32(a[1] + 4), wp = RD32(a[1] + 8), id = 0;
+    int is_in = 0;
+
+    if (!dlg)
+        return 0;
+    for (target = wm_window(hwnd); target; target = target->parent ? wm_window(target->parent) : NULL)
+        if (target->hwnd == dlg->hwnd) {
+            is_in = 1;
+            break;
+        }
+    if (!is_in || msg != WM_KEYDOWN)
+        return 0;
+    if (wp == 0x1B) {                                                           /* VK_ESCAPE */
+        wm_post(dlg->hwnd, WM_COMMAND, 2u, 0);
+        return 1;
+    }
+    if (wp == 0x0D) {                                                           /* VK_RETURN */
+        Window *f = wm_window(hwnd), *def = NULL;
+        int i, n = wm_window_count();
+
+        if (f && f != dlg && !strcasecmp(f->cname, "BUTTON") && ((f->style & 0xF) == 0 || (f->style & 0xF) == 1)) {
+            wm_post(dlg->hwnd, WM_COMMAND, f->id & 0xFFFFu, f->hwnd);
+            return 1;
+        }
+        for (i = 0; i < n && !def; i++) {
+            Window *c = wm_window_at_index(i);
+
+            if (c && c->parent == dlg->hwnd && !strcasecmp(c->cname, "BUTTON") && (c->style & 0xF) == 1 && c->visible && c->enabled)
+                def = c;
+        }
+        id = def ? def->id : 1u;
+        wm_post(dlg->hwnd, WM_COMMAND, id & 0xFFFFu, def ? def->hwnd : 0);
+        return 1;
+    }
+    if (wp == 0x09) {                                                           /* VK_TAB: Shift moves backwards */
+        uint32_t to = next_tab_stop(dlg, hwnd, wm_keys[0x10] != 0);
+
+        if (to && to != hwnd)
+            wm_set_focus(to);
+        return 1;
+    }
+    return 0;
 }
 
 uint32_t wm_top_dialog(void) { return ndialogs ? dialog_stack[ndialogs - 1] : 0; }
@@ -969,7 +1273,7 @@ const WinApi CONTROLS_APIS[] = {
     {"user32.dll", "SetDlgItemInt", SetDlgItemInt}, {"user32.dll", "GetDlgItemInt", GetDlgItemInt},
     {"user32.dll", "CheckDlgButton", CheckDlgButton}, {"user32.dll", "IsDlgButtonChecked", IsDlgButtonChecked},
     {"user32.dll", "CheckRadioButton", CheckRadioButton}, {"user32.dll", "EndDialog", EndDialog},
-    {"user32.dll", "DialogBoxParamA", DialogBoxParamA}, {"user32.dll", "wsprintfA", wsprintfA},
+    {"user32.dll", "DialogBoxParamA", DialogBoxParamA}, {"user32.dll", "CreateDialogParamA", CreateDialogParamA}, {"user32.dll", "IsDialogMessageA", IsDialogMessageA}, {"user32.dll", "wsprintfA", wsprintfA},
     {"user32.dll", "SetScrollRange", SetScrollRange}, {"user32.dll", "GetScrollRange", GetScrollRange},
     {"user32.dll", "SetScrollPos", SetScrollPos}, {"user32.dll", "GetScrollPos", GetScrollPos}, {"user32.dll", "LoadBitmapA", zero},
     {0, 0, 0},

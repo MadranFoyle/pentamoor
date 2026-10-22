@@ -34,10 +34,13 @@
  *   FaceMaker.exe    the portrait editor it starts when a colour is chosen
  *   DECK.EXE         the stand-alone deck builder: a stub that starts the deck builder of deckdll.dll
  *   deckdll.dll, cardartlib.dll, drawcardlib.dll, CdTools.dll, STATWIN.DLL   the libraries; deckdll.dll and drawcardlib.dll carry a copy of the picture decompressor
- * (magic.exe, the "Magic Shell", is not a build the port runs. MAGSND.DLL and MAGVID.DLL are provided by the port itself, as in 1.0.)
+ *   magic.exe        the Magic Shell (Milestone 5): the first program a player starts; it starts shandalar.exe and DECK.EXE, and carries its own duel. No hooks. Its program name is the lifter's, MAGIC
+ *                    (as 1.0's MAGIC.EXE: the two are told apart by the id)
+ * (MAGSND.DLL and MAGVID.DLL are provided by the port itself, as in 1.0.)
  *   Manaball.wav     the 23,040-byte library of the expansion's own cabinet (DuelSounds/Manaball.wav; internal name SencLib.dll) that the original installer ran to write the licence value; the
  *                    installer runs one export of it once, as a program (main.c, --call-export), after the discs are verified (tools/install/licence.py). No hooks. docs/notes/sota-licence.md */
 #define ID_V215_SHANDALAR "e4e46718c451974756b66e7666ac0bf1cc9ebdbc5897eb04a87b8ea2a02353e7"
+#define ID_V215_SHELL "e948affc1c1fe74c4a9709350d6c184b8cb01548e57a70b5751a479fa3d2bf65"
 #define ID_V215_FACEMAKER "b4f3d19614dcd825da846d097baa3cd9badc0c9852492bc27a8ba62c1741a493"
 #define ID_V215_DECK "c7ec116aecdcde9ab976cc97cba81482fc4219278f8042edf667456ede3dd8ef"
 #define ID_V215_DECKDLL "ce741d1f5547c143fd8494bbe09c26e918b892a3d9fc3c3761babb3c8268a667"
@@ -96,9 +99,15 @@ static const BuildProfile PROFILES[] = {
         .keys = {.wait = 0x4b84d7, .pop = 0x4a8ea2, .wait_loop_ret = 0x4b84e5, .sites = {0x4a3296, 0x4f0b96}, .nsites = 2, .name_loop = {0x53aecd, 0x53b129}},
         .display = {.width = 0x57a7d0, .height = 0x57a7d4},
         .viewcard = {.cmd = 0x6e},
-        .programs = {{"facemaker.exe", "game_facemaker"}, {"deck.exe", "game_sotadeck"}, {"shandalar.exe", "game_shandalar"}},
+        .programs = {{"facemaker.exe", "game_facemaker"}, {"deck.exe", "game_sotadeck"}, {"shandalar.exe", "game_shandalar"}, {"magic.exe", "game_shell"}},
         .lzw = {.header = 0x91e000, .read = 0x91e484, .read2 = 0x91e1fc, .block = 0x582070,
                 .in_ptr = 0x915cd0, .in_end = 0x581fc0, .refill = 0x726b1c, .callback = 0x55d9e0},
+    },
+    {
+        .id = ID_V215_SHELL, .build = "v2.15", .file = "magic.exe", .program = "MAGIC",
+        .programs = {{"shandalar.exe", "game_shandalar"}, {"deck.exe", "game_sotadeck"}, {"magic.exe", "game_shell"}, {"facemaker.exe", "game_facemaker"}},
+        .lzw = {.header = 0x8f5000, .read = 0x8f5484, .read2 = 0x8f51fc, .block = 0x543ba8,
+                .in_ptr = 0x8c744c, .in_end = 0x53ffa8, .refill = 0x8c7650, .callback = 0x459e4c},
     },
     {
         .id = ID_V215_FACEMAKER, .build = "v2.15", .file = "FaceMaker.exe", .program = "FACEMAKER",

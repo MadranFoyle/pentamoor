@@ -449,6 +449,40 @@ static void test_sota_calls(void)
     API("ReleaseDC", 0, 0x12345678u);                                                    /* what is not a context is left alone */
 }
 
+/* SetDIBits into a DIB section (the Magic Shell loads the tile of its buttons' faces so): the bitmap description is the sixth argument, the colour use the seventh. With the colour table the
+ * DIB section was made with, the pixels land as the same indices; they were all 0 (the description was read from the colour-use argument) and the shell's buttons came out black. */
+static void test_set_dibits_to_dib_section(void)
+{
+    uint32_t bmi = bitmapinfo(4, 2, 8, 256), srcinfo = bitmapinfo(4, 2, 8, 256), bits = scratch(4), src = scratch(8), hmem, dib;
+    int i;
+
+    for (i = 0; i < 256; i++) {
+        set_colour(bmi, i, i, (i * 7) & 255, (i * 13) & 255);
+        set_colour(srcinfo, i, i, (i * 7) & 255, (i * 13) & 255);
+    }
+    hmem = API("CreateCompatibleDC", 0);
+    dib = API("CreateDIBSection", hmem, bmi, 0, bits, 0, 0);
+    CHECK(dib != 0 && RD32(bits) != 0);
+    for (i = 0; i < 4; i++) {                                                     /* bottom-up: the first row of the buffer is the bottom row */
+        WR8(src + (uint32_t)i, (uint8_t)(80 + i));
+        WR8(src + 4 + (uint32_t)i, (uint8_t)(90 + i));
+    }
+    CHECK(API("SetDIBits", hmem, dib, 0, 2, src, srcinfo, 0) == 2);              /* the number of lines */
+    {
+        uint32_t px = RD32(bits);
+
+        CHECK(RD8(px) == 80 && RD8(px + 1) == 81 && RD8(px + 3) == 83 && RD8(px + 4) == 90 && RD8(px + 7) == 93);
+    }
+    CHECK(API("SetDIBits", hmem, 0x777777, 0, 2, src, srcinfo, 0) == 0);          /* not a bitmap */
+    /* a font object tells a control its face and pixel size (WM_SETFONT: the Magic Shell's labels): the pixel size as asked for a negative height, the cell's ppem for a positive one */
+    {
+        const char *face = NULL;
+        int bold = 0, px = 0;
+
+        CHECK(!gdi_font_object(0x7777, &face, &bold, &px));
+    }
+}
+
 int main(void)
 {
     extern void kernel32_init(void);
@@ -470,6 +504,7 @@ int main(void)
     test_text();
     test_small_text_coverage();
     test_sota_calls();
+    test_set_dibits_to_dib_section();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

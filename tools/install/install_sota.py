@@ -12,8 +12,7 @@ lifts and builds it (install.py). This script is for a folder made another way, 
 
 The folder is what Windows has after the expansion is installed over the first game and patched: the first game's install (the pictures, sprites and sounds Spells of the Ancients
 still reads from it), with the files of the 2.0 install over it (the expansion's disc, `Program\\`), and the six files of the 2.15 patch over those. This script does not make it: it
-checks it (the SHA-256 of every program and library against tools/lift/builds.py, the table the runtime's profiles also come from) and says what is wrong. magic.exe (the "Magic Shell")
-and ManaLink 3.0 are not part of it.
+checks it (the SHA-256 of every program and library against tools/lift/builds.py, the table the runtime's profiles also come from) and says what is wrong. magic.exe (the "Magic Shell") is one of the programs it builds a module for (game_shell: `./pentamoor sota shell`); ManaLink 3.0 is not part of it.
 """
 import argparse
 import os

@@ -24,7 +24,7 @@ int regstore_keeps(const char *key, const char *name)
 {
     if (!key)
         return 0;
-    if (ci_prefix(key, REGSTORE_MICROPROSE_KEY))
+    if (ci_prefix(key, REGSTORE_MICROPROSE_KEY) || ci_prefix(key, REGSTORE_USER_KEY))
         return 1;
     if (!strcasecmp(key, REGSTORE_WINDOWS_KEY))
         return !name || !strcasecmp(name, "FirstInstallDateTime") || !strcasecmp(name, "ProductId");

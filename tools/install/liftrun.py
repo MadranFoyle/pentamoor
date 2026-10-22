@@ -59,7 +59,7 @@ def sota_file(game, name):
 
 
 def sota_steps(game, generated=GENERATED):
-    """{module: [(script, [arguments])...]} for the three programs of a 2.15 install (builds.SOTA_MODULES: shandalar, facemaker, sotadeck), `game` being its Program folder. Each module
+    """{module: [(script, [arguments])...]} for the four programs of a 2.15 install (builds.SOTA_MODULES: shandalar, facemaker, sotadeck, shell), `game` being its Program folder. Each module
     is the program and the libraries it loads, lifted at the bases of builds.LIBRARY_BASES (the runtime maps each library at its base: the profile's `.base`)."""
     bases = builds.LIBRARY_BASES["v2.15"]
     steps = {}

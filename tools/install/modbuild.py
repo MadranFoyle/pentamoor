@@ -30,7 +30,7 @@ import zigdl
 # program -> the folder the lifter writes under sources/generated (tools/lift/lift_all.sh)
 PROGRAMS = {"magic": "lift_magic_all", "deck": "lift_deck", "duel": "lift_duel"}
 # the same for Spells of the Ancients 2.15 (tools/lift/builds.py SOTA_MODULES; tools/install/install_sota.py makes them): kept apart, as the installer builds all of PROGRAMS
-SOTA_PROGRAMS = {"shandalar": "lift_shandalar", "facemaker": "lift_facemaker", "sotadeck": "lift_sotadeck"}
+SOTA_PROGRAMS = {"shandalar": "lift_shandalar", "facemaker": "lift_facemaker", "sotadeck": "lift_sotadeck", "shell": "lift_shell"}
 # the one library of the expansion's cabinet that the installer runs to write the licence value (tools/install/licence.py): built only when the installer lifted it
 LICENCE_PROGRAMS = {"senclib": "lift_senclib"}
 DEFINES = ["-DLIFT_BACKEND_FLAT4G", "-DLIFT_PREEMPT", "-DLIFT_MODULE"]

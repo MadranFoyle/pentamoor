@@ -48,10 +48,22 @@ static void bevel(Canvas *c, int x0, int y0, int x1, int y1, const uint8_t tl[3]
 /* ---- text ---------------------------------------------------------------------------------------------------------------------------- */
 typedef struct UiFont { const char *face; int pt, bold; int height, ascent; } UiFont;
 
+/* A control that is not in a dialog (the Magic Shell's radio buttons and labels sit on its main window) is drawn in the font its window was given (WM_SETFONT), at the pixel size
+ * Windows would realise: set for the length of one draw_control, face and pixels (`pt` below is then minus the pixels, which ui_pixel_size reads as such). */
+static const char *ctl_face;
+static int ctl_px, ctl_bold;
+
 static UiFont ui_font(const Window *dlg, int bold)
 {
     UiFont f;
 
+    if (ctl_face) {
+        f.face = ctl_face;
+        f.pt = -ctl_px;
+        f.bold = ctl_bold || bold;
+        ui_font_metrics(f.face, f.pt, f.bold, &f.height, &f.ascent, NULL);
+        return f;
+    }
     f.face = dlg && dlg->dlg_face[0] ? dlg->dlg_face : "MS Sans Serif";
     f.pt = dlg && dlg->dlg_pt ? dlg->dlg_pt : 8;
     f.bold = bold;
@@ -274,13 +286,29 @@ static void draw_button(Canvas *c, const Window *w, const Window *dlg, int x0, i
         label_line(c, &f, x0 + (x1 - x0 - tw) / 2 + off, ty + off, label, n, ul, fg, disabled);
     } else if (kind == 7) {                                                       /* group box */
         int top = y0 + f.height / 2, tw = text_w(&f, label, n);
+        int gx0 = x0 + 6, gx1 = x0 + 6 + tw + 4;
+        int open_gap = n && w->ctl_transparent && !w->ctl_has_bg;                /* the parent gave no brush (the Magic Shell's pages): artwork shows through, so the frame is left out under the label */
 
         if (!w->ctl_transparent)
             fill(c, x0, y0, x1, y1, w->ctl_has_bg ? w->ctl_bg : FACE);
-        bevel(c, x0, top, x1, y1, SHADOW, HILIGHT);
-        bevel(c, x0 + 1, top + 1, x1 - 1, y1 - 1, HILIGHT, SHADOW);
+        if (open_gap) {
+            hline(c, x0, gx0, top, SHADOW);                                          /* the frame, two lines thick, its top edge in two pieces */
+            hline(c, gx1 < x1 - 1 ? gx1 : x1 - 1, x1 - 1, top, SHADOW);
+            vline(c, x0, top, y1 - 1, SHADOW);
+            hline(c, x0, x1, y1 - 1, HILIGHT);
+            vline(c, x1 - 1, top, y1, HILIGHT);
+            hline(c, x0 + 1, gx0, top + 1, HILIGHT);
+            hline(c, gx1 < x1 - 2 ? gx1 : x1 - 2, x1 - 2, top + 1, HILIGHT);
+            vline(c, x0 + 1, top + 1, y1 - 2, HILIGHT);
+            hline(c, x0 + 1, x1 - 1, y1 - 2, SHADOW);
+            vline(c, x1 - 2, top + 1, y1 - 1, SHADOW);
+        } else {
+            bevel(c, x0, top, x1, y1, SHADOW, HILIGHT);
+            bevel(c, x0 + 1, top + 1, x1 - 1, y1 - 1, HILIGHT, SHADOW);
+        }
         if (n) {                       /* the label sits on a strip of the face colour that hides the frame, over artwork too (Windows 98's DUEL.EXE setup dialog shows it so) */
-            fill(c, x0 + 6, y0, x0 + 6 + tw + 4, y0 + f.height, FACE);
+            if (!open_gap)
+                fill(c, gx0, y0, gx1, y0 + f.height, w->ctl_has_bg ? w->ctl_bg : FACE);
             label_line(c, &f, x0 + 8, y0, label, n, ul, fg, disabled);
         }
     } else if (kind == 2 || kind == 3 || kind == 5 || kind == 6) {                 /* check boxes */
@@ -602,13 +630,53 @@ void ui_combo_list(uint8_t *rgb, int sw, int sh, const Window *w)
     }
 }
 
+/* A scroll bar control: the two arrow buttons, the track and the thumb at the position (SetScrollRange / SetScrollPos on the control: bar 2). */
+static void draw_scrollbar(Canvas *c, const Window *w, int x0, int y0, int x1, int y1)
+{
+    const int *sc = w->scroll[2];
+    int vertical = (w->style & 1u) != 0, len = vertical ? y1 - y0 : x1 - x0, bw = vertical ? x1 - x0 : y1 - y0, track, thumb, pos, span = sc[1] - sc[0];
+
+    fill(c, x0, y0, x1, y1, LIGHT);
+    if (vertical) {
+        button_face(c, x0, y0, x1, y0 + bw, 0, 0);
+        arrow(c, (x0 + x1) / 2, y0 + bw / 2, 0, BLACK);
+        button_face(c, x0, y1 - bw, x1, y1, 0, 0);
+        arrow(c, (x0 + x1) / 2, y1 - bw / 2 - 1, 1, BLACK);
+    } else {
+        button_face(c, x0, y0, x0 + bw, y1, 0, 0);
+        arrow(c, x0 + bw / 2, (y0 + y1) / 2, 2, BLACK);
+        button_face(c, x1 - bw, y0, x1, y1, 0, 0);
+        arrow(c, x1 - bw / 2 - 1, (y0 + y1) / 2, 3, BLACK);
+    }
+    track = len - 2 * bw;
+    thumb = bw;                                                    /* a square thumb: the range is not a number of lines this control knows */
+    if (track < thumb + 1 || span <= 0)
+        return;
+    pos = (track - thumb) * (sc[2] - sc[0]) / span;
+    if (pos < 0)
+        pos = 0;
+    if (vertical)
+        button_face(c, x0, y0 + bw + pos, x1, y0 + bw + pos + thumb, 0, 0);
+    else
+        button_face(c, x0 + bw + pos, y0, x0 + bw + pos + thumb, y1, 0, 0);
+}
+
 /* A standard control. `pressed` is the push button the mouse is holding down. */
 static void draw_control(Canvas *c, const Window *w, const Window *dlg, uint32_t pressed)
 {
     int x0, y0, x1, y1;
+    const char *face = NULL;
+    int bold = 0, px = 0;
 
     wm_abs_rect(w, &x0, &y0, &x1, &y1);
-    if (!strcasecmp(w->cname, "BUTTON"))
+    if (!dlg && w->hfont && gdi_font_object(w->hfont, &face, &bold, &px)) {
+        ctl_face = face;
+        ctl_px = px;
+        ctl_bold = bold;
+    }
+    if (!strcasecmp(w->cname, "SCROLLBAR"))
+        draw_scrollbar(c, w, x0, y0, x1, y1);
+    else if (!strcasecmp(w->cname, "BUTTON"))
         draw_button(c, w, dlg, x0, y0, x1, y1, pressed == w->hwnd);
     else if (!strcasecmp(w->cname, "STATIC"))
         draw_static(c, w, dlg, x0, y0, x1, y1);
@@ -626,14 +694,15 @@ static void draw_control(Canvas *c, const Window *w, const Window *dlg, uint32_t
         button_face(c, x0, mid, x1, y1, 0, 0);
         arrow(c, (x0 + x1) / 2, (mid + y1) / 2, 1, BLACK);
     }
+    ctl_face = NULL;
 }
 
 static int is_standard(const Window *w)
 {
-    static const char *const names[] = {"BUTTON", "STATIC", "EDIT", "LISTBOX", "COMBOBOX", "msctls_updown32"};
+    static const char *const names[] = {"BUTTON", "STATIC", "EDIT", "LISTBOX", "COMBOBOX", "SCROLLBAR", "msctls_updown32"};
     size_t i;
 
-    if (w->proc || w->ownerdraw)
+    if ((w->proc && !w->subclassed) || w->ownerdraw)
         return 0;
     for (i = 0; i < sizeof(names) / sizeof(names[0]); i++)
         if (!strcasecmp(w->cname, names[i]))
@@ -698,3 +767,22 @@ void ui_button_face(uint8_t *rgb, int sw, int sh, int x0, int y0, int x1, int y1
 }
 
 const Window *ui_dialog_of(const Window *w) { return dialog_of(w); }
+
+/* Whether a window is a modal dialog or inside one: those are drawn from the dialog stack (ui_dialog). A modeless dialog (CreateDialog: the Magic Shell's pages) is an ordinary child window. */
+int ui_in_modal_dialog(const Window *w)
+{
+    for (; w; w = w->parent ? wm_window(w->parent) : NULL)
+        if (w->is_dialog)
+            return 1;
+    return 0;
+}
+
+/* The standard controls of an ordinary window (not of a dialog): Windows draws them, the game never does (the Magic Shell's pages are made of them). */
+int ui_standard_control(const Window *w) { return w && w->cname && is_standard(w); }
+
+void ui_draw_control(uint8_t *rgb, int sw, int sh, const Window *w, uint32_t pressed)
+{
+    Canvas c = {rgb, sw, sh};
+
+    draw_control(&c, w, dialog_of(w), pressed);
+}

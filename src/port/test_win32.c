@@ -474,6 +474,61 @@ static void test_find_files(void)
     CHECK(CRT("_findfirst", cstr("C:\\Magic\\Program\\ART\\B.PIC"), data) != 0xFFFFFFFFu);      /* a name without a wildcard, in any case */
 }
 
+/* FindFirstFileA, FindNextFileA and FindClose (the Magic Shell lists the folders of its saved matches and decks with them): the same search as _findfirst, with WIN32_FIND_DATAA. */
+static void test_win32_find_files(void)
+{
+    uint32_t data = scratch(320), h, n = 0;
+    char names[16][64];
+    uint32_t attrs[16], sizes[16];
+    uint64_t when;
+
+    h = K32("FindFirstFileA", cstr("C:\\Magic\\Program\\Art\\*.pic"), data);
+    CHECK(h != 0xFFFFFFFFu && h != 0);
+    while (h != 0xFFFFFFFFu && n < 16) {
+        snprintf(names[n], sizeof(names[n]), "%s", text(data + 44));                           /* cFileName */
+        attrs[n] = RD32(data);
+        sizes[n] = RD32(data + 32);                                                            /* nFileSizeLow */
+        CHECK(RD32(data + 28) == 0 && text(data + 304)[0] == 0 && RD32(data + 36) == 0);       /* size high, cAlternateFileName, reserved */
+        n++;
+        if (!K32("FindNextFileA", h, data))
+            break;
+    }
+    CHECK(n == 3 && !strcmp(names[0], "A.PIC") && !strcmp(names[1], "b.pic") && !strcmp(names[2], "d.pic") && attrs[0] == 0x20 && sizes[0] == 1 && sizes[1] == 2 && sizes[2] == 4);
+    CHECK(K32("FindNextFileA", h, data) == 0 && K32("GetLastError") == 18);                  /* ERROR_NO_MORE_FILES */
+    CHECK(K32("FindClose", h) == 1);
+    CHECK(K32("FindClose", h) == 0 && K32("GetLastError") == 6 && K32("FindNextFileA", h, data) == 0);   /* a handle that is closed: ERROR_INVALID_HANDLE */
+    when = (uint64_t)RD32(data + 20) | (uint64_t)RD32(data + 24) << 32;                       /* the last write time of d.pic is a FILETIME: 100 ns since 1601, long after 1970 */
+    CHECK(when > 116444736000000000ull);
+    CHECK(K32("FindFirstFileA", cstr("C:\\Magic\\Program\\Art\\*.zzz"), data) == 0xFFFFFFFFu && K32("GetLastError") == 2);          /* ERROR_FILE_NOT_FOUND */
+    h = K32("FindFirstFileA", cstr("C:\\Magic\\Program\\Art\\*"), data);
+    n = 0;
+    while (h != 0xFFFFFFFFu && n < 16) {
+        snprintf(names[n], sizeof(names[n]), "%s", text(data + 44));
+        attrs[n++] = RD32(data);
+        if (!K32("FindNextFileA", h, data))
+            break;
+    }
+    CHECK(n == 7 && !strcmp(names[0], ".") && !strcmp(names[1], "..") && attrs[0] == 0x10);         /* "." and ".." first, as Windows lists them */
+    K32("FindClose", h);
+    {   /* sixteen searches at once at most (the table is shared with _findfirst's), then ERROR_TOO_MANY_OPEN_FILES; closing one makes room */
+        uint32_t hs[17];
+        int i, opened = 0;
+
+        for (i = 0; i < 17; i++) {
+            hs[i] = K32("FindFirstFileA", cstr("C:\\Magic\\Program\\Art\\*.pic"), data);
+            opened += hs[i] != 0xFFFFFFFFu;
+            if (hs[i] == 0xFFFFFFFFu)
+                break;
+        }
+        CHECK(i < 17 && opened >= 1 && K32("GetLastError") == 4);
+        K32("FindClose", hs[0]);
+        CHECK((h = K32("FindFirstFileA", cstr("C:\\Magic\\Program\\Art\\*.pic"), data)) != 0xFFFFFFFFu);
+        K32("FindClose", h);
+        for (i = 1; i < opened; i++)
+            K32("FindClose", hs[i]);
+    }
+}
+
 int main(void)
 {
     char base[600];
@@ -499,6 +554,7 @@ int main(void)
     test_strings_and_classes();
     test_file_title();
     test_find_files();
+    test_win32_find_files();
     test_rmtree(base);
     printf("test_win32: %d checks, %d failed\n", checks, failures);
     return failures != 0;

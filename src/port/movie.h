@@ -24,6 +24,7 @@ Window *movie_window(const char *cname, uint32_t parent, uint32_t style, int x, 
 int movie_window_playing(Window *w);
 void movie_window_play(Window *w);
 void movie_window_stop(Window *w);
+int movie_window_frames(const Window *w);                           /* how many pictures the window's movie has (0: not a movie window) */
 void movie_window_set_held(Window *w, int on);                      /* an ended see-through clip the game has "painted over": not drawn, but its window stays and takes clicks and keys */
 int movie_window_held(const Window *w);
 void movie_tick(void);
