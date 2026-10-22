@@ -8,7 +8,8 @@ Program\\DuelSounds\\Manaball.wav (internal name SencLib.dll) and called its exp
   * only the installer calls it, only after the discs and the patch were verified and the files were made (install.py), and never the runtime on its own, a launcher, or a game start;
   * the library is the owner's own file from the owner's own cabinet. Its hash is checked before it is lifted or run (tools/lift/builds.py, SOTA_LICENCE_LIBRARY), and it is run as a
     black box by the runtime (pentamoor-run --call-export, src/port/main.c) from a module lifted from that file on this machine, which is never committed or put in a release;
-  * the only thing supplied here is the flag word: which licence flags the original installer set (below), and, when the owner asks for it, one more;
+  * the only thing supplied here is the flag word: the licence flags the original installer set (below) and, unless the owner says --keep-cd-check, the one more that the game defines as
+    "skip the disc check" (the discs were just verified, so the install does not ask for one later);
   * the value is bound to this install: the runtime answers the two Windows values the library reads from a random pair made for this install (regstore.py), kept in the install's
     overlay (port_overlay_sota/registry.dat), and the library's own write goes into the same file.
 
@@ -33,17 +34,18 @@ import regstore  # noqa: E402
 FLAG_SET1_CARDS = 8             # the cards of "set 1" are available to the card pickers and the deck editor                    (query 2)
 FLAG_ORIGINAL_INSTALLER = 22    # set by the original installer; the one test of it in the game is never reached (nothing asks query 1)
 ORIGINAL_BITS = (FLAG_SET1_CARDS, FLAG_ORIGINAL_INSTALLER)
-# NOT set by the original installer, and set here only when the owner asks: --no-cd
+# NOT set by the original installer. Set here by default since 2026-10-22, because the discs were just verified (docs/notes/sota-licence.md, "What the installer does now"); left out with
+# --keep-cd-check, which gives the word the original installer's own bits and nothing more.
 FLAG_NO_CD_CHECK = 17           # the game skips its own disc check                                                                (query 8)
+DEFAULT_BITS = ORIGINAL_BITS + (FLAG_NO_CD_CHECK,)
 
 
-def flag_word(no_cd=False):
-    """The flag word handed to the library: exactly the bits the original installer set, and with `no_cd` (--no-cd) the one flag the game defines as "skip the disc check", nothing else."""
+def flag_word(keep_cd_check=False):
+    """The flag word handed to the library: by default the bits the original installer set and the one flag the game defines as "skip the disc check" (DEFAULT_BITS); with `keep_cd_check`
+    (--keep-cd-check) exactly the bits the original installer set. Nothing else, ever."""
     word = 0
-    for bit in ORIGINAL_BITS:
+    for bit in (ORIGINAL_BITS if keep_cd_check else DEFAULT_BITS):
         word |= 1 << bit
-    if no_cd:
-        word |= 1 << FLAG_NO_CD_CHECK
     return word
 
 
@@ -51,8 +53,10 @@ def bits_of(word):
     return [b for b in range(32) if word >> b & 1]
 
 
-SAY_WHAT = "writing the licence value the original Spells of the Ancients installer writes for an owner of the discs"
-SAY_NO_CD = "--no-cd: adding the flag the game itself defines as \"skip the disc check\" to this install's licence value (the game will not ask for a disc)"
+SAY_WHAT = ("writing the licence value the original Spells of the Ancients installer writes for an owner of the discs, and, because the discs were just verified, the game's own "
+            "\"skip the disc check\" flag, so this install does not ask for a disc later (--keep-cd-check keeps the check)")
+SAY_KEEP_CD_CHECK = ("writing the licence value the original Spells of the Ancients installer writes for an owner of the discs, without the \"skip the disc check\" flag "
+                     "(--keep-cd-check): this install asks for a disc where the original did")
 
 
 class LicenceError(Exception):
@@ -133,7 +137,7 @@ def run_writer(req, timeout=300):
     return r.returncode, int(m.group(2)) if m else None, r.stdout
 
 
-def write_value(program, root, overlay, runtime, module, no_cd=False, say=print, writer=run_writer):
+def write_value(program, root, overlay, runtime, module, keep_cd_check=False, say=print, writer=run_writer):
     """The licence step. `program`: the 2.15 Program folder (verified by the caller), `root`: the root of the launchers, `overlay`: the 2.15 install's overlay, `runtime` and `module`: the
     runtime and the module lifted from the licence library. Raises LicenceError, having written nothing, when the library is not the retail file or the module is not built; and, if the
     library's export fails or leaves no value, after saying so. Returns the path of the registry file."""
@@ -145,10 +149,8 @@ def write_value(program, root, overlay, runtime, module, no_cd=False, say=print,
     if not os.path.exists(runtime):
         raise LicenceError(f"the runtime ({runtime}) is not built: the licence value is not written")
     reg = registry_file(overlay)
-    word = flag_word(no_cd)
-    say(f"licence: {SAY_WHAT}")
-    if no_cd:
-        say(f"licence: {SAY_NO_CD}")
+    word = flag_word(keep_cd_check)
+    say(f"licence: {SAY_KEEP_CD_CHECK if keep_cd_check else SAY_WHAT}")
     try:
         if regstore.ensure_pair(reg):
             say(f"licence: made this install's own machine id (two random numbers) in {reg}")

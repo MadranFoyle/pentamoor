@@ -4,8 +4,8 @@
     python3 tools/soak/sota_shell_soak.py --minutes 20 --workdir /tmp/sota-shell-soak --overlay-seed /tmp/overlay-with-licence
 
 It needs what `./pentamoor sota shell` needs: the 2.15 folder (`--program`, default sources/installed_sota/Magic/Program/magic.exe), the modules built by tools/install/install_sota.py (game_shell,
-game_shandalar, game_facemaker, ...) and the runtime. --overlay-seed is a folder copied to be each session's overlay (an install's port_overlay_sota, with its registry.dat and the licence value in it; an
-empty one if not given: the shell's "Start match" then ends the duel at once, which is the CD check and not what this script tests).
+game_shandalar, game_facemaker, ...) and the runtime. --overlay-seed is a folder copied to be each session's overlay (an install's port_overlay_sota, with its registry.dat and the licence value in it, which the installer's default makes with the game's "skip the disc check" flag; an
+empty one if not given, or one from an install made with --keep-cd-check: the shell's "Start match" then does not get to the board, which is the disc check and not what this script tests).
 
 With --mode duels it plays the shell's own duels instead (single duel and gauntlet from the Duel page, a few turns each: ShellDuels).
 

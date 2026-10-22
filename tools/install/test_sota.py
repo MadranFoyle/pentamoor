@@ -516,10 +516,10 @@ def command(world, tmp_path, monkeypatch, capsys):
     rec.writer_result = (0, 0)
     real_write = licence.write_value
 
-    def write_value(program, root, overlay, runtime, module, no_cd=False, say=print, writer=None):
+    def write_value(program, root, overlay, runtime, module, keep_cd_check=False, say=print, writer=None):
         os.makedirs(os.path.dirname(module), exist_ok=True)
         open(module, "w").close()                                  # (the module the fake build did not make)
-        return real_write(program, root, overlay, runtime, module, no_cd=no_cd, say=say, writer=fake_writer)
+        return real_write(program, root, overlay, runtime, module, keep_cd_check=keep_cd_check, say=say, writer=fake_writer)
     monkeypatch.setattr(licence, "write_value", write_value)
     monkeypatch.setenv("PORT_OVERLAY", str(tmp_path / "overlay_sota"))
 
