@@ -68,7 +68,7 @@ SRC = main.c $(PLAT) guest.c pe.c call.c sched.c kernel32.c kernel32_rt.c winsys
 HEADERS = plat.h port.h profile.h regstore.h wm.h gdi.h gdi_int.h sched.h front.h pad.h nav.h navwm.h screens.h steamdeck.h textin.h yesno.h filedlg.h winhelp.h msgbox.h ../native/lift_rt.h ../native/lift_tables.h padlog.h display.h touch.h iosboot.h
 RTFLAGS = -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native
 
-# magic, deck and duel are the retail disc's (1.0); shandalar, facemaker and sotadeck are Spells of the Ancients 2.15's (tools/lift/builds.py, SOTA_MODULES). senclib is the one library
+# magic, deck and duel are the retail disc's (1.0); shandalar, facemaker, sotadeck and shell (magic.exe, the Magic Shell) are Spells of the Ancients 2.15's (tools/lift/builds.py, SOTA_MODULES). senclib is the one library
 # of the expansion's cabinet that the installer runs once to write the licence value (builds.SOTA_LICENCE_LIBRARY); its C exists only when the installer lifted it.
 PROGRAMS = magic deck duel shandalar facemaker sotadeck shell senclib
 GEN_magic ?= ../../sources/generated/lift_magic_all

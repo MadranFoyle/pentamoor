@@ -19,6 +19,7 @@
 
 void kernel32_init(void);
 void port_index_functions(void);
+int wm_next_message_for(uint32_t *out);
 
 static int failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -282,6 +283,155 @@ static void test_magvid(void)
     rmdir(dir);
 }
 
+/* winmm's mciSendCommandA and mciGetErrorStringA, as the Magic Shell uses them to play an AVI: open it as a child of a window, ask its size, set the break key, play it, ask its mode until it
+ * stops, close it. */
+static void test_mci(void)
+{
+    char dir[300], path[300];
+    uint32_t parms = 0x500400, elem = 0x500500, type = 0x500600, buf = 0x500700, args[4];
+    size_t len;
+    uint8_t *avi = make_avi(&len);
+    FILE *f;
+    const WinApi *send = port_find_api("winmm.dll", "mciSendCommandA"), *errstr = port_find_api("winmm.dll", "mciGetErrorStringA");
+    Window *parent, *w;
+    uint32_t id, notified;
+    uint32_t q = 0;
+    int i;
+
+    CHECK(send != NULL && errstr != NULL);
+    if (!send || !errstr) {
+        free(avi);
+        return;
+    }
+    test_tmpdir(dir, sizeof(dir), "test_mci_");
+    snprintf(path, sizeof(path), "%s/Program", dir); plat_mkdir(path);
+    snprintf(path, sizeof(path), "%s/Program/clip.avi", dir);
+    f = fopen(path, "wb");
+    CHECK(f != NULL && fwrite(avi, 1, len, f) == len);
+    fclose(f);
+    free(avi);
+    paths_init(dir, dir);
+    parent = wm_new_window("TESTPARENT", 0, WS_POPUP | WS_VISIBLE, 0, 0, 0, 100, 100, "p", 0, 0);
+    memcpy(G + elem, "C:\\Magic\\Program\\clip.avi", 25);
+#define MCI(id_, msg_, flags_, parms_) (args[0] = (id_), args[1] = (msg_), args[2] = (flags_), args[3] = (parms_), send->fn(args))
+
+    /* MCI_DGV_OPEN_PARMS: callback, device id, device type, element, alias, style, parent; flags MCI_WAIT | MCI_OPEN_ELEMENT | MCI_DGV_OPEN_PARENT */
+    memset(G + parms, 0, 32);
+    WR32(parms + 12, elem); WR32(parms + 20, 0x40000000u); WR32(parms + 24, parent->hwnd);
+    CHECK(MCI(0, 0x803, 0x2 | 0x200 | 0x20000, parms) == 0);
+    id = RD32(parms + 4);
+    CHECK(id >= 1);
+    w = NULL;
+    for (i = 0; i < wm_window_count(); i++) {
+        Window *c = wm_window_at_index(i);
+
+        if (c && c->movie && c->parent == parent->hwnd)
+            w = c;
+    }
+    CHECK(w != NULL && w->w == 16 && w->h == 8 && !w->visible);                      /* a child of the window it was given, the movie's size, hidden until the program shows it */
+    /* MCI_WHERE with the source flag: the picture's rectangle */
+    memset(G + parms, 0xFF, 24);
+    CHECK(MCI(id, 0x843, 0x2 | 0x40000, parms) == 0 && RD32(parms + 4) == 0 && RD32(parms + 8) == 0 && RD32(parms + 12) == 16 && RD32(parms + 16) == 8);
+    /* MCI_BREAK: Escape, and the window to tell */
+    WR32(parms + 4, 0x1B); WR32(parms + 8, parent->hwnd);
+    CHECK(MCI(id, 0x811, 0x100 | 0x200, parms) == 0);
+    /* MCI_STATUS, MCI_STATUS_ITEM of the mode: stopped, then playing after MCI_PLAY; the length in frames; the position at the start */
+    WR32(parms + 8, 4);
+    CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 524);
+    WR32(parms + 8, 1);
+    CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 3);
+    WR32(parms + 8, 2);
+    CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 0);
+    WR32(parms + 8, 4);
+    CHECK(MCI(id, 0x814, 0x2, parms) != 0);                                           /* no item asked for: a missing parameter */
+    WR32(parms, parent->hwnd);                                                        /* MCI_NOTIFY: the window that wants MM_MCINOTIFY */
+    CHECK(MCI(id, 0x806, 0x1, parms) == 0);
+    WR32(parms + 8, 4);
+    CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 525 && movie_window_playing(w));      /* playing */
+    port_clock_skew += 0.5;                                                           /* past the end (3 frames at 15 a second): the clock is moved, not slept */
+    movie_tick();
+    CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 524);         /* stopped again */
+    WR32(parms + 8, 2);
+    CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 3);          /* and at the end */
+    {   /* MM_MCINOTIFY (0x3b9) with MCI_NOTIFY_SUCCESSFUL (1) and the device id reached the window that asked for it */
+        uint32_t mm[7];
+
+        notified = 0;
+        while (q < 60 && wm_next_message_for(mm)) {
+            q++;
+            if (mm[0] == parent->hwnd && mm[1] == 0x3B9 && mm[2] == 1 && mm[3] == id)
+                notified = 1;
+        }
+        CHECK(notified == 1);
+    }
+    /* MCI_PLAY with MCI_WAIT returns when it is over; with the break key down it stops at once */
+    wm_keys[0x1B] = 1;
+    CHECK(MCI(id, 0x806, 0x2, parms) == 0 && !movie_window_playing(w));
+    wm_keys[0x1B] = 0;
+    CHECK(MCI(id, 0x808, 0, 0) == 0 && MCI(id, 0x809, 0, 0) == 0 && MCI(id, 0x807, 0, 0) == 0 && MCI(id, 0x80D, 0, 0) == 0);
+    /* MCI_CLOSE: the window goes, and the id is not a device any more */
+    {
+        uint32_t h = w->hwnd;
+
+        CHECK(MCI(id, 0x804, 0, 0) == 0);
+        CHECK(wm_window(h) == NULL);
+    }
+    CHECK(MCI(id, 0x806, 0, 0) == 257 && MCI(id, 0x804, 0, 0) == 257 && MCI(0, 0x806, 0, 0) == 257 && MCI(99, 0x806, 0, 0) == 257);       /* MCIERR_INVALID_DEVICE_ID */
+    /* the errors: a file that is not there, a device that is not a video one, no file named, a command nobody knows, a device that is full */
+    memset(G + parms, 0, 32);
+    memcpy(G + elem, "C:\\Magic\\Program\\none.avi", 25);
+    WR32(parms + 12, elem);
+    CHECK(MCI(0, 0x803, 0x200, parms) == 275);                                         /* MCIERR_FILE_NOT_FOUND */
+    memcpy(G + elem, "C:\\Magic\\Program\\clip.avi", 25);
+    memcpy(G + type, "cdaudio", 8);
+    WR32(parms + 8, type);
+    CHECK(MCI(0, 0x803, 0x200 | 0x2000, parms) == 263);                                 /* MCIERR_INVALID_DEVICE_NAME */
+    memcpy(G + type, "AVIVideo", 9);
+    CHECK(MCI(0, 0x803, 0x200 | 0x2000, parms) == 0);                                   /* "avivideo", in any case */
+    {
+        uint32_t first = RD32(parms + 4), ids[8], n = 0, again;
+
+        memset(G + parms, 0, 32);
+        WR32(parms + 12, elem);
+        MCI(first, 0x804, 0, 0);
+        for (i = 0; i < 9; i++) {
+            memset(G + parms + 4, 0, 4);
+            if (MCI(0, 0x803, 0x200, parms) == 0)
+                ids[n++] = RD32(parms + 4);
+            else
+                break;
+        }
+        CHECK(n == 8 && i == 8);                                                         /* eight devices at most; the ninth is MCIERR_DEVICE_OPEN (265) */
+        CHECK(MCI(0, 0x803, 0x200, parms) == 265);
+        MCI(ids[3], 0x804, 0, 0);
+        again = MCI(0, 0x803, 0x200, parms);
+        CHECK(again == 0 && RD32(parms + 4) == ids[3]);                                  /* a closed one is the next one */
+        for (i = 0; i < (int)n; i++)
+            MCI(ids[i], 0x804, 0, 0);
+    }
+    memset(G + parms, 0, 32);
+    CHECK(MCI(0, 0x803, 0, parms) == 273);                                               /* no element named: MCIERR_MISSING_PARAMETER */
+    WR32(parms + 12, elem);
+    CHECK(MCI(0, 0x803, 0x200, parms) == 0);
+    id = RD32(parms + 4);
+    CHECK(MCI(id, 0x999, 0, 0) == 261);                                                  /* MCIERR_UNRECOGNIZED_COMMAND */
+    MCI(id, 0x804, 0, 0);
+    /* mciGetErrorStringA: the text of the numbers the shell's own messages ask for; FALSE (and an empty text) for a number it has none for */
+    args[0] = 275; args[1] = buf; args[2] = 64;
+    CHECK(errstr->fn(args) == 1 && !strcmp((char *)G + buf, "The specified file cannot be found."));
+    args[0] = 257;
+    CHECK(errstr->fn(args) == 1 && !strcmp((char *)G + buf, "Invalid device ID."));
+    args[0] = 266; args[2] = 12;
+    CHECK(errstr->fn(args) == 1 && strlen((char *)G + buf) == 11);                          /* cut to the size of the buffer, with its terminator */
+    args[0] = 99999; args[2] = 64;
+    CHECK(errstr->fn(args) == 0 && G[buf] == 0);
+#undef MCI
+    wm_destroy(parent->hwnd);
+    unlink(path);
+    snprintf(path, sizeof(path), "%s/Program", dir); rmdir(path);
+    rmdir(dir);
+}
+
 /* MOVIE_TEST_GAME=1: every clip on the disc (sources/installed/Magic/Program/Statwin, the installer copies them) opens, with the size and the number of pictures the
  * container says, and its first and a middle picture decode (Indeo 4 needs ffmpeg: without it the clips are skipped here, as the game skips them). */
 static void test_game_clips(void)
@@ -415,6 +565,7 @@ int main(void)
     }
     test_transparency();
     test_magvid();
+    test_mci();
     test_game_clips();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;

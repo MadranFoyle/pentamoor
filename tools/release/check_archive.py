@@ -33,7 +33,7 @@ FORBIDDEN_NAMES = {"magic.exe", "deck.exe", "duel.exe", "deckdll.dll", "statwin.
                    "shandalar.exe", "facemaker.exe", "cardartlib.dll", "drawcardlib.dll", "cdtools.dll", "cards.dat", "facedata.txt", "data1.cab", "_sys1.cab", "_user1.cab", "sotav215.exe",
                    # the licence step (tools/install/licence.py): the original installer's own library from the expansion's cabinet, and the file an install keeps its registry values in
                    "manaball.wav", "senclib.dll", "registry.dat"}
-FORBIDDEN_PATTERNS = ["*_gen.c", "*_spec.json", "game_magic.*", "game_deck.*", "game_duel.*", "game_shandalar.*", "game_facemaker.*", "game_sotadeck.*", "game_senclib.*", "*senclib*", "*.iso", "*.mdf", "*.mds", "*.sav", "*.cab"]
+FORBIDDEN_PATTERNS = ["*_gen.c", "*_spec.json", "game_magic.*", "game_deck.*", "game_duel.*", "game_shandalar.*", "game_facemaker.*", "game_sotadeck.*", "game_shell.*", "game_senclib.*", "*senclib*", "*.iso", "*.mdf", "*.mds", "*.sav", "*.cab"]
 ALLOWED = {"src/port/stubgame/handlers_gen.c"}          # written by hand, not generated, not the game's
 
 
@@ -105,7 +105,7 @@ def forbidden(files):
             continue
         parts = n.lower().split("/")
         base = parts[-1]
-        modules = any(fnmatch.fnmatch(base, p) for p in ("game_magic.*", "game_deck.*", "game_duel.*", "game_shandalar.*", "game_facemaker.*", "game_sotadeck.*", "game_senclib.*"))
+        modules = any(fnmatch.fnmatch(base, p) for p in ("game_magic.*", "game_deck.*", "game_duel.*", "game_shandalar.*", "game_facemaker.*", "game_sotadeck.*", "game_shell.*", "game_senclib.*"))
         if base in FORBIDDEN_NAMES or modules:
             bad.append(n)
         elif not n.startswith(THIRD_PARTY) and (parts[0] == "sources" or any(fnmatch.fnmatch(base, p) for p in FORBIDDEN_PATTERNS)):

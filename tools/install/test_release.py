@@ -283,10 +283,10 @@ def test_lift_steps_are_lift_all_sh():
 
 
 def test_the_2_15_lift_steps_name_each_program_its_libraries_and_their_bases(tmp_path):
-    for n in ("Shandalar.EXE", "facemaker.exe", "DECK.EXE", "STATWIN.DLL", "DeckDll.dll", "cardartlib.dll", "DrawCardLib.dll", "CdTools.DLL"):     # the install's names are not in one case
+    for n in ("Shandalar.EXE", "facemaker.exe", "DECK.EXE", "Magic.exe", "STATWIN.DLL", "DeckDll.dll", "cardartlib.dll", "DrawCardLib.dll", "CdTools.DLL"):     # the install's names are not in one case
         (tmp_path / n).write_bytes(b"MZ")
     steps = liftrun.sota_steps(str(tmp_path), "gen")
-    assert list(steps) == ["shandalar", "facemaker", "sotadeck"]
+    assert list(steps) == ["shandalar", "facemaker", "sotadeck", "shell"]
     flat = {m: [(script, args) for script, args in chain] for m, chain in steps.items()}
     assert flat["shandalar"][0] == ("gen_handlers.py", ["--program", "shandalar", "--exe", str(tmp_path / "Shandalar.EXE"), "--out", "gen/lift_shandalar", "--all", "--no-handlers"])
     libs = [(os.path.basename(args[1]), args[3]) for script, args in flat["shandalar"][1:-1]]
@@ -294,7 +294,9 @@ def test_the_2_15_lift_steps_name_each_program_its_libraries_and_their_bases(tmp
     assert flat["shandalar"][-1] == ("gen_dll.py", ["--finish", "--out", "gen/lift_shandalar"])
     assert flat["facemaker"] == [("gen_dll.py", ["--main", "--dll", str(tmp_path / "facemaker.exe"), "--out", "gen/lift_facemaker"])]       # no libraries: no module list
     assert [a[1] for _, a in flat["sotadeck"][1:-1]] == [str(tmp_path / n) for n in ("DeckDll.dll", "cardartlib.dll", "DrawCardLib.dll", "CdTools.DLL")]
-    assert modbuild.SOTA_PROGRAMS == {"shandalar": "lift_shandalar", "facemaker": "lift_facemaker", "sotadeck": "lift_sotadeck"}     # the folders the lifter writes are the ones the build reads
+    assert flat["shell"][0] == ("gen_dll.py", ["--main", "--dll", str(tmp_path / "Magic.exe"), "--out", "gen/lift_shell"])        # the Magic Shell: magic.exe with the libraries it loads (no STATWIN.DLL)
+    assert [a[1] for _, a in flat["shell"][1:-1]] == [str(tmp_path / n) for n in ("DeckDll.dll", "cardartlib.dll", "DrawCardLib.dll", "CdTools.DLL")]
+    assert modbuild.SOTA_PROGRAMS == {"shandalar": "lift_shandalar", "facemaker": "lift_facemaker", "sotadeck": "lift_sotadeck", "shell": "lift_shell"}     # the folders the lifter writes are the ones the build reads
 
 
 def test_a_2_15_install_is_checked_file_by_file(tmp_path, capsys):
@@ -477,7 +479,7 @@ def test_archive_check_refuses_anything_made_from_the_game():
            "foo/deckdll_gen.c", "lift_magic_all/handler_spec.json", "MTG v1.0.iso", "DECKDLL.DLL",
            # Spells of the Ancients 2.15: its programs, libraries and data, the modules built from them, the patch, the cabinets and the disc
            "sources/installed_sota/Magic/Program/shandalar.exe", "x/FaceMaker.exe", "cardartlib.dll", "x/DrawCardLib.dll", "CdTools.dll", "Program/CARDS.DAT", "FaceData.txt",
-           "game_shandalar.dylib", "game_facemaker.so", "game_sotadeck.dll", "SOTAV215.EXE", "sotav215.exe", "Setup/data1.cab", "_user1.cab", "MTG v2.00.iso",
+           "game_shandalar.dylib", "game_facemaker.so", "game_sotadeck.dll", "game_shell.dylib", "SOTAV215.EXE", "sotav215.exe", "Setup/data1.cab", "_user1.cab", "MTG v2.00.iso",
            "sources/generated/lift_shandalar/handlers_gen.c", "lift_sotadeck/cardartlib_gen.c",
            # the licence step: the original installer's library (by its name in the cabinet and by its internal name), the module and the lifted C made from it, an install's registry file
            "Manaball.wav", "Program/DuelSounds/Manaball.wav", "x/MANABALL.WAV", "SencLib.dll", "game_senclib.so", "game_senclib.dylib", "game_senclib.dll", "sources/generated/lift_senclib/handlers_gen.c",
@@ -566,6 +568,18 @@ def test_launcher_runs_sota_from_its_own_folder_with_its_own_saves(tmp_path):
     assert r.returncode == 0, r.stderr
     assert r.stdout.split() == ["overlay=port_overlay_sota", "-m", f"./game_shandalar.{ext}", "sources/installed_sota/Magic/Program/shandalar.exe", "extra"]
     assert launch("shandalar").stdout.split()[0] == "overlay=port_overlay_sota"
+    assert launch("sota", "shandalar", "x").stdout.split() == r.stdout.split()[:4] + ["x"]                           # `sota shandalar` is `sota`: the adventure, directly
+    # `sota shell`: the Magic Shell, magic.exe of the same folder with its own module, the same saves; the module and the program are checked like the adventure's
+    (game / "magic.exe").write_bytes(b"")
+    r = launch("sota", "shell")
+    assert r.returncode == 1 and "the game module is not built yet (./game_shell." in r.stderr
+    (tmp_path / f"game_shell.{ext}").write_bytes(b"")
+    r = launch("sota", "shell", "extra")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.split() == ["overlay=port_overlay_sota", "-m", f"./game_shell.{ext}", "sources/installed_sota/Magic/Program/magic.exe", "extra"]
+    (game / "magic.exe").unlink()
+    assert launch("sota", "shell").returncode == 1 and "is not installed" in launch("sota", "shell").stderr
+    (game / "magic.exe").write_bytes(b"")
     assert launch("sota", PORT_OVERLAY="mine").stdout.split()[0] == "overlay=mine"          # a choice of the player's wins
     other = tmp_path / "elsewhere"
     other.mkdir()

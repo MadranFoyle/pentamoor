@@ -176,6 +176,13 @@ class Game:
         self._ctl = os.open(self.ctl_path, os.O_RDWR | os.O_NONBLOCK)
         return self.proc.pid
 
+    def _stop_group(self, sig):
+        """Signal the group this game was started in (start_new_session: its own, which holds only this game and what it started)."""
+        try:
+            os.killpg(self.proc.pid, sig)
+        except OSError:
+            pass
+
     def attach(self, pid):
         """Use a game that is already running (started earlier with the same workdir) -- for driving one by hand from separate commands."""
         self.attached_pid = pid
@@ -201,11 +208,14 @@ class Game:
         return self.proc.poll() if self.proc else None
 
     def stop(self):
+        if self.proc:
+            self._stop_group(signal.SIGTERM)             # the programs it started (Spells of the Ancients: the shell starts Shandalar, which starts FaceMaker and the shell again) are in its group
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
             try:
                 self.proc.wait(5)
             except subprocess.TimeoutExpired:
+                self._stop_group(signal.SIGKILL)
                 self.proc.kill()
                 self.proc.wait()
         if self._ctl is not None:

@@ -52,7 +52,7 @@ static uint32_t cstr(const char *s) { uint32_t p = scratch((uint32_t)strlen(s) +
 /* call an API by name, as the guest would */
 static uint32_t api(const char *name, uint32_t *args)
 {
-    static const WinApi *const tables[] = {USER32_APIS, CONTROLS_APIS, FILEDLG_APIS, WINHELP_APIS, MSGBOX_APIS, MENUS_APIS, NULL};
+    static const WinApi *const tables[] = {USER32_APIS, CONTROLS_APIS, FILEDLG_APIS, WINHELP_APIS, MSGBOX_APIS, MENUS_APIS, GDI32_STATE_APIS, NULL};
     int t;
     const WinApi *p;
 
@@ -876,6 +876,329 @@ static uint32_t dlgproc(const uint32_t *a)
         return 1;
     }
     return 0;
+}
+
+
+/* ---- what the Magic Shell of Spells of the Ancients asks of the window layer (magic.exe 2.15, Milestone 5) -------------------------------------------------------------------------- */
+/* A paint routine reads the update region before it begins the paint (the shell's: GetUpdateRect, an intersect of its back buffer's clip with it, then BeginPaint and a copy to the screen).
+ * The region exists from the WM_PAINT the pump hands out until BeginPaint (or until the dispatch ends): it was cleared when the message was handed out, so the clip was empty and the
+ * whole window stayed black. */
+static uint32_t ur_before, ur_after, ur_rect_w;
+static uint32_t paintproc(const uint32_t *a)
+{
+    if (a[1] == WM_PAINT) {
+        uint32_t r = scratch(16), ps = scratch(64);
+
+        ur_before = API("GetUpdateRect", a[0], r, 0);
+        ur_rect_w = RD32(r + 8);
+        API("BeginPaint", a[0], ps);
+        ur_after = API("GetUpdateRect", a[0], r, 0);
+        API("EndPaint", a[0], ps);
+        return 0;
+    }
+    return a[1] == WM_NCCREATE;
+}
+
+static uint32_t ignorepaint(const uint32_t *a) { return a[1] == WM_NCCREATE; }
+
+static void test_update_region_in_paint(void)
+{
+    uint32_t top, other, msg = scratch(28);
+    int i, paints = 0;
+
+    register_class("PaintClass", port_host_function(paintproc), 0, 0);
+    register_class("IgnoreClass", port_host_function(ignorepaint), 0, 0);
+    top = create("PaintClass", WS_VISIBLE | WS_POPUP, 0, 0, 120, 90, 0, 0);
+    ur_before = ur_after = ur_rect_w = 99;
+    for (i = 0; i < 40; i++)
+        if (API("PeekMessageA", msg, 0, 0, 0, 1) && RD32(msg + 4) == WM_PAINT && RD32(msg) == top) {
+            paints++;
+            API("DispatchMessageA", msg);
+        }
+    CHECK(paints == 1 && ur_before == 1 && ur_rect_w == 120);        /* the region is there when the procedure looks, the whole client area */
+    CHECK(ur_after == 0);                                           /* BeginPaint validated it */
+    CHECK(API("GetUpdateRect", top, 0, 0) == 0);
+    /* a procedure that never begins a paint leaves no region behind and is not sent WM_PAINT again and again */
+    other = create("IgnoreClass", WS_VISIBLE | WS_POPUP, 0, 0, 50, 50, 0, 0);
+    paints = 0;
+    for (i = 0; i < 40; i++)
+        if (API("PeekMessageA", msg, 0, 0, 0, 1) && RD32(msg + 4) == WM_PAINT && RD32(msg) == other) {
+            paints++;
+            API("DispatchMessageA", msg);
+        }
+    CHECK(paints == 1 && API("GetUpdateRect", other, 0, 0) == 0);
+    for (i = 0; i < 40; i++)
+        if (API("PeekMessageA", msg, 0, 0, 0, 1) && RD32(msg + 4) == WM_PAINT && RD32(msg) == other)
+            paints++;
+    CHECK(paints == 1);
+    API("DestroyWindow", top);
+    API("DestroyWindow", other);
+}
+
+static uint32_t enum_log[16], n_enum, enum_stop_after;
+static uint32_t enumproc(const uint32_t *a)
+{
+    enum_log[n_enum < 16 ? n_enum : 15] = a[0];
+    n_enum++;
+    return !(enum_stop_after && n_enum >= enum_stop_after) && a[1] == 0x1234;
+}
+
+static void test_enum_children(void)
+{
+    uint32_t top = create("TestClass", WS_VISIBLE | WS_POPUP, 0, 0, 100, 100, 0, 0), a = create("TestClass", WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, top, 1),
+             b = create("TestClass", WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, top, 2), c = create("TestClass", WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, b, 3), fn = port_host_function(enumproc);
+
+    n_enum = 0; enum_stop_after = 0;
+    API("EnumChildWindows", top, fn, 0x1234);
+    CHECK(n_enum == 3 && enum_log[0] == b && enum_log[1] == c && enum_log[2] == a);        /* the top of the stacking order first, a child's own children right after it */
+    n_enum = 0; enum_stop_after = 1;
+    API("EnumChildWindows", top, fn, 0x1234);
+    CHECK(n_enum == 1);                                                                    /* a callback that answers FALSE ends it */
+    n_enum = 0; enum_stop_after = 0;
+    API("EnumChildWindows", 0x7777, fn, 0x1234);
+    API("EnumChildWindows", top, 0, 0x1234);
+    CHECK(n_enum == 0);                                                                    /* no such window, no procedure */
+    API("DestroyWindow", top);
+}
+
+/* The Magic Shell's pages are WS_CHILD dialogs made with CreateDialogParamA inside its main window: modeless, shown where the template puts them, their controls laid out by the page
+ * itself when it gets WM_SIZE (the shell's MoveWindow of the page to its area). */
+static uint32_t pageproc(const uint32_t *a)
+{
+    switch (a[1]) {
+    case WM_INITDIALOG:
+        note("INIT ");
+        return 1;
+    case WM_SIZE:
+        note("SIZE(%u,%u) ", a[3] & 0xFFFF, a[3] >> 16);
+        return 0;
+    case WM_COMMAND:
+        note("COMMAND(%u) ", a[2] & 0xFFFF);
+        return 1;
+    case 0x138:                                                    /* WM_CTLCOLORSTATIC: white text, no background brush */
+        API("SetTextColor", a[2], 0x00FFFFFFu);
+        API("SetBkMode", a[2], 1);
+        return API("GetStockObject", 5);
+    default:
+        return 0;
+    }
+}
+
+static void test_modeless_dialog(void)
+{
+    uint32_t t = scratch(256), o = t, parent, page, kid, m = scratch(28), rect = scratch(16);
+    Window *w;
+    const WinApi *gso = port_find_api("gdi32.dll", "GetStockObject");
+
+    (void)gso;
+    o = put32(o, WS_CHILD | 0x40);                  /* a child dialog with DS_SETFONT, and not visible until the program shows it */
+    o = put32(o, 0); o = put16(o, 3);
+    o = put16(o, 10); o = put16(o, 20); o = put16(o, 100); o = put16(o, 80);
+    o = put16(o, 0); o = put16(o, 0);
+    o = putwide(o, "Page");
+    o = put16(o, 8); o = putwide(o, "Tahoma");
+    o = (o + 3) & ~3u;
+    o = put32(o, WS_CHILD | WS_VISIBLE | WS_TABSTOP | 1); o = put32(o, 0);     /* a default push button */
+    o = put16(o, 10); o = put16(o, 20); o = put16(o, 30); o = put16(o, 12); o = put16(o, 1);
+    o = put16(o, 0xFFFF); o = put16(o, 0x0080); o = putwide(o, "OK"); o = put16(o, 0);
+    o = (o + 3) & ~3u;
+    o = put32(o, WS_CHILD | WS_VISIBLE | WS_TABSTOP); o = put32(o, 0);
+    o = put16(o, 10); o = put16(o, 40); o = put16(o, 30); o = put16(o, 12); o = put16(o, 2);
+    o = put16(o, 0xFFFF); o = put16(o, 0x0080); o = putwide(o, "Other"); o = put16(o, 0);
+    o = (o + 3) & ~3u;
+    o = put32(o, WS_CHILD | WS_VISIBLE); o = put32(o, 0);
+    o = put16(o, 10); o = put16(o, 60); o = put16(o, 30); o = put16(o, 12); o = put16(o, 3);
+    o = put16(o, 0xFFFF); o = put16(o, 0x0082); o = putwide(o, "label"); o = put16(o, 0);
+    dlg_template = t;
+    dlg_size = o - t;
+    parent = create("TestClass", WS_VISIBLE | WS_POPUP, 0, 0, 400, 300, 0, 0);
+    log_clear();
+    page = API("CreateDialogParamA", 0x400000, 101, parent, port_host_function(pageproc), 0);
+    w = wm_window(page);
+    CHECK(page != 0 && w && w->dlgproc && !w->is_dialog && w->parent == parent && (w->style & WS_CHILD));
+    CHECK(strstr(log_, "INIT ") == log_);                            /* WM_INITDIALOG, once, and no WM_SIZE with it */
+    CHECK(wm_dialog_count() == 0 && wm_top_dialog() == 0);            /* it is not on the stack of modal dialogs: the rest of the program still gets its input */
+    CHECK(!w->visible);                                              /* WS_VISIBLE is not in the template: the program shows it */
+    kid = wm_dlg_item(page, 1) ? wm_dlg_item(page, 1)->hwnd : 0;
+    CHECK(kid != 0 && wm_dlg_item(page, 2) && wm_dlg_item(page, 3) && wm_dlg_item(page, 1)->visible);
+    CHECK(wm_dlg_item(page, 1)->hfont != 0);                          /* DS_SETFONT: the controls have the dialog's font */
+    /* a child dialog is where the template puts it, in its parent: (10, 20) units */
+    {
+        int avg = 6, height = 13;
+
+        ui_font_metrics("Tahoma", 8, 0, &height, NULL, &avg);
+        CHECK(w->x == ui_dlu_x(10, avg) && w->y == ui_dlu_y(20, height) && w->w == ui_dlu_x(100, avg) && w->h == ui_dlu_y(80, height));
+    }
+    /* the program moves and sizes it: its procedure gets WM_SIZE (a dialog window had none before) and WM_MOVE, and lays its controls out */
+    log_clear();
+    API("MoveWindow", page, 200, 235, 539, 310, 1);
+    CHECK(strstr(log_, "SIZE(539,310) ") != NULL);
+    log_clear();
+    API("MoveWindow", page, 201, 236, 539, 310, 1);                  /* only moved: no WM_SIZE */
+    CHECK(strstr(log_, "SIZE") == NULL);
+    /* the colours of a control on the page: asked of the page's procedure when the control is drawn (the pump does it once the control is invalid), kept for the compositor */
+    {
+        Window *label = wm_dlg_item(page, 3);
+        uint32_t msg = scratch(28);
+        int i;
+
+        w->visible = 1;
+        label->invalid = 1;
+        for (i = 0; i < 4; i++)
+            API("PeekMessageA", msg, 0, 0, 0, 1);
+        CHECK(!label->invalid && label->ctl_valid && label->ctl_transparent && !label->ctl_has_bg && label->ctl_fg[0] == 255 && label->ctl_fg[2] == 255);
+    }
+    /* IsDialogMessage: Escape is IDCANCEL, Enter presses the default push button, Tab moves the focus to the next tab stop; anything else is the caller's */
+    {
+        uint32_t key = scratch(28), in_page = wm_dlg_item(page, 2)->hwnd;
+
+        wm_set_focus(in_page);
+        WR32(key, in_page); WR32(key + 4, WM_KEYDOWN); WR32(key + 8, 0x1B); WR32(key + 12, 0);
+        log_clear();
+        CHECK(API("IsDialogMessageA", page, key) == 1);
+        API("PeekMessageA", m, 0, 0, 0, 1);
+        API("DispatchMessageA", m);
+        CHECK(log_is("COMMAND(2) "));
+        WR32(key + 8, 0x0D);
+        log_clear();
+        CHECK(API("IsDialogMessageA", page, key) == 1);
+        API("PeekMessageA", m, 0, 0, 0, 1);
+        API("DispatchMessageA", m);
+        CHECK(log_is("COMMAND(2) "));                                  /* Enter presses the push button that has the focus */
+        WR32(key, page);
+        log_clear();
+        CHECK(API("IsDialogMessageA", page, key) == 1);
+        API("PeekMessageA", m, 0, 0, 0, 1);
+        API("DispatchMessageA", m);
+        CHECK(log_is("COMMAND(1) "));                                  /* and with none, the default one */
+        WR32(key, in_page);
+        WR32(key + 8, 0x09);
+        CHECK(API("IsDialogMessageA", page, key) == 1 && API("GetFocus", 0) == wm_dlg_item(page, 1)->hwnd);       /* Tab: from the second tab stop round to the first */
+        WR32(key + 8, 0x41);
+        CHECK(API("IsDialogMessageA", page, key) == 0);                 /* a letter is not a dialog key */
+        WR32(key, parent); WR32(key + 8, 0x1B);
+        CHECK(API("IsDialogMessageA", page, key) == 0);                 /* a message for a window outside the dialog */
+        WR32(key, in_page); WR32(key + 4, 0x0200);
+        CHECK(API("IsDialogMessageA", page, key) == 0 && API("IsDialogMessageA", 0x7777, key) == 0);
+    }
+    (void)rect;
+    API("DestroyWindow", page);
+    API("DestroyWindow", parent);
+    dlg_template = 0;
+}
+
+/* The small user32 calls magic.exe makes: the length of a window's text, the case of an ANSI character or string, what a character is, the cursor it set, a scroll bar control shown or not. */
+static void test_shell_user32_calls(void)
+{
+    uint32_t top = create("TestClass", WS_VISIBLE | WS_POPUP, 0, 0, 100, 100, 0, 0), bar, s;
+
+    API("SetWindowTextA", top, cstr("Solo Duel"));
+    CHECK(API("GetWindowTextLengthA", top) == 9 && API("GetWindowTextLengthA", 0x7777) == 0);
+    API("SetWindowTextA", top, cstr(""));
+    CHECK(API("GetWindowTextLengthA", top) == 0);
+    /* a character in the low word comes back in the low word; a string is converted where it is and its address comes back */
+    CHECK(API("CharLowerA", 'A') == 'a' && API("CharUpperA", 'q') == 'Q' && API("CharLowerA", '5') == '5' && API("CharUpperA", 0xE9) == 0xC9 && API("CharLowerA", 0xC9) == 0xE9);
+    CHECK(API("CharUpperA", 0xDF) == 0xDF && API("CharUpperA", 0xFF) == 0x9F && API("CharLowerA", 0xD7) == 0xD7 && API("CharUpperA", 0xF7) == 0xF7);       /* no capital sharp s; y diaeresis is 0x9f; the signs stay */
+    s = cstr("Duel Options 5\xC9");
+    CHECK(API("CharLowerA", s) == s && !strcmp((char *)G + s, "duel options 5\xE9"));
+    CHECK(API("CharUpperA", s) == s && !strcmp((char *)G + s, "DUEL OPTIONS 5\xC9"));
+    CHECK(API("IsCharAlphaNumericA", 'a') && API("IsCharAlphaNumericA", 'Z') && API("IsCharAlphaNumericA", '0') && API("IsCharAlphaNumericA", 0xE9) && API("IsCharAlphaNumericA", 0xDF) &&
+          API("IsCharAlphaNumericA", 0xB2));
+    CHECK(!API("IsCharAlphaNumericA", ' ') && !API("IsCharAlphaNumericA", '-') && !API("IsCharAlphaNumericA", 0xD7) && !API("IsCharAlphaNumericA", 0xF7) && !API("IsCharAlphaNumericA", 0x95));
+    /* the cursor: SetCursor returns the one before, GetCursor the current one */
+    {
+        uint32_t c1 = API("LoadCursorA", 0, 32512), c2 = API("LoadCursorA", 0, 32514), before = API("GetCursor");
+
+        CHECK(API("SetCursor", c1) == before && API("GetCursor") == c1 && API("SetCursor", c2) == c1 && API("GetCursor") == c2);
+    }
+    /* ShowScrollBar on a scroll bar control shows or hides the control; for a window's own bars there is nothing to draw */
+    bar = create("SCROLLBAR", WS_CHILD | WS_VISIBLE | 1, 10, 10, 16, 80, top, 99);
+    CHECK(wm_window(bar)->visible);
+    API("ShowScrollBar", bar, 2, 0);
+    CHECK(!wm_window(bar)->visible);
+    API("ShowScrollBar", bar, 2, 1);
+    CHECK(wm_window(bar)->visible && API("ShowScrollBar", top, 1, 0) == 1 && wm_window(top)->visible);
+    API("DestroyWindow", top);
+}
+
+/* The standard controls of an ordinary window are drawn as Windows draws them: a radio button with its dot, a label's text, a scroll bar's arrows and thumb; a control the program only
+ * subclassed (SetWindowLong GWL_WNDPROC) is still a standard control, and a click on it is a click. */
+static void test_standard_controls_on_ordinary_windows(void)
+{
+    enum { W = 200, H = 100 };
+    static uint8_t rgb[W * H * 3];
+    uint32_t top = create("TestClass", WS_VISIBLE | WS_POPUP, 0, 0, W, H, 0, 0), radio = create("BUTTON", WS_CHILD | WS_VISIBLE | 4, 10, 10, 120, 20, top, 10),
+             bar = create("SCROLLBAR", WS_CHILD | WS_VISIBLE | 1, 170, 10, 16, 80, top, 11), label = create("STATIC", WS_CHILD | WS_VISIBLE, 10, 40, 100, 20, top, 12);
+    int dark = 0, i, light_edges = 0;
+    Window *r = wm_window(radio);
+
+    API("SetWindowTextA", radio, cstr("Solo Duel"));
+    CHECK(ui_standard_control(r) && ui_standard_control(wm_window(bar)) && ui_standard_control(wm_window(label)) && !ui_standard_control(wm_window(top)));
+    CHECK(!ui_in_modal_dialog(r) && !ui_in_modal_dialog(wm_window(top)));
+    r->checked = 1;
+    memset(rgb, 90, sizeof(rgb));
+    ui_draw_control(rgb, W, H, r, 0);
+    for (i = 0; i < 12 * 12; i++) {                                                      /* the round box at the left of the button: its dot is black */
+        int x = 10 + 5 + (i % 12) % 3, y = 10 + (20 - 12) / 2 + 4 + (i / 12) % 3;
+
+        dark += rgb[3 * (y * W + x)] == 0 && rgb[3 * (y * W + x) + 1] == 0;
+    }
+    CHECK(dark >= 4);
+    r->checked = 0;
+    memset(rgb, 90, sizeof(rgb));
+    ui_draw_control(rgb, W, H, r, 0);
+    dark = 0;
+    for (i = 0; i < 9; i++)
+        dark += rgb[3 * ((10 + (20 - 12) / 2 + 5 + i / 3) * W + 10 + 5 + i % 3)] == 0;
+    CHECK(dark == 0);                                                                       /* unchecked: white inside */
+    /* a scroll bar: arrow buttons at both ends, a thumb that follows its position */
+    wm_window(bar)->scroll[2][0] = 0; wm_window(bar)->scroll[2][1] = 9; wm_window(bar)->scroll[2][2] = 0;
+    memset(rgb, 90, sizeof(rgb));
+    ui_draw_control(rgb, W, H, wm_window(bar), 0);
+    {
+        int y_top = -1, y_bottom = -1, y;
+
+        for (y = 10; y < 90; y++) {
+            int is_face = rgb[3 * (y * W + 178)] == 192;                                    /* a button face (grey 192) in the middle of the bar */
+
+            if (is_face && y_top < 0)
+                y_top = y;
+            if (is_face)
+                y_bottom = y;
+        }
+        CHECK(y_top >= 10 && y_top <= 12 && y_bottom >= 86);
+        light_edges = rgb[3 * (30 * W + 178)];                                              /* the thumb at position 0 sits just under the top arrow: its face */
+        CHECK(light_edges == 192);
+    }
+    wm_window(bar)->scroll[2][2] = 9;
+    memset(rgb, 90, sizeof(rgb));
+    ui_draw_control(rgb, W, H, wm_window(bar), 0);
+    CHECK(rgb[3 * (30 * W + 173)] != 192 && rgb[3 * (60 * W + 173)] == 192);               /* at the end the thumb has gone down: the track is bare near the top and the thumb is above the lower arrow */
+    /* a label draws its text where nothing was */
+    API("SetWindowTextA", label, cstr("Player:"));
+    memset(rgb, 90, sizeof(rgb));
+    ui_draw_control(rgb, W, H, wm_window(label), 0);
+    {
+        int changed = 0;
+
+        for (i = 0; i < 20 * 100; i++)
+            changed += rgb[3 * ((40 + i / 100) * W + 10 + i % 100)] != 90 || rgb[3 * ((40 + i / 100) * W + 10 + i % 100) + 1] != 90;
+        CHECK(changed > 0);
+    }
+    /* subclassing: still a standard control; and a click is a click, BN_CLICKED to the parent */
+    CHECK(API("SetWindowLongA", radio, (uint32_t)-4, port_host_function(ignorepaint)) == 0);
+    CHECK(r->subclassed && r->proc && !r->builtin && ui_standard_control(r) && wm_is_hit_target(r));
+    {
+        uint32_t m = scratch(28);
+
+        API("ShowWindow", top, 1);
+        wm_inject_mouse(IN_DOWN, 15, 15);
+        wm_inject_mouse(IN_UP, 15, 15);
+        while (API("PeekMessageA", m, 0, 0, 0, 1) && RD32(m + 4) != WM_COMMAND)
+            ;
+        CHECK(RD32(m) == top && RD32(m + 4) == WM_COMMAND && (RD32(m + 8) & 0xFFFF) == 10 && RD32(m + 12) == radio);
+    }
+    API("DestroyWindow", top);
 }
 
 /* The dialog base unit and the conversion of a template's numbers, as the real Windows 98 setup dialog of DUEL.EXE shows them (docs/notes/dialogs.md): its Benguiat
@@ -2382,6 +2705,9 @@ int main(void)
     test_z_order();
     test_queue_and_dispatch();
     test_update_calls();
+    test_update_region_in_paint();
+    test_enum_children();
+    test_shell_user32_calls();
     test_erase_before_paint();
     test_close_destroys();
     test_see_through_child();
@@ -2403,6 +2729,8 @@ int main(void)
     test_dialog_units();
     test_popup_position();
     test_dialog();
+    test_modeless_dialog();
+    test_standard_controls_on_ordinary_windows();
     test_popup_menu();
     test_file_dialogs();
     test_winhelp();

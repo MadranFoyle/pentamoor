@@ -98,6 +98,68 @@ static void test_first_word(void)
     CHECK(proc_first_word("\"unclosed quote", word, sizeof(word), &rest) == 14 && !strcmp(word, "unclosed quote"));
 }
 
+/* ---- one running copy of the game ------------------------------------------------------------------------------------------------------------------ */
+static int alive_set[8], n_alive;
+static int is_alive(long pid)
+{
+    int i;
+
+    for (i = 0; i < n_alive; i++)
+        if (alive_set[i] == pid)
+            return 1;
+    return 0;
+}
+
+static void test_instances(void)
+{
+    char out[400], who[96], back[400];
+    long blocker = 0;
+
+    alive_set[0] = 100; alive_set[1] = 200; n_alive = 2;
+    /* nothing running: it may start, and its line is the file */
+    CHECK(proc_instances_enter_text(NULL, 100, "magic.exe", "", is_alive, out, sizeof(out), &blocker, who, sizeof(who)) == 0 && !strcmp(out, "100 magic.exe\n"));
+    CHECK(proc_instances_enter_text("", 100, "magic.exe", NULL, is_alive, out, sizeof(out), &blocker, who, sizeof(who)) == 0 && !strcmp(out, "100 magic.exe\n"));
+    /* another program of the game is running and this one is nobody's child: refused, and who is told */
+    CHECK(proc_instances_enter_text("100 magic.exe\n", 200, "shandalar.exe", "", is_alive, out, sizeof(out), &blocker, who, sizeof(who)) == 1 && blocker == 100 && !strcmp(who, "magic.exe"));
+    CHECK(proc_instances_enter_text("100 magic.exe\n", 200, "shandalar.exe", "7,8", is_alive, out, sizeof(out), &blocker, who, sizeof(who)) == 1);          /* a family that does not hold it */
+    /* the shell started it (the family has the shell's id): the shell is still running and it may start */
+    CHECK(proc_instances_enter_text("100 magic.exe\n", 200, "shandalar.exe", "100", is_alive, out, sizeof(out), &blocker, who, sizeof(who)) == 0 && !strcmp(out, "100 magic.exe\n200 shandalar.exe\n"));
+    CHECK(proc_instances_enter_text("100 magic.exe\n", 200, "shandalar.exe", "5,100,9", is_alive, out, sizeof(out), &blocker, who, sizeof(who)) == 0);                  /* anywhere in the family */
+    CHECK(proc_instances_enter_text("100 magic.exe\n", 200, "shandalar.exe", "10", is_alive, out, sizeof(out), &blocker, who, sizeof(who)) == 1);                           /* 10 is not 100 */
+    /* a program that has gone, a line that is damaged, and this process's own line of an earlier run are dropped */
+    n_alive = 1;
+    CHECK(proc_instances_enter_text("100 magic.exe\n300 shandalar.exe\nnonsense\n\n200 old.exe\n-5 x\n", 200, "shandalar.exe", "", is_alive, out, sizeof(out), &blocker, who, sizeof(who)) == 1 && blocker == 100);
+    alive_set[0] = 200; n_alive = 1;
+    CHECK(proc_instances_enter_text("100 magic.exe\n300 shandalar.exe\nnonsense\n\n200 old.exe\n", 200, "shandalar.exe", "", is_alive, out, sizeof(out), &blocker, who, sizeof(who)) == 0 && !strcmp(out, "200 shandalar.exe\n"));
+    /* leaving takes the line away and keeps the others */
+    proc_instances_leave_text("100 magic.exe\n200 shandalar.exe\n300 facemaker.exe\n", 200, back, sizeof(back));
+    CHECK(!strcmp(back, "100 magic.exe\n300 facemaker.exe\n"));
+    proc_instances_leave_text("200 shandalar.exe\n", 200, back, sizeof(back));
+    CHECK(back[0] == 0);
+    proc_instances_leave_text(NULL, 200, back, sizeof(back));
+    CHECK(back[0] == 0);
+    /* the file: the runtime's side, in a folder of its own; and what a child is given */
+    {
+        char dir[300], msg[600], path[400], text[200];
+        FILE *f;
+
+        test_tmpdir(dir, sizeof(dir), "test_inst_");
+        CHECK(dir[0] != 0);
+        alive_set[0] = (int)getpid(); n_alive = 1;
+        CHECK(proc_instance_enter(dir, "magic.exe", msg, sizeof(msg)) == 0);
+        snprintf(path, sizeof(path), "%s/instances.dat", dir);
+        f = fopen(path, "rb");
+        CHECK(f != NULL);
+        if (f) {
+            text[fread(text, 1, sizeof(text) - 1, f)] = 0;
+            fclose(f);
+            CHECK(strstr(text, " magic.exe\n") != NULL);
+        }
+        remove(path);
+        rmdir(dir);
+    }
+}
+
 /* ---- the profile's list of programs ----------------------------------------------------------------------------------------------------------------- */
 static const BuildProfile fake = {
     .id = "ff", .build = "v0", .file = "game.exe", .program = "GAME",
@@ -123,7 +185,14 @@ static void test_plan(void)
         const BuildProfile *sh = profile_find("e4e46718c451974756b66e7666ac0bf1cc9ebdbc5897eb04a87b8ea2a02353e7");               /* the real row of shandalar.exe 2.15 */
 
         CHECK(sh && proc_plan(sh, NULL, "C:\\MAGIC\\PROGRAM\\Facemaker.exe /S", &plan) == 0 && !strcmp(plan.module, "game_facemaker") && !strcmp(plan.args, "/S"));
-        CHECK(sh && proc_plan(sh, NULL, "Magic.exe /start3,1", &plan) == -1 && proc_plan(sh, NULL, "Write c:/dump.txt", &plan) == -1);
+        const BuildProfile *shell = profile_find("e948affc1c1fe74c4a9709350d6c184b8cb01548e57a70b5751a479fa3d2bf65");               /* the row of the Magic Shell, magic.exe 2.15 */
+
+        CHECK(sh && proc_plan(sh, NULL, "Magic.exe /start3,1", &plan) == 0 && !strcmp(plan.module, "game_shell") && !strcmp(plan.args, "/start3,1"));       /* Shandalar goes back to the shell */
+        CHECK(sh && proc_plan(sh, NULL, "Write c:/dump.txt", &plan) == -1);                                                                               /* and a program the profile does not name is not started */
+        CHECK(shell && !strcmp(shell->program, "MAGIC") && !strcmp(shell->file, "magic.exe") && shell->base == 0);
+        CHECK(shell && proc_plan(shell, NULL, "C:\\MAGIC\\PROGRAM\\Shandalar.exe /MTGshell", &plan) == 0 && !strcmp(plan.module, "game_shandalar") && !strcmp(plan.args, "/MTGshell"));
+        CHECK(shell && proc_plan(shell, NULL, "C:\\MAGIC\\PROGRAM\\DECK.EXE", &plan) == 0 && !strcmp(plan.module, "game_sotadeck"));
+        CHECK(shell && proc_plan(shell, NULL, "C:\\MAGIC\\PROGRAM\\Tutorial.exe", &plan) == -1 && proc_plan(shell, NULL, "WinHelp.exe x.hlp", &plan) == -1 && proc_plan(shell, NULL, "Write.exe", &plan) == -1);   /* the shell's other CreateProcess sites: not programs of this port */
         CHECK(!profile_find("4dc592695b6ee390485f283feb2a248cd3f3f739749c2800ab3b1100ea03845c")->programs[0].file);               /* MAGIC.EXE 1.0 starts nothing */
     }
 }
@@ -151,6 +220,9 @@ static void test_child(void)
     CHECK(in_list(c.set, "PORT_OVERLAY=/o") && in_list(c.set, "PORT_RES=800x600") && in_list(c.set, "PORT_CMDLINE=/S") && in_list(c.set, "PORT_SHM=/tmp/shm"));
     CHECK(in_list(c.set, "PORT_CONTROL=/tmp/ctl.facemaker") && c.control && !strcmp(c.control, "/tmp/ctl.facemaker"));         /* a pipe of its own */
     CHECK(in_list(c.unset, "PORT_SCRIPT"));
+    CHECK(!in_list(c.set, "PORT_FAMILY="));                                                                                   /* none given: none set */
+    proc_child(&c, &plan, "/opt/pentamoor-run", "/opt/mods", "/g/Program/FaceMaker.exe", "/g", "/o", 800, 600, NULL, NULL, "12,345");
+    CHECK(in_list(c.set, "PORT_FAMILY=12,345"));                                                                              /* the programs above the new one (one running copy of the game) */
     proc_child(&c, &plan, "run", "", "exe", "root", "ov", 640, 480, NULL, NULL, NULL);
     snprintf(want, sizeof(want), "game_facemaker%s", PLAT_MODULE_SUFFIX);
     CHECK(!strcmp(c.argv[2], want));                                                                                          /* a module in the current folder: no slash */
@@ -320,6 +392,7 @@ int main(int argc, char **argv)
     port_sp = 0x002FFF00u;
     test_first_word();
     test_plan();
+    test_instances();
     test_child();
     test_arguments_the_guest_sees();
 #ifndef _WIN32

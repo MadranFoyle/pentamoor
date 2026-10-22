@@ -369,7 +369,7 @@ static uint32_t mciSendCommandA(const uint32_t *a)
             d->notify_pending = 1;
         }
         d->played = 1;
-        wm_send(d->win, MCI_PLAY, 0, 0);                    /* the window plays it (and its sound) from the first picture */
+        movie_window_play(w);                               /* the window plays it (and its sound) from the first picture */
         if (flags & MCI_WAIT) {
             while (movie_window_playing(wm_window(d->win))) {
                 if (d->break_key < 256 && d->break_key && wm_keys[d->break_key]) {
