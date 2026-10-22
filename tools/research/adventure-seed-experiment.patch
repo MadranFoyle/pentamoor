@@ -1,0 +1,58 @@
+diff --git a/src/port/crt.c b/src/port/crt.c
+index fd9a373..d5b8f3c 100644
+--- a/src/port/crt.c
++++ b/src/port/crt.c
+@@ -16,6 +16,7 @@
+ 
+ static uint32_t errno_cell, fmode_cell, commode_cell, argv_cell, argc_cell, environ_cell, acmdln_cell, mb_cur_max_cell, pctype_cell;
+ static uint32_t rand_seed = 1;
++static unsigned long rand_calls;
+ static int crt_ready;
+ 
+ static void crt_init(void)
+@@ -247,18 +248,43 @@ static uint32_t crt_itoa(const uint32_t *a)
+ static uint32_t crt_rand(const uint32_t *a)
+ {
+     (void)a;
++    rand_calls++;
+     rand_seed = rand_seed * 214013u + 2531011u;
+     return (rand_seed >> 16) & 0x7fffu;
+ }
+-static uint32_t crt_srand(const uint32_t *a) { rand_seed = a[0]; return 0; }
++static uint32_t res_seedhook(const uint32_t *a)
++{
++    (void)a;
++    rand_seed = (uint32_t)strtoul(getenv("RES_SEED"), NULL, 0);
++    fprintf(stderr, "RES seed hook: rand_seed reset after %lu rand calls\n", rand_calls);
++    return 0;
++}
++static uint32_t crt_srand(const uint32_t *a)
++{
++    const char *h = getenv("RES_HOOKADDR");
++    if (h && getenv("RES_SEED") && !port_prehook_fn((uint32_t)strtoul(h, NULL, 0)))
++        port_prehook((uint32_t)strtoul(h, NULL, 0), res_seedhook);
++    const char *f = getenv("RES_SEED");
++    fprintf(stderr, "RES srand(%u) after %lu rand calls%s\n", a[0], rand_calls, f ? " (forced)" : "");
++    rand_seed = f ? (uint32_t)strtoul(f, NULL, 0) : a[0];
++    return 0;
++}
+ static uint32_t crt_clock(const uint32_t *a)
+ {
+     (void)a;
+-    return (uint32_t)(port_now() * 1000.0);        /* milliseconds since the program started, by the wall clock (the host's clock() counts CPU time) */
++    {
++        uint32_t v = (uint32_t)(port_now() * 1000.0);
++        const char *c7 = getenv("RES_CLOCK7");
++        if (c7)
++            v = (v & ~0x7fu) | ((uint32_t)strtoul(c7, NULL, 0) & 0x7fu);
++        return v;
++    }
+ }
+ static uint32_t crt_time(const uint32_t *a)
+ {
+     uint32_t t = (uint32_t)time(NULL);
++    if (getenv("RES_TIME"))
++        t = (uint32_t)strtoul(getenv("RES_TIME"), NULL, 0);
+ 
+     if (a[0])
+         WR32(a[0], t);
