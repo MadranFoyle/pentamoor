@@ -39,6 +39,9 @@ LOCATIONS = 0x67bdf0                       # 128 records of 25 dwords: the world
 # The seeds the script is played with. The new game of each starts the party on open ground (the first steps east walk; no encounter comes first); the duel is from the saved game, so its world is fixed
 # and the seed decides the shuffles.
 PINNED = {
+    1: "candidate",
+    2: "candidate",
+    3: "candidate",
 }
 
 failures = 0
@@ -71,7 +74,7 @@ class Run:
 
 
 def new_game_once(a, attempt):
-    """One new game up to the first steps on the map. Returns False if the world started the party at an encounter (the start is random), so nothing could be walked."""
+    """One new game up to the first steps on the map."""
     r = Run(a, "newgame%d" % attempt)
     g = r.g
     g.start()
@@ -111,8 +114,8 @@ def new_game_once(a, attempt):
         r.shot("walked")
         p1 = r.party()
         if p1 == p0:
-            print("NOTE  the party did not move: an encounter came first (the start is random), starting again", flush=True)
-            return False
+            check(False, "the party walked east from the start (it did not move: the world of this seed does not suit the script, or an encounter came first)")
+            return True
         check(pos and pos[3] == 1, "walking holds the left button (pad pos %s)" % (pos,))
         check(g.pad_pos()[3] == 0, "letting go of the stick lets go of the button")
         check(p1[0] > p0[0], "the party walked east: %s -> %s" % (p0, p1))
@@ -141,10 +144,8 @@ def new_game_once(a, attempt):
 
 
 def new_game(a):
-    for attempt in range(3):
-        if new_game_once(a, attempt):
-            return
-    check(False, "a new game that starts on the map, in three tries")
+    """One new game: the same seed is the same world, so a start that does not suit the script is not tried again (PINNED has the seeds whose world does)."""
+    new_game_once(a, 0)
 
 
 def hand_cards(t):

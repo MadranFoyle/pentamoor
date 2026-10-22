@@ -119,3 +119,32 @@ def test_the_runner_skips_a_game_that_is_not_installed(monkeypatch, tmp_path, ca
     assert pr.main(["--game", "2.15", "--workdir", str(tmp_path)]) == 2
     assert pr.main(["--game", "both", "--workdir", str(tmp_path)]) == 2
     assert "runtime is not built" in capsys.readouterr().err
+
+
+# ---- the 2.15 script's choice of seeds -------------------------------------------------------------------------------------------------------------------------------
+def test_scan_world_wants_open_ground_and_every_kind_of_place():
+    import sota_pad_play as sp
+    places = [(1, 40, 40), (2, 10, 10), (3, 50, 10), (4, 10, 50)]
+    ok, why, near_place, near_mon = sp.scan_world((30, 30), places, [(30 * 32 + 5, 34 * 32)])
+    assert ok and why == "" and near_place == 10 and near_mon == 4
+    assert not sp.scan_world((39, 40), places, [])[0]                                        # a village one tile away: the first step walks into it
+    assert "place" in sp.scan_world((39, 40), places, [])[1]
+    assert not sp.scan_world((30, 30), places, [(31 * 32, 31 * 32)])[0]                      # a monster next to the party at the start
+    ok, why, _p, _m = sp.scan_world((30, 30), [(1, 40, 40)], [])
+    assert not ok and "kind" in why                                                          # no tower, castle or world magic to put the party on
+
+
+def test_parse_seeds_takes_lists_and_ranges():
+    import sota_pad_play as sp
+    assert sp.parse_seeds("3,5,10-12") == [3, 5, 10, 11, 12] and sp.parse_seeds("7") == [7]
+
+
+@pytest.mark.parametrize("script", ["sota_pad_play.py", "pad_play.py", "screen_nav_play.py", "nav_play.py"])
+def test_every_script_the_runner_runs_has_pinned_seeds_with_a_reason_each(script):
+    seeds = pr.pinned_seeds(script)
+    assert seeds, "%s has no PINNED table" % script
+    with open(os.path.join(HERE, script), encoding="utf-8") as f:
+        text = f.read()
+    for n in seeds:
+        line = [l for l in text.splitlines() if l.strip().startswith("%d:" % n)][0]
+        assert len(line.split(":", 1)[1].strip(" \",")) > 20, "seed %d of %s: say in a line what is special about it" % (n, script)
