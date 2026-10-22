@@ -763,7 +763,7 @@ void wm_query_ctl_colors(Window *dlg, Window *c)
     if (!strcasecmp(c->cname, "STATIC"))
         msg = 0x138;
     else if (!strcasecmp(c->cname, "BUTTON"))
-        msg = 0x135;
+        msg = (c->style & 0xF) == 7 && !ui_in_modal_dialog(c) ? 0x138u : 0x135u;      /* (Windows 98 asks for a group box's colours as it does for a label's: WM_CTLCOLORSTATIC; the modal dialogs of the first game were matched to the real thing with the button message, and keep it) */
     else if (!strcasecmp(c->cname, "EDIT"))
         msg = 0x133;
     else if (!strcasecmp(c->cname, "LISTBOX"))
@@ -814,7 +814,6 @@ static Window *dialog_make(const uint8_t *tmpl_bytes, uint32_t tmpl, uint32_t pa
             ui_font_metrics(face, dd.pt, 0, &height, NULL, &avg);
         bx = avg;
         by = height;
-        if (getenv("PORT_DLU") && dd.pt) sscanf(getenv("PORT_DLU"), "%dx%d", &bx, &by);
         /* the frame Windows 98 draws round a dialog: a one-pixel border, or the three-pixel dialog frame with a 19-pixel caption */
         if ((dd.style & 0xC00000u) == 0xC00000u || (dd.exstyle & 1u) || (dd.style & 0x80u))
             nl = 3;

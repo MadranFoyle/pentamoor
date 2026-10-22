@@ -513,7 +513,6 @@ int gdi_font_object(uint32_t hfont, const char **face, int *bold, int *px)
     if (!f)
         return 0;
     r = resolve(f, 1.0);
-    if (getenv("FONTDBG")) fprintf(stderr, "font 0x%x face %s size %d height %d weight %d -> em %g own %d\n", hfont, f->face, f->size, f->height, f->weight, r.em, r.own);
     *face = f->face;
     *bold = f->weight >= 600;
     *px = (int)(r.em + 0.5);

@@ -581,6 +581,7 @@ void movie_window_play(Window *w) { if (w && w->movie) { mw_of(w)->held = 0; pla
 void movie_window_set_held(Window *w, int on) { if (w && w->movie) { mw_of(w)->held = on != 0; wm_dirty = 1; } }
 int movie_window_held(const Window *w) { return w && w->movie && ((MovieWin *)w->movie)->held; }
 void movie_window_stop(Window *w) { if (w && w->movie) stop(w, 0); }
+int movie_window_frames(const Window *w) { return w && w->movie ? movie_frames(((MovieWin *)w->movie)->movie) : 0; }
 
 /* The composer's call: every playing movie moves on. */
 void movie_tick(void)

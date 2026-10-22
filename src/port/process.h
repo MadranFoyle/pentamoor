@@ -47,7 +47,7 @@ typedef struct ProcChild {
     char buf[8192];
 } ProcChild;
 void proc_child(ProcChild *c, const ProcPlan *plan, const char *runtime, const char *module_dir, const char *host_exe, const char *root, const char *overlay, int width,
-                int height, const char *control, const char *shm);
+                int height, const char *control, const char *shm, const char *family);
 
 /* Start the program a command line names, as the active profile allows; 0 and an id in *id on success, else a Windows error number (2: no such program). */
 int proc_start(const char *application, const char *command_line, long *id);
@@ -55,6 +55,20 @@ int proc_start(const char *application, const char *command_line, long *id);
 int proc_done(long id, int *exit_code);
 /* Wait until the child ends (the other guest threads run meanwhile) and return its exit code. */
 int proc_wait(long id);
+
+/* One running copy of the game. The original refuses to start a program of the game twice, and a program of the game that finds another one running brings that one's window forward and
+ * ends (FindWindow for the other's window class, at the start of WinMain). The runtime cannot see another process's windows, so the same rule is a file in the overlay, instances.dat: a
+ * line "<process id> <program>" for every program of the game that is running, read when a program starts and written back with the program added. A program started by another
+ * (WinExec, CreateProcessA, _spawnl: the shell starts Shandalar, Shandalar starts FaceMaker and the shell again) is of the same family as the one that started it ($PORT_FAMILY: the ids
+ * of the programs above it, which proc_child sets), and may start while its parent is still running; any other start finds a program of the game that is running, and is refused.
+ * Entries of programs that are no longer running are dropped. `text` is the file's content (or NULL), `alive` says whether a process id is running. Pure; 0 and the new text in `out`
+ * when the program may run, else 1 and who is in the way (`blocker_pid`, `blocker_file`). */
+int proc_instances_enter_text(const char *text, long self, const char *program, const char *family, int (*alive)(long), char *out, size_t cap, long *blocker_pid, char *blocker_file,
+                              size_t blocker_cap);
+/* The file's text without this process's line. */
+void proc_instances_leave_text(const char *text, long self, char *out, size_t cap);
+/* The runtime's side: read, decide and write <overlay>/instances.dat. 0, or 1 and a message for the refused start. The entry is taken away again when the process ends (atexit). */
+int proc_instance_enter(const char *overlay, const char *program, char *msg, size_t cap);
 
 /* The arguments this process was started with ($PORT_CMDLINE), or "" */
 const char *proc_args(void);

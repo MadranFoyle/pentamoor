@@ -1056,7 +1056,6 @@ static uint32_t make_font(const char *face, int32_t h, uint32_t weight, int ital
     f->weight = weight ? (int)weight : 400;
     f->italic = italic;
     f->height = h;
-    if (getenv("FONTDBG")) fprintf(stderr, "make_font %s h=%d weight=%u italic=%d\n", face, (int)h, weight, italic);
     return obj_new(O_FONT, f);
 }
 

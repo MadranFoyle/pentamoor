@@ -60,7 +60,7 @@ static int own_mouse_control(const Window *w)
  * it is a push button, or a combo or list box the window layer itself clicks. */
 int wm_is_hit_target(const Window *w)
 {
-    int builtin_button = !w->proc && (!strcasecmp(w->cname, "BUTTON") || ((!strcasecmp(w->cname, "COMBOBOX") || !strcasecmp(w->cname, "LISTBOX")) && !own_mouse_control(w))) && w->w > 0 && w->enabled;
+    int builtin_button = (!w->proc || w->subclassed) && (!strcasecmp(w->cname, "BUTTON") || ((!strcasecmp(w->cname, "COMBOBOX") || !strcasecmp(w->cname, "LISTBOX")) && !own_mouse_control(w))) && w->w > 0 && w->enabled;
 
     return w->proc || w->dlgproc || w->movie || builtin_button;
 }
@@ -229,7 +229,7 @@ int wm_inject_mouse(int kind, int x, int y)
             wm_listbox_click(tw, y);
         return 1;
     }
-    if (!tw->proc && !strcasecmp(tw->cname, "BUTTON")) {        /* a built-in push button: click = WM_COMMAND */
+    if ((!tw->proc || tw->subclassed) && !strcasecmp(tw->cname, "BUTTON")) {        /* a built-in push button (one the program only subclassed too): click = WM_COMMAND */
         if (!tw->enabled) {                                      /* a disabled control gets no mouse */
             press_hwnd = 0;
             return 1;

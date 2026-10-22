@@ -4,6 +4,7 @@
  * the small part that is kept: a text file in the install's overlay (port_overlay_sota/registry.dat; regstore_open is given the path), read at start and rewritten whole by every write.
  * It keeps only
  *     the values of keys at or below  HKLM\SOFTWARE\MicroProse
+ *     the values of keys at or below  HKCU\SOFTWARE\MicroProse   (the Magic Shell of Spells of the Ancients keeps its page settings there: DuelOptions, GauntletOptions, SoloOptions, ScreenNames, ...)
  *     the two values  FirstInstallDateTime  and  ProductId  of  HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion
  * and nothing else: every other key stays "not found" and a write to one goes nowhere, as before. With no store opened (a 1.0 run, a test) nothing is kept at all.
  *
@@ -21,7 +22,8 @@
 
 #define REGSTORE_WINDOWS_KEY "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion"
 #define REGSTORE_MICROPROSE_KEY "HKLM\\SOFTWARE\\MicroProse"
-#define REGSTORE_MAX_VALUES 64
+#define REGSTORE_USER_KEY "HKCU\\SOFTWARE\\MicroProse"
+#define REGSTORE_MAX_VALUES 128
 #define REGSTORE_MAX_DATA 1024
 
 /* Open the store at `path` (NULL closes it and forgets the values). A file that is not there is an empty store, made by the first write. Returns the number of values read; a file that

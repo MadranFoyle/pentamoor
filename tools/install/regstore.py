@@ -3,7 +3,7 @@ regstore.py - the installer's side of the file registry (src/port/regstore.c, re
 Ancients 2.15 run reads and writes.
 
 The file (docs/notes/sota-licence.md, "The registry file"): a first line "# pentamoor registry 1", then one value a line, `key TAB name TAB type TAB hex`, the key a path from the root
-("HKLM\\SOFTWARE\\..."), the type the registry's number (1 string, 3 binary, 4 DWORD), the bytes in lower-case hex. Only values under HKLM\\SOFTWARE\\MicroProse and the two Windows
+("HKLM\\SOFTWARE\\..."), the type the registry's number (1 string, 3 binary, 4 DWORD), the bytes in lower-case hex. Only values under HKLM\\SOFTWARE\\MicroProse and HKCU\\SOFTWARE\\MicroProse and the two Windows
 values FirstInstallDateTime and ProductId are kept; the runtime drops any other line. This module reads and writes that format, the same way the runtime does, and makes the install's own
 machine pair: a random install time and a random product id, made once, when the install is made. It holds nothing about what any program stores in the other values.
 
@@ -16,11 +16,12 @@ import secrets
 HEADER = "# pentamoor registry 1"
 WINDOWS_KEY = "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion"
 MICROPROSE_KEY = "HKLM\\SOFTWARE\\MicroProse"
+USER_KEY = "HKCU\\SOFTWARE\\MicroProse"                # the Magic Shell's page settings (the runtime keeps them: regstore.h)
 LICENCE_KEY = MICROPROSE_KEY + "\\Magic: The Gathering"
 INSTALL_TIME = "FirstInstallDateTime"
 PRODUCT_ID = "ProductId"
 REG_SZ, REG_BINARY, REG_DWORD = 1, 3, 4
-MAX_VALUES = 64
+MAX_VALUES = 128
 MAX_DATA = 1024
 
 
@@ -31,9 +32,9 @@ class RegError(Exception):
 def keeps(key, name=None):
     """Does the store keep this value (the runtime's regstore_keeps)?"""
     k = key.lower()
-    mp = MICROPROSE_KEY.lower()
-    if k == mp or k.startswith(mp + "\\"):
-        return True
+    for mp in (MICROPROSE_KEY.lower(), USER_KEY.lower()):
+        if k == mp or k.startswith(mp + "\\"):
+            return True
     if k == WINDOWS_KEY.lower():
         return name is None or name.lower() in (INSTALL_TIME.lower(), PRODUCT_ID.lower())
     return False

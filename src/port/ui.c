@@ -308,7 +308,7 @@ static void draw_button(Canvas *c, const Window *w, const Window *dlg, int x0, i
         }
         if (n) {                       /* the label sits on a strip of the face colour that hides the frame, over artwork too (Windows 98's DUEL.EXE setup dialog shows it so) */
             if (!open_gap)
-                fill(c, gx0, y0, gx1, y0 + f.height, FACE);
+                fill(c, gx0, y0, gx1, y0 + f.height, w->ctl_has_bg ? w->ctl_bg : FACE);
             label_line(c, &f, x0 + 8, y0, label, n, ul, fg, disabled);
         }
     } else if (kind == 2 || kind == 3 || kind == 5 || kind == 6) {                 /* check boxes */

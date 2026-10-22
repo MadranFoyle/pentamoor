@@ -12,6 +12,7 @@
 #include "pad.h"
 #include "plat.h"
 #include "port.h"
+#include "process.h"
 #include "profile.h"
 #include "regstore.h"
 #include "sched.h"
@@ -148,6 +149,15 @@ static int game_main(void *p)
 
             snprintf(reg, sizeof(reg), "%s/registry.dat", overlay);
             regstore_open(reg);
+            if (profile->programs[0].file && !export_spec && !getenv("PORT_NO_INSTANCE_LOCK")) {      /* a program of the game that finds another running does not start (process.h) */
+                char msg[600];
+
+                if (proc_instance_enter(overlay, profile->file, msg, sizeof(msg))) {
+                    fprintf(stderr, "%s\n", msg);
+                    fflush(NULL);
+                    exit(0);
+                }
+            }
         }
     }
     if (pe_load(argv[1], &img) != 0)

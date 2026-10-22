@@ -108,5 +108,7 @@ int plat_spawn(const char *const *argv, const char *const *set, const char *cons
 int plat_child_state(long id, int *exit_code);
 /* A named pipe for PORT_CONTROL at `path` (POSIX mkfifo; Windows: PORT_CONTROL names an ordinary file there, so an empty one is made). 0 on success or if it is there already. */
 int plat_make_control(const char *path);
+/* Whether a process with this id is running (a process of another user counts as running; a dead one, or an id that never was, does not). */
+int plat_pid_alive(long pid);
 
 #endif

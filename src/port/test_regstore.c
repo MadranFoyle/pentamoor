@@ -48,7 +48,10 @@ static int has(const char *key, const char *name, uint32_t type, const char *byt
 static void test_what_it_keeps(void)
 {
     CHECK(regstore_keeps(MP, "x") && regstore_keeps("HKLM\\SOFTWARE\\MicroProse", "x") && regstore_keeps("hklm\\software\\microprose\\a\\b", "x"));
-    CHECK(!regstore_keeps("HKLM\\SOFTWARE\\MicroProseX", "x") && !regstore_keeps("HKLM\\SOFTWARE", "x") && !regstore_keeps("HKCU\\SOFTWARE\\MicroProse\\a", "x"));
+    CHECK(!regstore_keeps("HKLM\\SOFTWARE\\MicroProseX", "x") && !regstore_keeps("HKLM\\SOFTWARE", "x"));
+    /* the Magic Shell keeps its page settings under the current user's MicroProse key */
+    CHECK(regstore_keeps("HKCU\\Software\\MicroProse\\Magic: The Gathering\\DuelOptions", "Layout") && regstore_keeps("HKCU\\SOFTWARE\\MicroProse", "x"));
+    CHECK(!regstore_keeps("HKCU\\SOFTWARE\\MicroProseX", "x") && !regstore_keeps("HKCU\\SOFTWARE\\Other", "x") && !regstore_keeps("HKCU\\SOFTWARE", "x") && !regstore_keeps("HKCR\\SOFTWARE\\MicroProse", "x"));
     CHECK(regstore_keeps(WIN, "FirstInstallDateTime") && regstore_keeps(WIN, "ProductId") && regstore_keeps(WIN, "productid"));
     CHECK(!regstore_keeps(WIN, "RegisteredOwner") && !regstore_keeps(WIN, "Version"));         /* of Windows' key only the two values */
     CHECK(!regstore_keeps("HKLM\\SOFTWARE\\Microsoft", "ProductId") && !regstore_keeps(NULL, "x") && !regstore_keeps("", "x"));

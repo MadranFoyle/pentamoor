@@ -145,13 +145,13 @@ static void test_child(void)
     char want[300];
 
     proc_plan(&fake, NULL, "C:\\Magic\\Program\\FaceMaker.exe /S", &plan);
-    proc_child(&c, &plan, "/opt/pentamoor-run", "/opt/mods", "/g/Program/FaceMaker.exe", "/g", "/o", 800, 600, "/tmp/ctl", "/tmp/shm");
+    proc_child(&c, &plan, "/opt/pentamoor-run", "/opt/mods", "/g/Program/FaceMaker.exe", "/g", "/o", 800, 600, "/tmp/ctl", "/tmp/shm", NULL);
     snprintf(want, sizeof(want), "/opt/mods/game_facemaker%s", PLAT_MODULE_SUFFIX);
     CHECK(!strcmp(c.argv[0], "/opt/pentamoor-run") && !strcmp(c.argv[1], "-m") && !strcmp(c.argv[2], want) && !strcmp(c.argv[3], "/g/Program/FaceMaker.exe") && !strcmp(c.argv[4], "/g") && !c.argv[5]);
     CHECK(in_list(c.set, "PORT_OVERLAY=/o") && in_list(c.set, "PORT_RES=800x600") && in_list(c.set, "PORT_CMDLINE=/S") && in_list(c.set, "PORT_SHM=/tmp/shm"));
     CHECK(in_list(c.set, "PORT_CONTROL=/tmp/ctl.facemaker") && c.control && !strcmp(c.control, "/tmp/ctl.facemaker"));         /* a pipe of its own */
     CHECK(in_list(c.unset, "PORT_SCRIPT"));
-    proc_child(&c, &plan, "run", "", "exe", "root", "ov", 640, 480, NULL, NULL);
+    proc_child(&c, &plan, "run", "", "exe", "root", "ov", 640, 480, NULL, NULL, NULL);
     snprintf(want, sizeof(want), "game_facemaker%s", PLAT_MODULE_SUFFIX);
     CHECK(!strcmp(c.argv[2], want));                                                                                          /* a module in the current folder: no slash */
     CHECK(in_list(c.set, "PORT_RES=640x480") && !c.control && !in_list(c.set, "PORT_CONTROL=") && !in_list(c.set, "PORT_SHM="));

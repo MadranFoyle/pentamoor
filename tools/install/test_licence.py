@@ -109,7 +109,7 @@ def test_the_registry_file_reads_and_writes_the_format_the_runtime_reads(tmp_pat
 def test_the_registry_file_keeps_only_what_the_runtime_keeps(tmp_path):
     path = str(tmp_path / "registry.dat")
     s = regstore.Store(path)
-    for key, name in (("HKLM\\SOFTWARE\\Other", "x"), (regstore.WINDOWS_KEY, "RegisteredOwner"), ("HKCU\\SOFTWARE\\MicroProse", "x"), (regstore.MICROPROSE_KEY, "tab\tname")):
+    for key, name in (("HKLM\\SOFTWARE\\Other", "x"), (regstore.WINDOWS_KEY, "RegisteredOwner"), ("HKCU\\SOFTWARE\\Other", "x"), (regstore.MICROPROSE_KEY, "tab\tname")):
         with pytest.raises(regstore.RegError):
             s.put(key, name, 1, b"a")
     assert not os.path.exists(path)

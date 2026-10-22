@@ -2,6 +2,7 @@
 #ifndef _WIN32
 #include <dlfcn.h>
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -62,6 +63,7 @@ int plat_system(const char *cmd) { return system(cmd); }
 int plat_self_path(char *out, size_t cap) { (void)out; (void)cap; return 0; }
 int plat_spawn(const char *const *argv, const char *const *set, const char *const *unset, long *id) { (void)argv; (void)set; (void)unset; (void)id; return -1; }
 int plat_child_state(long id, int *exit_code) { (void)id; (void)exit_code; return -1; }
+int plat_pid_alive(long pid) { (void)pid; return 0; }
 #else
 #include <sys/wait.h>
 #ifdef __APPLE__
@@ -152,6 +154,11 @@ int plat_child_state(long id, int *exit_code)
     return 1;
 }
 #endif
+
+int plat_pid_alive(long pid)
+{
+    return pid > 0 && (kill((pid_t)pid, 0) == 0 || errno == EPERM);
+}
 
 int plat_make_control(const char *path)
 {
