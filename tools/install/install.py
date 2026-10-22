@@ -22,8 +22,9 @@ before anything is written (tools/install/sotainstall.py says how).
 
 The licence value (tools/install/licence.py, docs/notes/sota-licence.md): after the discs are verified, the files are made and the modules are built, the installer does what the original
 installer did for an owner of the discs: it runs the original installer's own writer (a library from the expansion's own cabinet, checked by its hash) to write the game's machine-bound
-licence value into this install's registry file (port_overlay_sota/registry.dat), with the same flag word the original installer used. It says so when it does it; `--no-licence-value` skips it
-(the game then offers only its base pool of 409 cards). `--no-cd` is an extra, off by default: it adds the one flag the game itself defines as "skip the disc check" to that word.
+licence value into this install's registry file (port_overlay_sota/registry.dat), with the flag word the original installer used (and, by default, one flag more, below). It says so when it does it; `--no-licence-value` skips it
+(the game then offers only its base pool of 409 cards, and there is no skip of the disc check either). Because the discs were just verified, the word also carries the one flag the game itself defines
+as "skip the disc check", so the install does not ask for a disc later; `--keep-cd-check` leaves that flag out, so the install asks for a disc where the original did.
 
 A raw Alcohol 120% .mdf/.mds pair is not an .iso: convert it first (`mdf2iso "MTG v1.0.mdf" "MTG v1.0.iso"`).
 """
@@ -289,11 +290,11 @@ def sota_sources(args):
 
 
 def licence_options(args, want_sota):
-    """--no-licence-value and --no-cd belong to Spells of the Ancients 2.15, and --no-cd changes the licence value that --no-licence-value does not write. Dies before anything is read or written."""
-    if (args.no_cd or args.no_licence_value) and not want_sota:
-        die("--no-licence-value and --no-cd are about Spells of the Ancients 2.15: they go with --sota and --patch.")
-    if args.no_cd and args.no_licence_value:
-        die("--no-cd and --no-licence-value together make no sense: --no-cd adds a flag to the licence value, and --no-licence-value writes no licence value. Give one of them.")
+    """--no-licence-value and --keep-cd-check belong to Spells of the Ancients 2.15, and --keep-cd-check changes the licence value that --no-licence-value does not write. Dies before anything is read or written."""
+    if (args.keep_cd_check or args.no_licence_value) and not want_sota:
+        die("--no-licence-value and --keep-cd-check are about Spells of the Ancients 2.15: they go with --sota and --patch.")
+    if args.keep_cd_check and args.no_licence_value:
+        die("--keep-cd-check and --no-licence-value together make no sense: --keep-cd-check leaves a flag out of the licence value, and --no-licence-value writes no licence value. Give one of them.")
 
 
 def shell_quote(text):
@@ -393,7 +394,7 @@ def build_modules(layout, args, sota=None, with_licence=False):
 def licence_step(layout, args, sota):
     """The licence step (tools/install/licence.py), after the build: only here, only for an install made from verified discs in this run."""
     module = os.path.join(layout.out_dir, "game_" + builds.SOTA_LICENCE_LIBRARY["module"] + "." + modbuild.module_ext())
-    licence.write_value(sota, layout.root, licence.overlay_dir(layout.root), layout.runtime, module, no_cd=args.no_cd, say=say)
+    licence.write_value(sota, layout.root, licence.overlay_dir(layout.root), layout.runtime, module, keep_cd_check=args.keep_cd_check, say=say)
 
 
 def clean_up(layout):
@@ -463,7 +464,8 @@ def parser():
     ap.add_argument("--dest", default=os.path.join(ROOT, "sources", "installed"), help="where to put it (default: sources/installed, which is ignored by the repository)")
     ap.add_argument("--sota-dest", help="where to put Spells of the Ancients 2.15 (default: beside --dest with _sota added: sources/installed_sota)")
     ap.add_argument("--no-licence-value", action="store_true", help="with --sota: do not write the licence value the original Spells of the Ancients installer wrote for an owner of the discs (the game then offers only its base pool of 409 cards)")
-    ap.add_argument("--no-cd", action="store_true", help="with --sota: also add the flag the game itself defines as \"skip the disc check\" to that licence value, so this install does not ask for a disc (off by default; needs the licence value)")
+    ap.add_argument("--keep-cd-check", action="store_true", help="with --sota: leave out the flag the game itself defines as \"skip the disc check\", which the licence value carries by default because the discs were just verified, so this install asks for a disc where the original did (needs the licence value)")
+    ap.add_argument("--no-cd", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--build", action="store_true", help="then lift the programs to C and compile them (a source checkout: make builds the runtime and the game modules; a release: the modules)")
     ap.add_argument("--modules", action="store_true", help="a source checkout: build only the game modules, with this installer's own compiler step instead of make (what a release does)")
     ap.add_argument("--compiler", help="the C compiler to build the modules with, for example gcc or 'zig cc' (default: cc, gcc or clang if one works, else Zig downloaded into tools/local; also $PENTAMOOR_CC)")
@@ -487,6 +489,8 @@ def main(argv=None, default_build=False):
         sys.exit(self_test(layout, args))
     if args.compiler and not (args.build or args.modules or default_build or layout.release):
         die("--compiler goes with --build or --modules")
+    if args.no_cd:
+        die("--no-cd is gone: the 2.15 install skips the disc check by default; use --keep-cd-check to keep it")
     want_sota = sota_sources(args)
     licence_options(args, want_sota)
     want_licence = want_sota and not args.no_licence_value

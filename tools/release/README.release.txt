@@ -63,10 +63,12 @@ It takes a few minutes more than the first game alone. Everything is checked bef
 expansion's disc given first) the installer says what it found and what it needs. The 2.15 game is a folder of its own (sources/installed_sota) with its own saves (port_overlay_sota), and
 the first game is not changed by it. The expansion's own shell (magic.exe), ManaLink and controller navigation are not part of it.
 At the end the installer does what the original Spells of the Ancients installer did for an owner of the discs: it runs the original installer's own writer (a library from the expansion's cabinet
-on your machine, checked first by its SHA-256) to write the game's machine-bound licence value into port_overlay_sota/registry.dat, with the same flag word the original used, bound to a
+on your machine, checked first by its SHA-256) to write the game's machine-bound licence value into port_overlay_sota/registry.dat, with the flag word the original used (and, by default, one flag more, below), bound to a
 random machine id made for this install only. It says so when it does it. Nothing of that is in this download, and the game and the launchers never write it. --no-licence-value skips it
-(the game then offers its base pool of 409 cards, with it also the 145 cards of the game's "set 1"). --no-cd, off unless you give it, also adds the flag the game itself defines as "skip
-the disc check", so that install does not look for a disc; both discs and the patch are still needed to make the install. --no-cd together with --no-licence-value is refused.
+(the game then offers its base pool of 409 cards, with it also the 145 cards of the game's "set 1"). Because the discs were just verified, the licence value also carries the flag the game
+itself defines as "skip the disc check", so the install does not ask for a disc later (the original installer did not set that flag); the installer says so. --keep-cd-check leaves that
+flag out, so the install asks for a disc where the original did. The installer's check of your discs is software and an install folder can be copied like any file, as the original's installed
+copy could; nothing in this download works without your own discs. --keep-cd-check together with --no-licence-value is refused (--no-cd, which added the flag only when asked, is gone: it is the default now).
 
 The game runs at 1024x768 (PORT_RES=640x480 gives the original size). Saves go to the port_overlay folder.
 Display: F11 or Alt+Enter switches full screen on and off (on a controller: press both sticks in and hold for a second), Ctrl+F11 changes how the

@@ -1,9 +1,10 @@
 """Tests of the licence step of the 2.15 installer (licence.py, regstore.py, and the way install.py runs them), on made-up discs and a made-up writer: no game file, no disc, and no library
 of the game is needed, and nothing here makes, reads or checks a real licence value (the fake writer stores a plainly made-up string).   python3 -m pytest tools/install
 
-  flag word      exactly the bits the original installer set; with --no-cd one more, the game's "skip the disc check"; never anything else
+  flag word      by default the two bits the original installer set and the one more the game defines as "skip the disc check" (8, 22, 17); with --keep-cd-check only the two the
+                 original installer set; never anything else
   the step       after the discs are verified, once, with the owner's own file checked by its hash; nothing is written when a disc is wrong, when the file is not the retail one, or
-                 with --no-licence-value; --no-cd with --no-licence-value (or without --sota) is refused before anything is read
+                 with --no-licence-value; --keep-cd-check with --no-licence-value (or without --sota) is refused before anything is read; --no-cd is gone
   the registry   the installer's file reader and writer, the install's own machine pair, and the file the runtime's C reader (src/port/regstore.c) reads
 """
 import os
@@ -26,15 +27,16 @@ def bits(word):
 
 
 # ---- the flag word ------------------------------------------------------------------------------------------------------------------------------------------------
-def test_the_flag_word_is_the_two_bits_the_original_installer_set():
-    assert bits(licence.flag_word()) == {8, 22} and licence.flag_word() == 0x400100
-    assert licence.ORIGINAL_BITS == (8, 22)
+def test_the_default_flag_word_is_the_original_installers_two_bits_and_the_skip_of_the_disc_check():
+    assert bits(licence.flag_word()) == {8, 17, 22} and licence.flag_word() == 0x420100
+    assert licence.ORIGINAL_BITS == (8, 22) and licence.FLAG_NO_CD_CHECK == 17 and licence.DEFAULT_BITS == (8, 22, 17)
+    assert licence.flag_word() == licence.flag_word(keep_cd_check=False)
 
 
-def test_no_cd_adds_the_one_flag_and_nothing_else():
-    assert bits(licence.flag_word(no_cd=True)) == {8, 17, 22}
-    assert licence.flag_word(no_cd=True) == licence.flag_word() | 1 << 17
-    for word in (licence.flag_word(), licence.flag_word(no_cd=True)):
+def test_keep_cd_check_gives_only_the_bits_the_original_installer_set():
+    assert bits(licence.flag_word(keep_cd_check=True)) == {8, 22} and licence.flag_word(keep_cd_check=True) == 0x400100
+    assert licence.flag_word() == licence.flag_word(keep_cd_check=True) | 1 << 17
+    for word in (licence.flag_word(), licence.flag_word(keep_cd_check=True)):
         assert not bits(word) & {11, 28}                        # the set-2 cards and the developer toggle are never asked for
 
 
@@ -156,23 +158,28 @@ def licence_value(store):
     return got[1] if got else None
 
 
-def test_the_default_install_writes_the_original_installers_word_and_says_so(world, command, tmp_path):
+def test_the_default_install_writes_the_word_with_the_skip_of_the_disc_check_and_says_so_in_one_line(world, command, tmp_path):
     out = command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst")
     w = command.rec.writes[0]
-    assert bits(w["word"]) == {8, 22} and w["export"] == "WriteProgramFlags" and w["library"] == world.licence_library
+    assert bits(w["word"]) == {8, 17, 22} and w["export"] == "WriteProgramFlags" and w["library"] == world.licence_library
     assert w["overlay"] == str(tmp_path / "overlay_sota") and w["pair"] is not None                  # the machine id existed before the writer ran
-    assert "licence: writing the licence value the original Spells of the Ancients installer writes for an owner of the discs" in out
-    assert "--no-cd" not in out and "skip the disc check" not in out
+    said = [line for line in out.splitlines() if line.startswith("licence: writing")]
+    assert len(said) == 1
+    assert "writing the licence value the original Spells of the Ancients installer writes for an owner of the discs, and, because the discs were just verified, " in said[0]
+    assert "\"skip the disc check\" flag, so this install does not ask for a disc later (--keep-cd-check keeps the check)" in said[0]
     store = stored(command, tmp_path)
-    assert licence_value(store) == b"made-up:%x" % 0x400100 and regstore.has_pair(store)
+    assert licence_value(store) == b"made-up:%x" % 0x420100 and regstore.has_pair(store)
     assert f"licence: written to {tmp_path / 'overlay_sota' / 'registry.dat'}" in out
+    assert "made-up" not in out                                                                       # the value is never printed
 
 
-def test_no_cd_hands_over_exactly_one_more_bit_and_says_so_in_one_line(world, command, tmp_path):
-    out = command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst", "--no-cd")
-    assert bits(command.rec.writes[0]["word"]) == {8, 17, 22}
-    assert out.count('adding the flag the game itself defines as "skip the disc check" to this install\'s licence value') == 1
-    assert licence_value(stored(command, tmp_path)) == b"made-up:%x" % (0x400100 | 1 << 17)
+def test_keep_cd_check_hands_over_only_the_original_bits_and_says_so_in_one_line(world, command, tmp_path):
+    out = command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst", "--keep-cd-check")
+    assert bits(command.rec.writes[0]["word"]) == {8, 22}
+    said = [line for line in out.splitlines() if line.startswith("licence: writing")]
+    assert len(said) == 1 and 'without the "skip the disc check" flag (--keep-cd-check): this install asks for a disc where the original did' in said[0]
+    assert "because the discs were just verified" not in out
+    assert licence_value(stored(command, tmp_path)) == b"made-up:%x" % 0x400100
 
 
 def test_no_licence_value_writes_nothing_lifts_nothing_and_builds_no_module_for_it(world, command, tmp_path):
@@ -182,17 +189,23 @@ def test_no_licence_value_writes_nothing_lifts_nothing_and_builds_no_module_for_
     assert not (tmp_path / "overlay_sota").exists()
 
 
-def test_no_cd_with_no_licence_value_is_refused_before_anything_is_read(world, command, tmp_path):
-    text = refused(command, world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst", "--no-cd", "--no-licence-value")
-    assert "--no-cd and --no-licence-value together make no sense" in text and "Give one of them" in text
+def test_keep_cd_check_with_no_licence_value_is_refused_before_anything_is_read(world, command, tmp_path):
+    text = refused(command, world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst", "--keep-cd-check", "--no-licence-value")
+    assert "--keep-cd-check and --no-licence-value together make no sense" in text and "Give one of them" in text
     assert not (tmp_path / "inst").exists() and command.rec.calls == [] and command.rec.writes == []
 
 
-@pytest.mark.parametrize("flag", ["--no-cd", "--no-licence-value"])
+@pytest.mark.parametrize("flag", ["--keep-cd-check", "--no-licence-value"])
 def test_the_flags_need_the_expansion(world, command, tmp_path, flag):
     text = refused(command, world.iso1, "--dest", tmp_path / "inst", flag)
     assert "about Spells of the Ancients 2.15" in text and "--sota" in text
     assert not (tmp_path / "inst").exists() and command.rec.writes == []
+
+
+def test_no_cd_is_gone_and_says_what_to_use(world, command, tmp_path):
+    text = refused(command, world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst", "--no-cd")
+    assert "--no-cd is gone: the 2.15 install skips the disc check by default; use --keep-cd-check to keep it" in text
+    assert not (tmp_path / "inst").exists() and command.rec.calls == [] and command.rec.writes == []
 
 
 def test_a_wrong_disc_or_patch_writes_nothing_and_leaves_no_registry_file(world, command, tmp_path):
@@ -246,11 +259,11 @@ def test_running_the_installer_again_keeps_the_pair_and_writes_the_same_word(wor
     assert (second.get(regstore.WINDOWS_KEY, regstore.INSTALL_TIME), second.get(regstore.WINDOWS_KEY, regstore.PRODUCT_ID)) == pair
     assert "made this install's own machine id" not in out                                                        # (the first run said that)
     assert len(command.rec.writes) == 2 and command.rec.writes[0]["word"] == command.rec.writes[1]["word"]
-    assert len(second.values) == 3 and licence_value(second) == b"made-up:%x" % 0x400100
-    command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst", "--no-cd")        # asking for more later changes the word, not the pair
-    assert licence_value(stored(command, tmp_path)) == b"made-up:%x" % (0x400100 | 1 << 17)
-    command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst")                  # and asking for the default again takes it back
+    assert len(second.values) == 3 and licence_value(second) == b"made-up:%x" % 0x420100
+    command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst", "--keep-cd-check")        # asking to keep the check later changes the word, not the pair
     assert licence_value(stored(command, tmp_path)) == b"made-up:%x" % 0x400100
+    command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", tmp_path / "inst")                  # and asking for the default again takes it back
+    assert licence_value(stored(command, tmp_path)) == b"made-up:%x" % 0x420100
 
 
 def test_the_registry_file_is_in_the_overlay_the_launcher_uses(world, command, tmp_path, monkeypatch):
