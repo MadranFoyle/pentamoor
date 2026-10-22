@@ -22,6 +22,9 @@ typedef struct { int x0, y0, x1, y1; } Rc;
 
 static int cls_is(const Window *w, const char *name) { return w->cname && !strcasecmp(w->cname, name); }
 
+/* a standard control the program has not taken over: no window procedure of its own, or only a subclass (it keeps the control's looks and behaviour; the Win32 call EnumChildWindows lets 2.15's deck editor subclass its buttons) */
+static int plain(const Window *w) { return !w->proc || w->subclassed; }
+
 static const Window *parent_of(const Window *w) { return w->parent ? wm_window(w->parent) : NULL; }
 
 /* the window and every ancestor are shown */
@@ -275,7 +278,7 @@ static void collect_duel(Out *o)
             add_attack_slots(o, w);
         else if (cls_is(w, "MAGICGAME_ScrollbarClass"))
             add_window(o, w, (int)w->hwnd, NAVK_BUTTON);
-        else if (!w->proc && cls_is(w, "BUTTON") && (p = parent_of(w)) != NULL && cls_is(p, "MAGIC_TellUserClass") && w->enabled)
+        else if (plain(w) && cls_is(w, "BUTTON") && (p = parent_of(w)) != NULL && cls_is(p, "MAGIC_TellUserClass") && w->enabled)
             add_window(o, w, (int)p->hwnd, NAVK_BUTTON);                        /* the prompt bar's Cancel and Done */
     }
 }
@@ -296,7 +299,7 @@ static void collect_deck(Out *o)
             continue;
         if (cls_is(w, "MAGICDECK_CardClass"))
             add_window(o, w, (int)w->parent, NAVK_CARD);
-        else if (!w->proc && cls_is(w, "BUTTON") && (p = parent_of(w)) != NULL && cls_is(p, "MAGICDECK_MainClass") && w->enabled)
+        else if (plain(w) && cls_is(w, "BUTTON") && (p = parent_of(w)) != NULL && cls_is(p, "MAGICDECK_MainClass") && w->enabled)
             add_window(o, w, (int)p->hwnd, NAVK_BUTTON);
     }
 }
@@ -345,7 +348,7 @@ static void collect_dialog(Out *o, uint32_t hdlg)
 
         if (!w || w->hwnd == hdlg || !w->visible || !is_below(w, hdlg) || !shown(w) || !w->w || !w->h)
             continue;
-        if (!w->proc && w->builtin) {
+        if (plain(w) && (w->builtin || w->subclassed)) {
             if (cls_is(w, "BUTTON")) {
                 if ((w->style & 0xF) != 7 && w->enabled && clipped_rect(w, &r))        /* not a group box */
                     add(o, &r, w->hwnd, (int)w->parent, NAVK_BUTTON, w->title);
@@ -361,7 +364,7 @@ static void collect_dialog(Out *o, uint32_t hdlg)
             } else if (cls_is(w, "LISTBOX")) {
                 add_list_rows(o, w);
             }
-        } else if (w->proc && !cls_is(w, "STATIC") && !has_hit_child(w)) {
+        } else if (w->proc && !w->subclassed && !cls_is(w, "STATIC") && !has_hit_child(w)) {
             add_window(o, w, (int)w->parent, NAVK_OTHER);                              /* a window of the game's own inside a dialog (the card choice) */
         }
     }

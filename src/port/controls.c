@@ -129,6 +129,189 @@ void wm_list_add(Window *w, const char *text, uint32_t data)
 #define IDX_OK(wp) ((int32_t)(wp) >= 0 && (int32_t)(wp) < w->nitems)
 
 /* The built-in behaviour of BUTTON, STATIC, EDIT, COMBOBOX and LISTBOX windows. */
+/* ---- spin buttons (msctls_updown32) and the text they type into --------------------------------------------------------------------------------------- */
+enum { UDS_WRAP = 1, UDS_SETBUDDYINT = 2, UDS_AUTOBUDDY = 0x10, EN_CHANGE_CODE = 0x300 };
+
+static void spin_init(Window *w)
+{
+    if (!w->spin_set) {
+        w->spin_set = 1;
+        w->spin_lo = 0;
+        w->spin_hi = 100;
+    }
+}
+
+static Window *spin_buddy(Window *w)
+{
+    int i, n = wm_window_count(), found = -1;
+
+    if (w->spin_buddy)
+        return wm_window(w->spin_buddy);
+    if (!(w->style & UDS_AUTOBUDDY))
+        return NULL;
+    for (i = 0; i < n; i++) {                       /* the window made just before it, among its parent's children */
+        Window *c = wm_window_at_index(i);
+
+        if (c == w)
+            break;
+        if (c && c->parent == w->parent)
+            found = i;
+    }
+    return found >= 0 ? wm_window_at_index(found) : NULL;
+}
+
+static int spin_clamp(Window *w, int v)
+{
+    int lo = w->spin_lo < w->spin_hi ? w->spin_lo : w->spin_hi, hi = w->spin_lo < w->spin_hi ? w->spin_hi : w->spin_lo;
+
+    return v < lo ? lo : v > hi ? hi : v;
+}
+
+static void spin_show(Window *w)                    /* UDS_SETBUDDYINT: the position is the buddy's text */
+{
+    Window *b = spin_buddy(w);
+    char buf[16];
+
+    if (b && (w->style & UDS_SETBUDDYINT)) {
+        snprintf(buf, sizeof(buf), "%d", w->spin_pos);
+        free(b->title);
+        b->title = strdup(buf);
+        b->invalid = 1;
+        wm_dirty = 1;
+    }
+}
+
+/* The position: with an integer buddy what its text says, kept inside the range (an empty or non-numeric text is an error and leaves the position). */
+static int spin_read(Window *w, int *err)
+{
+    Window *b = spin_buddy(w);
+
+    *err = 0;
+    if (b && (w->style & UDS_SETBUDDYINT) && b->title) {
+        char *end;
+        long v = strtol(b->title, &end, 10);
+
+        if (end != b->title && *end == 0)
+            w->spin_pos = spin_clamp(w, (int)v);
+        else
+            *err = 1;
+    }
+    return w->spin_pos;
+}
+
+static void edit_changed(Window *e)                  /* EN_CHANGE, to the edit box's parent */
+{
+    wm_post(e->parent, WM_COMMAND, (EN_CHANGE_CODE << 16) | (e->id & 0xFFFF), e->hwnd);
+}
+
+void wm_spin_click(Window *w, int up)
+{
+    int err, v, lo, hi;
+    Window *b;
+
+    spin_init(w);
+    v = spin_read(w, &err);
+    lo = w->spin_lo < w->spin_hi ? w->spin_lo : w->spin_hi;
+    hi = w->spin_lo < w->spin_hi ? w->spin_hi : w->spin_lo;
+    if (w->spin_lo > w->spin_hi)                      /* a reversed range: the up arrow goes towards the lower number */
+        up = !up;
+    v += up ? 1 : -1;
+    if (v > hi)
+        v = (w->style & UDS_WRAP) ? lo : hi;
+    else if (v < lo)
+        v = (w->style & UDS_WRAP) ? hi : lo;
+    w->spin_pos = v;
+    spin_show(w);
+    w->invalid = 1;
+    wm_dirty = 1;
+    wm_post(w->parent, (w->style & 4) ? 0x114u : 0x115u, (4u) | ((uint32_t)(v & 0xFFFF) << 16), w->hwnd);   /* WM_VSCROLL (WM_HSCROLL), SB_THUMBPOSITION and the position */
+    b = spin_buddy(w);
+    if (b && (w->style & UDS_SETBUDDYINT))
+        edit_changed(b);
+}
+
+static uint32_t spin_message(Window *w, uint32_t msg, uint32_t wp, uint32_t lp)
+{
+    int err;
+
+    spin_init(w);
+    switch (msg) {
+    case 0x465:                                       /* UDM_SETRANGE: the upper limit in the low word, the lower in the high one */
+        w->spin_hi = (int16_t)(lp & 0xFFFF);
+        w->spin_lo = (int16_t)(lp >> 16);
+        w->spin_pos = spin_clamp(w, w->spin_pos);
+        return 0;
+    case 0x466:                                       /* UDM_GETRANGE */
+        return ((uint32_t)w->spin_lo << 16) | ((uint32_t)w->spin_hi & 0xFFFF);
+    case 0x46F:                                       /* UDM_SETRANGE32 */
+        w->spin_lo = (int)wp;
+        w->spin_hi = (int)lp;
+        w->spin_pos = spin_clamp(w, w->spin_pos);
+        return 0;
+    case 0x470:                                       /* UDM_GETRANGE32: two integers in guest memory */
+        if (wp)
+            WR32(wp, (uint32_t)w->spin_lo);
+        if (lp)
+            WR32(lp, (uint32_t)w->spin_hi);
+        return 0;
+    case 0x467: case 0x471: {                         /* UDM_SETPOS (the position in the low word), UDM_SETPOS32 */
+        int old = w->spin_pos;
+
+        w->spin_pos = spin_clamp(w, msg == 0x467 ? (int16_t)(lp & 0xFFFF) : (int)lp);
+        spin_show(w);
+        return (uint32_t)old & 0xFFFF;
+    }
+    case 0x468: {                                     /* UDM_GETPOS: the position, and in the high word 1 if the buddy's text is not a number */
+        int v = spin_read(w, &err);
+
+        return ((uint32_t)err << 16) | ((uint32_t)v & 0xFFFF);
+    }
+    case 0x472: {                                     /* UDM_GETPOS32 */
+        int v = spin_read(w, &err);
+
+        if (lp)
+            WR32(lp, (uint32_t)err);
+        return (uint32_t)v;
+    }
+    case 0x469: {                                     /* UDM_SETBUDDY */
+        uint32_t old = w->spin_buddy;
+
+        w->spin_buddy = wp;
+        return old;
+    }
+    case 0x46A:                                       /* UDM_GETBUDDY */
+        return spin_buddy(w) ? spin_buddy(w)->hwnd : 0;
+    }
+    return 0;
+}
+
+/* a character typed into an edit box: printable ones are added (digits only with ES_NUMBER), Backspace takes the last one off (the port keeps no caret or selection) */
+static uint32_t edit_char(Window *w, uint32_t ch)
+{
+    size_t n = strlen(w->title);
+    int limit = w->edit_limit > 0 ? w->edit_limit : 32767;
+
+    if (!w->enabled)
+        return 0;
+    if (ch == 8 && n > 0) {
+        w->title[n - 1] = 0;
+    } else if (ch >= 32 && ch < 256 && ch != 127 && (int)n < limit && (!(w->style & 0x2000) || (ch >= '0' && ch <= '9'))) {
+        char *t = realloc(w->title, n + 2);
+
+        if (!t)
+            return 0;
+        w->title = t;
+        t[n] = (char)ch;
+        t[n + 1] = 0;
+    } else {
+        return 0;
+    }
+    w->invalid = 1;
+    wm_dirty = 1;
+    edit_changed(w);
+    return 0;
+}
+
 uint32_t wm_control_message(Window *w, const char *cls, uint32_t msg, uint32_t wp, uint32_t lp)
 {
     int cb = !strcasecmp(cls, "COMBOBOX");
@@ -156,6 +339,17 @@ uint32_t wm_control_message(Window *w, const char *cls, uint32_t msg, uint32_t w
         return w->hfont;
     if (msg == WM_ENABLE) {
         w->enabled = wp != 0;
+        return 0;
+    }
+    if (!strcasecmp(cls, "msctls_updown32"))
+        return spin_message(w, msg, wp, lp);
+    if (!strcasecmp(cls, "EDIT")) {
+        if (msg == 0x102)             /* WM_CHAR */
+            return edit_char(w, wp);
+        if (msg == 0xC5) {            /* EM_LIMITTEXT */
+            w->edit_limit = (int)wp;
+            return 0;
+        }
         return 0;
     }
     if (!strcasecmp(cls, "BUTTON")) {

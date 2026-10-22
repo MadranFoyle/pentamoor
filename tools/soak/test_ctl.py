@@ -215,3 +215,64 @@ def test_sota_pad_play_goal_helpers():
     t = [types.SimpleNamespace(x0=700, y0=10, label="r"), types.SimpleNamespace(x0=100, y0=10, label="l"), types.SimpleNamespace(x0=20, y0=5, label="m")]
     s = types.SimpleNamespace(w=1024)
     assert [x.label for x in sp.five(s, t)] == ["l", "r"] and [x.label for x in sp.left(s, t)] == ["m"]
+
+
+def test_sota_shell_soak_reads_the_process_graph_from_the_log():
+    import sota_shell_soak as ss
+    log = ("loaded x at 0x1\nprocess: started shandalar.exe (module game_shandalar, id 4100)\n  win 0x1 parent 0x0\n"
+           "process: started facemaker.exe (module game_facemaker, id 4101)\nprocess: started magic.exe (module game_shell, id 4102)\nprocess: not started: x\n")
+    assert ss.started_programs(log) == [("shandalar.exe", "game_shandalar", 4100), ("facemaker.exe", "game_facemaker", 4101), ("magic.exe", "game_shell", 4102)]
+    assert ss.started_programs("") == []
+    # the pipe of a started program is the parent's, a dot, and the program's stem (src/port/process.c)
+    assert ss.child_control("/w/ctl", "shandalar.exe") == "/w/ctl.shandalar" and ss.child_control("/w/ctl.shandalar", "MAGIC.EXE") == "/w/ctl.shandalar.magic"
+    assert ss.pid_gone(2 ** 22 + 12345) and not ss.pid_gone(os.getpid())
+
+
+def test_sota_shell_soak_follows_a_started_program_and_counts_orphans(tmp_path):
+    import argparse
+    import sota_shell_soak as ss
+    a = argparse.Namespace(res="800x600", seed=3, workdir=str(tmp_path / "s"), program="sources/installed_sota/Magic/Program/magic.exe", module=None, repo=str(tmp_path), exe="x")
+    s = ss.ShellSoak(a)
+    known = lambda line: any(k.match(line) for k in s.known_stderr)           # noqa: E731
+    assert known("process: started shandalar.exe (module game_shandalar, id 12)") and known("MessageBox: x") and not known("overworld frame took 700 ms")
+    g = Game(str(tmp_path), workdir=str(tmp_path / "w"))
+    open(g.log_path, "w").write("process: started shandalar.exe (module game_shandalar, id %d)\nprocess: started facemaker.exe (module game_facemaker, id 99999991)\n" % os.getpid())
+    s.root = s.game = g
+    g.proc = None
+    g.attached_pid = 1
+    os.mkfifo(g.ctl_path + ".shandalar")
+    try:
+        assert s.follow("magic.exe") is None                                   # nothing of that name yet, but both are recorded for the orphan check
+        assert s.pids == [os.getpid(), 99999991]
+        assert s.follow("shandalar.exe") is None                               # already recorded: not followed twice
+    finally:
+        os.unlink(g.ctl_path + ".shandalar")
+    # the monkey presses what is on the window tree, a click on the middle of a control
+    import pentamoor_ctl as pc
+    m = pc.WIN_RE.match("  win 0x10 parent 0x1 BUTTON 'OK' (100,200)-(180,230) z=0 style=0x50000000 tid=1 visible")
+    tree = pc.Tree([pc.Win(m)])
+    lines = sent(tmp_path, lambda gg: [setattr(s, "game", gg), s.rnd.seed(2), [s.action(tree) for _ in range(30)]])
+    assert any(l == "click 140 215" for l in lines) and any(l.startswith("key ") for l in lines)
+    assert s.stats["act_click_control"] > 0 and s.stats["act_click"] > 0 and s.stats["act_key"] > 0
+
+
+def test_sota_shell_soak_parses():
+    import ast
+    ast.parse(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sota_shell_soak.py")).read())
+
+
+def test_sota_shell_duels_tell_the_pages_from_the_duel_dialogs(tmp_path):
+    import argparse
+    import pentamoor_ctl as pc
+    import sota_shell_soak as ss
+    a = argparse.Namespace(res="800x600", seed=3, workdir=str(tmp_path / "s"), program="sources/installed_sota/Magic/Program/magic.exe", module=None, repo=str(tmp_path), exe="x")
+    s = ss.ShellDuels(a)
+    assert s.at(ss.SHELL_START["solo"]) == (681, 511) and s.at(ss.SHELL_DUEL) == (85, 98) and s.engine_state() == {}
+    page = pc.Win(pc.WIN_RE.match("  win 0x20 parent 0x10 #32770* '' (216,235)-(755,545) z=1 style=0x40000040 tid=1 visible noproc id=0"))          # a page: a child dialog
+    modal = pc.Win(pc.WIN_RE.match("  win 0x30 parent 0x10 #32770* '' (83,106)-(717,494) z=2 style=0x80800841 tid=2 visible noproc id=0"))          # the coin toss: a pop-up dialog
+    start = pc.Win(pc.WIN_RE.match("  win 0x40 parent 0x20 BUTTON 'Start &match' (628,497)-(735,525) z=3 style=0x5003000b tid=1 visible id=1"))
+    tree = pc.Tree([page, modal, start])
+    s.game = type("G", (), {"alive": lambda self: True, "windows": lambda self, timeout=8: tree, "log_size": lambda self: 0, "pid": 1, "exit_status": lambda self: None})()
+    s.root = s.game
+    t = s.look("x")
+    assert [d.h for d in t.dialogs()] == [0x30] and s.on_duel_page(t, "solo") and not s.on_duel_page(t, "gauntlet")

@@ -60,7 +60,7 @@ static int own_mouse_control(const Window *w)
  * it is a push button, or a combo or list box the window layer itself clicks. */
 int wm_is_hit_target(const Window *w)
 {
-    int builtin_button = (!w->proc || w->subclassed) && (!strcasecmp(w->cname, "BUTTON") || ((!strcasecmp(w->cname, "COMBOBOX") || !strcasecmp(w->cname, "LISTBOX")) && !own_mouse_control(w))) && w->w > 0 && w->enabled;
+    int builtin_button = (!w->proc || w->subclassed) && (!strcasecmp(w->cname, "BUTTON") || !strcasecmp(w->cname, "msctls_updown32") || !strcasecmp(w->cname, "EDIT") || ((!strcasecmp(w->cname, "COMBOBOX") || !strcasecmp(w->cname, "LISTBOX")) && !own_mouse_control(w))) && w->w > 0 && w->enabled;
 
     return w->proc || w->dlgproc || w->movie || builtin_button;
 }
@@ -229,6 +229,13 @@ int wm_inject_mouse(int kind, int x, int y)
             wm_listbox_click(tw, y);
         return 1;
     }
+    if (!tw->proc && !strcasecmp(tw->cname, "msctls_updown32") && tw->enabled) {          /* a spin button: the upper half of it counts up, the lower half down */
+        if (kind == IN_DOWN)
+            wm_spin_click(tw, ly < (y1 - y0) / 2);
+        return 1;
+    }
+    if (!tw->proc && !strcasecmp(tw->cname, "EDIT") && tw->enabled && kind == IN_DOWN)
+        wm_set_focus(tw->hwnd);                                    /* a click puts the focus in an edit box (the keys go to it from then on) */
     if ((!tw->proc || tw->subclassed) && !strcasecmp(tw->cname, "BUTTON")) {        /* a built-in push button (one the program only subclassed too): click = WM_COMMAND */
         if (!tw->enabled) {                                      /* a disabled control gets no mouse */
             press_hwnd = 0;

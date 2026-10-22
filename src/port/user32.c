@@ -393,6 +393,10 @@ uint32_t wm_default_proc(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp)
         wm_destroy(hwnd);
         return 0;
     }
+    if (msg == 0x112 && (wp & 0xFFF0u) == 0xF060u) {      /* WM_SYSCOMMAND SC_CLOSE (the Magic Shell's own close button sends it to itself): DefWindowProc turns it into WM_CLOSE */
+        wm_send(hwnd, WM_CLOSE, 0, 0);
+        return 0;
+    }
     if (msg == 0x112 && (wp & 0xFFF0u) == 0xF010u) {      /* WM_SYSCOMMAND SC_MOVE (0xF012 is a drag by the mouse): the modal loop that moves the window with the pointer */
         int x0, y0, x1, y1, px0 = 0, py0 = 0, grab_x, grab_y;
         Window *par = win->parent ? wm_window(win->parent) : NULL;
@@ -428,7 +432,7 @@ uint32_t wm_default_proc(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp)
         if (!strcasecmp(win->cname, "MCIWNDCLASS"))
             return wm_movie_message(win, msg, wp, lp);
         if (!strcasecmp(win->cname, "BUTTON") || !strcasecmp(win->cname, "STATIC") || !strcasecmp(win->cname, "EDIT") ||
-            !strcasecmp(win->cname, "COMBOBOX") || !strcasecmp(win->cname, "LISTBOX") || !strcasecmp(win->cname, "SCROLLBAR"))
+            !strcasecmp(win->cname, "COMBOBOX") || !strcasecmp(win->cname, "LISTBOX") || !strcasecmp(win->cname, "SCROLLBAR") || !strcasecmp(win->cname, "msctls_updown32"))
             return wm_control_message(win, win->cname, msg, wp, lp);
         if (!strcmp(win->cname, "#32770") && msg == WM_CLOSE) {
             win->ended = 1;
@@ -1291,7 +1295,7 @@ static int next_message(int remove, uint32_t hwnd_filter, Msg *out)
                                                  * draws the control later (compose.c), so the answer is taken here, on the thread that owns the window, and kept */
         Window *w = windows[i], *p;
 
-        if (w && (w->builtin || w->subclassed) && w->invalid && w->visible && (!w->proc || w->subclassed) && !w->ownerdraw && w->cname && w->tid == sched_tid() && (p = wm_window(w->parent)) && (p->proc || p->dlgproc) &&
+        if (w && (w->builtin || w->subclassed) && w->invalid && w->visible && (!w->proc || w->subclassed) && !w->dlgproc && !w->ownerdraw && w->cname && w->tid == sched_tid() && (p = wm_window(w->parent)) && (p->proc || p->dlgproc) &&
             !ui_in_modal_dialog(p)) {
             w->invalid = 0;
             wm_query_ctl_colors(p, w);
@@ -1502,6 +1506,8 @@ uint32_t wm_key_target(void)
     if (held)
         return held;
     w = wm_window(focus_hwnd);
+    if (w && !w->proc && w->visible && w->enabled && w->cname && !strcasecmp(w->cname, "EDIT") && !wm_top_dialog())
+        return w->hwnd;                                     /* an edit box on an ordinary window or page that has the focus takes the keys (modal dialogs have their own path) */
     while (w && (!w->proc || !w->visible))
         w = wm_window(w->parent);
     return w ? w->hwnd : wm_main_hwnd();

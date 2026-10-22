@@ -961,6 +961,100 @@ static void test_enum_children(void)
     API("DestroyWindow", top);
 }
 
+/* spin buttons and edit boxes on an ordinary window (the Magic Shell's pages: "Best of", the rounds and free lands of a tournament, the screen name): the range and position messages, the buddy's
+ * text, a click on the upper or lower half, WM_VSCROLL and EN_CHANGE to the parent, and the keys that go to an edit box with the focus */
+static void pump_to_dispatch(void)
+{
+    uint32_t msg = scratch(28);
+    int i;
+
+    for (i = 0; i < 200 && API("PeekMessageA", msg, 0, 0, 0, 1); i++)
+        API("DispatchMessageA", msg);
+}
+
+static uint32_t close_proc(const uint32_t *a)
+{
+    if (a[1] == WM_CLOSE) {
+        note("CLOSE ");
+        return 0;
+    }
+    return API("DefWindowProcA", a[0], a[1], a[2], a[3]);
+}
+
+/* WM_SYSCOMMAND with SC_CLOSE, which the shell's own close button sends to itself, is WM_CLOSE in DefWindowProc (the shell stayed up when it was not) */
+static void test_sc_close(void)
+{
+    uint32_t w;
+
+    register_class("CloseClass", port_host_function(close_proc), 0, 0);
+    w = create("CloseClass", WS_VISIBLE | WS_POPUP, 0, 0, 100, 100, 0, 0);
+    log_clear();
+    API("SendMessageA", w, 0x112, 0xF020, 0);                         /* SC_MINIMIZE: nothing */
+    CHECK(strstr(log_, "CLOSE") == NULL);
+    API("SendMessageA", w, 0x112, 0xF063, 0);                         /* SC_CLOSE (the low four bits are the mouse hit in the menu's case) */
+    CHECK(strstr(log_, "CLOSE ") != NULL);
+    API("DestroyWindow", w);
+}
+
+static void test_spin_and_edit(void)
+{
+    uint32_t parent, edit, spin;
+    Window *e;
+
+    register_class("SpinParent", port_host_function(press_proc), 0, 0);
+    parent = create("SpinParent", WS_VISIBLE | WS_POPUP, 0, 0, 400, 300, 0, 0);
+    edit = create("EDIT", WS_CHILD | WS_VISIBLE | 0x2000, 10, 10, 40, 20, parent, 5);          /* ES_NUMBER */
+    spin = create("msctls_updown32", WS_CHILD | WS_VISIBLE | 0x12, 50, 10, 12, 20, parent, 6);    /* UDS_AUTOBUDDY | UDS_SETBUDDYINT */
+    e = wm_window(edit);
+    CHECK(API("SendMessageA", spin, 0x46A, 0, 0) == edit);                                       /* UDM_GETBUDDY: the window made just before it */
+    CHECK(API("SendMessageA", spin, 0x468, 0, 0) == (1u << 16));                                 /* UDM_GETPOS: position 0 (the range is 0 to 100 until set), and the text "t" is not a number: the error word */
+    API("SendMessageA", spin, 0x465, 0, (1u << 16) | 5u);                                         /* UDM_SETRANGE: 1 to 5 */
+    CHECK(API("SendMessageA", spin, 0x466, 0, 0) == ((1u << 16) | 5u));
+    API("SendMessageA", spin, 0x467, 0, 3);                                                       /* UDM_SETPOS */
+    CHECK(!strcmp(e->title, "3") && (API("SendMessageA", spin, 0x468, 0, 0) & 0xFFFFFFFFu) == 3);
+    API("SendMessageA", spin, 0x467, 0, 99);                                                      /* out of the range: kept inside */
+    CHECK(!strcmp(e->title, "5"));
+    drain_for(WM_COMMAND);
+    wm_inject_mouse(IN_DOWN, 56, 12);                                                             /* the upper half: up, but 5 is the top */
+    wm_inject_mouse(IN_UP, 56, 12);
+    CHECK(!strcmp(e->title, "5"));
+    wm_inject_mouse(IN_DOWN, 56, 25);                                                             /* the lower half: down */
+    wm_inject_mouse(IN_UP, 56, 25);
+    CHECK(!strcmp(e->title, "4") && API("SendMessageA", spin, 0x468, 0, 0) == 4);
+    wm_inject_mouse(IN_DOWN, 56, 25);
+    wm_inject_mouse(IN_UP, 56, 25);
+    wm_inject_mouse(IN_DOWN, 56, 25);
+    wm_inject_mouse(IN_UP, 56, 25);
+    wm_inject_mouse(IN_DOWN, 56, 25);
+    wm_inject_mouse(IN_UP, 56, 25);
+    CHECK(!strcmp(e->title, "1"));                                                                /* the bottom: it stays (no UDS_WRAP) */
+    drain_for(WM_COMMAND);
+    wm_inject_mouse(IN_DOWN, 56, 12);
+    CHECK(!strcmp(e->title, "2") && drain_for(0x115) == parent);                                  /* WM_VSCROLL, SB_THUMBPOSITION, to the parent */
+    wm_inject_mouse(IN_DOWN, 56, 12);
+    CHECK(drain_for(WM_COMMAND) == parent);                                                       /* EN_CHANGE of the buddy */
+    /* typing: a click gives the edit box the focus and the keys go to it; ES_NUMBER takes digits only, Backspace takes one off, the limit holds */
+    CHECK(wm_inject_mouse(IN_DOWN, 15, 15) == 1);
+    wm_inject_mouse(IN_UP, 15, 15);
+    CHECK(API("GetFocus") == edit && wm_key_target() == edit);
+    wm_inject_key('7', 8, 1, '7', 0);
+    wm_inject_key('7', 8, 0, -1, 0);
+    pump_to_dispatch();
+    CHECK(!strcmp(e->title, "37"));
+    wm_inject_key('A', 30, 1, 'a', 0);
+    pump_to_dispatch();
+    CHECK(!strcmp(e->title, "37"));
+    wm_inject_key(8, 14, 1, 8, 0);
+    pump_to_dispatch();
+    CHECK(!strcmp(e->title, "3") && API("SendMessageA", spin, 0x468, 0, 0) == 3);                 /* UDM_GETPOS reads what was typed */
+    API("SendMessageA", edit, 0xC5, 2, 0);                                                        /* EM_LIMITTEXT 2 */
+    wm_inject_key('5', 6, 1, '5', 0);
+    wm_inject_key('6', 7, 1, '6', 0);
+    pump_to_dispatch();
+    CHECK(!strcmp(e->title, "35"));
+    API("DestroyWindow", parent);
+}
+
 /* The Magic Shell's pages are WS_CHILD dialogs made with CreateDialogParamA inside its main window: modeless, shown where the template puts them, their controls laid out by the page
  * itself when it gets WM_SIZE (the shell's MoveWindow of the page to its area). */
 static uint32_t pageproc(const uint32_t *a)
@@ -975,6 +1069,9 @@ static uint32_t pageproc(const uint32_t *a)
     case WM_COMMAND:
         note("COMMAND(%u) ", a[2] & 0xFFFF);
         return 1;
+    case WM_PAINT:
+        note("PAINT ");
+        return 0;
     case 0x138:                                                    /* WM_CTLCOLORSTATIC: white text, no background brush */
         API("SetTextColor", a[2], 0x00FFFFFFu);
         API("SetBkMode", a[2], 1);
@@ -1047,6 +1144,17 @@ static void test_modeless_dialog(void)
         for (i = 0; i < 4; i++)
             API("PeekMessageA", msg, 0, 0, 0, 1);
         CHECK(!label->invalid && label->ctl_valid && label->ctl_transparent && !label->ctl_has_bg && label->ctl_fg[0] == 255 && label->ctl_fg[2] == 255);
+    }
+    /* the dialog window is not a control: asking its controls' colours does not take its own update region (the Sealed Deck's pack screen, a dialog that draws itself, stayed grey) */
+    {
+        uint32_t msg = scratch(28);
+        int i;
+
+        w->invalid = 1;
+        log_clear();
+        for (i = 0; i < 8; i++)
+            API("PeekMessageA", msg, 0, 0, 0, 1);
+        CHECK(strstr(log_, "PAINT ") != NULL || (RD32(msg + 4) == WM_PAINT && RD32(msg) == page));
     }
     /* IsDialogMessage: Escape is IDCANCEL, Enter presses the default push button, Tab moves the focus to the next tab stop; anything else is the caller's */
     {
@@ -2394,6 +2502,9 @@ static void test_navwm_deck(void)
         CHECK(k >= 0 && nt[k].kind == NAVK_CARD && nt[k].x0 == 322 && nt[k].x1 == 458 && nt[k].y0 == 18 + 24 * i && nt[k].y1 == (i < 2 ? 42 + 24 * i : 18 + 48 + 136));
     }
     CHECK(nav_index(nt, n, stats, 0) >= 0 && nav_index(nt, n, exit_b, 0) >= 0 && nav_index(nt, n, filt, 0) < 0 && nav_index(nt, n, horz, 0) < 0);
+    API("SetWindowLongA", exit_b, (uint32_t)-4, port_host_function(wndproc));       /* 2.15's deck editor subclasses its buttons (it enumerates its children): they are still the buttons of the screen */
+    n = navwm_collect(nt, NAV_MAXTARGETS, 0, 0, &cur);
+    CHECK(n == 5 && nav_index(nt, n, stats, 0) >= 0 && nav_index(nt, n, exit_b, 0) >= 0 && nt[nav_index(nt, n, exit_b, 0)].kind == NAVK_BUTTON);
     r = navwm_pick(390, 100, NAV_UP, &tx, &ty);                          /* up the strips of the deck */
     CHECK(r >= 0 && ty == 18 + 24 + 12 - 1 + 0 && tx == 389);
     r = navwm_pick(390, 100, NAV_DOWN, &tx, &ty);                        /* down from the last card: the buttons under it, the nearest in the beam */
@@ -2730,6 +2841,8 @@ int main(void)
     test_popup_position();
     test_dialog();
     test_modeless_dialog();
+    test_spin_and_edit();
+    test_sc_close();
     test_standard_controls_on_ordinary_windows();
     test_popup_menu();
     test_file_dialogs();
