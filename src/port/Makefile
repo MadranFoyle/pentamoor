@@ -70,13 +70,14 @@ RTFLAGS = -DLIFT_BACKEND_FLAT4G -DLIFT_PREEMPT $(WINFLAGS) -iquote . -I../native
 
 # magic, deck and duel are the retail disc's (1.0); shandalar, facemaker and sotadeck are Spells of the Ancients 2.15's (tools/lift/builds.py, SOTA_MODULES). senclib is the one library
 # of the expansion's cabinet that the installer runs once to write the licence value (builds.SOTA_LICENCE_LIBRARY); its C exists only when the installer lifted it.
-PROGRAMS = magic deck duel shandalar facemaker sotadeck senclib
+PROGRAMS = magic deck duel shandalar facemaker sotadeck shell senclib
 GEN_magic ?= ../../sources/generated/lift_magic_all
 GEN_deck ?= ../../sources/generated/lift_deck
 GEN_duel ?= ../../sources/generated/lift_duel
 GEN_shandalar ?= ../../sources/generated/lift_shandalar
 GEN_facemaker ?= ../../sources/generated/lift_facemaker
 GEN_sotadeck ?= ../../sources/generated/lift_sotadeck
+GEN_shell ?= ../../sources/generated/lift_shell
 GEN_senclib ?= ../../sources/generated/lift_senclib
 # The programs that have generated C to build a module from.
 AVAILABLE = $(foreach p,$(PROGRAMS),$(if $(wildcard $(GEN_$(p))/handlers_gen.c),$(p)))

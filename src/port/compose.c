@@ -105,8 +105,15 @@ static void paint(Scene *s, Window *win, int ox, int oy)
             kids[k + 1] = t;
         }
         for (j = 0; j < nk; j++)
-            if (kids[j]->visible && !kids[j]->is_dialog)          /* a dialog owned by this window is drawn from the dialog stack, not here (it would come out twice, offset) */
-                paint(s, kids[j], x + win->nc_l, y + win->nc_t);
+            if (kids[j]->visible && !kids[j]->is_dialog) {         /* a dialog owned by this window is drawn from the dialog stack, not here (it would come out twice, offset) */
+                /* the standard controls on an ordinary window (not a dialog) are Windows' to draw: radio and check boxes, labels, list and edit boxes, scroll bars (the Magic Shell's
+                 * pages); its push buttons are draw_buttons's */
+                if (ui_standard_control(kids[j]) && !ui_dialog_of(win) && kids[j]->w > 0 && kids[j]->h > 0 &&
+                    !(!strcasecmp(kids[j]->cname, "BUTTON") && ((kids[j]->style & 0xF) == 0 || (kids[j]->style & 0xF) == 1)))
+                    ui_draw_control(s->rgb, SCREEN_W, SCREEN_H, kids[j], wm_pressed_button());
+                else
+                    paint(s, kids[j], x + win->nc_l, y + win->nc_t);
+            }
         free(kids);
     }
 }

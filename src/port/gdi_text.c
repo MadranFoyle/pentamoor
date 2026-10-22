@@ -501,7 +501,23 @@ void text_on_rgb(uint8_t *rgb, int w, int h, int x, int y, const char *s, int si
 
 /* ---- the user interface's own text: dialogs and their controls, at a face and a point size ------------------------------------------------------ */
 /* The pixel height Windows gives a dialog font of `pt` points at 96 dpi: CreateFont(-MulDiv(pt, 96, 72)), rounded to a whole pixel (10 points is 13, not 13.33). */
-int ui_pixel_size(int pt) { return (pt * 96 + 36) / 72; }
+int ui_pixel_size(int pt) { return pt < 0 ? -pt : (pt * 96 + 36) / 72; }
+
+/* What a control that was given a font object (WM_SETFONT) draws its text in: the face, whether it is bold, and the em Windows realises for the LOGFONT (the game's own font file at a
+ * whole ppem; for a font with no file here the size as asked). */
+int gdi_font_object(uint32_t hfont, const char **face, int *bold, int *px)
+{
+    const Font *f = obj_get(hfont, O_FONT);
+    Resolved r;
+
+    if (!f)
+        return 0;
+    r = resolve(f, 1.0);
+    *face = f->face;
+    *bold = f->weight >= 600;
+    *px = (int)(r.em + 0.5);
+    return *px > 0;
+}
 
 /* The game's own file for `face` at `pt` points when it has the family, else the host's sans serif standing in for MS Sans Serif. MS Sans Serif is a bitmap font, 13 pixels
  * high at 8 points, whose text runs as wide as Arial at 10 pixels (the Run dialog of Windows 98: its 56-character sentence is 272 pixels, Arial at 10 is 270, at 11 281). */

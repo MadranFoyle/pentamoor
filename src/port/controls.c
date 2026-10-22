@@ -754,32 +754,39 @@ static void parse_dialog(const uint8_t *d, Dlg *out)
 
 /* What the dialog's own procedure says about the colours of its controls (WM_CTLCOLORSTATIC and the rest: a text colour, a background brush, or a null brush for text
  * over its artwork), asked once the dialog has been set up. Windows asks again every time a control is drawn; the answers the game gives do not change. */
+void wm_query_ctl_colors(Window *dlg, Window *c)
+{
+    uint32_t msg, hdc, brush;
+
+    if (!c || !c->cname)
+        return;
+    if (!strcasecmp(c->cname, "STATIC"))
+        msg = 0x138;
+    else if (!strcasecmp(c->cname, "BUTTON"))
+        msg = 0x135;
+    else if (!strcasecmp(c->cname, "EDIT"))
+        msg = 0x133;
+    else if (!strcasecmp(c->cname, "LISTBOX"))
+        msg = 0x134;
+    else
+        return;
+    hdc = gdi_color_query_dc();
+    brush = wm_send(dlg->hwnd, msg, hdc, c->hwnd);
+    gdi_color_query_result(hdc, brush, c->ctl_fg, c->ctl_bg, &c->ctl_transparent, &c->ctl_has_bg);
+    c->ctl_has_fg = 1;
+    c->ctl_valid = 1;
+}
+
 static void ctl_colors(Window *dlg)
 {
     int i, n = wm_window_count();
 
     for (i = 0; i < n; i++) {
         Window *c = wm_window_at_index(i);
-        uint32_t msg;
-        uint32_t hdc, brush;
 
         if (!c || c->parent != dlg->hwnd || !c->cname)
             continue;
-        if (!strcasecmp(c->cname, "STATIC"))
-            msg = 0x138;
-        else if (!strcasecmp(c->cname, "BUTTON"))
-            msg = 0x135;
-        else if (!strcasecmp(c->cname, "EDIT"))
-            msg = 0x133;
-        else if (!strcasecmp(c->cname, "LISTBOX"))
-            msg = 0x134;
-        else
-            continue;
-        hdc = gdi_color_query_dc();
-        brush = wm_send(dlg->hwnd, msg, hdc, c->hwnd);
-        gdi_color_query_result(hdc, brush, c->ctl_fg, c->ctl_bg, &c->ctl_transparent, &c->ctl_has_bg);
-        c->ctl_has_fg = 1;
-        c->ctl_valid = 1;
+        wm_query_ctl_colors(dlg, c);
     }
 }
 

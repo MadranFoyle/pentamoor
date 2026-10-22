@@ -39,7 +39,7 @@ KNOWN = [
     ("v2.15", "STATWIN.DLL", "c1ca59496afa786f22fcd97b94052b937910a613f9321399b4ef4dd5dec76940", "lifted"),
     ("v2.15", "MAGSND.DLL", "213b7dc2e1d0eed131d38485cba8004c1d7760f8ff0a94486b86bba5f3aeba9e", "host"),
     ("v2.15", "MAGVID.DLL", "b686bd43bb7f9ba040fc7416d8d74e59e27c3b5b1bbccd76bfc16c5505bcf90a", "host"),
-    ("v2.15", "magic.exe", "e948affc1c1fe74c4a9709350d6c184b8cb01548e57a70b5751a479fa3d2bf65", "kept"),
+    ("v2.15", "magic.exe", "e948affc1c1fe74c4a9709350d6c184b8cb01548e57a70b5751a479fa3d2bf65", "lifted"),
     ("v2.15", "MSVCRT.DLL", "3a4cb4631f9ecd6f3f6013bc0459fca2e305a0ad00dbf34cb46e6f52d96d9d62", "kept"),
     ("v2.15", "CARDS.DAT", "d7126faf7f17ef84b6ea2e9779bc8b79449c8190c2a4710a5af5c147b95c41a1", "data"),
     ("v2.15", "FaceData.txt", "3b362d357efc0aba6d29e88e4b750078aa11cf5ee838c34c989322266dc4600f", "data"),
@@ -114,10 +114,12 @@ LIBRARY_BASES = {
 #   shandalar  the game: overworld, towns, duels and the deck builder (in this process)
 #   facemaker  the portrait editor the game starts when a colour is chosen
 #   sotadeck   the stand-alone deck builder (DECK.EXE: a stub that starts the deck builder of deckdll.dll)
+#   shell      the Magic Shell (magic.exe, class MAGICGAME_MagicShellClass): the first program a player starts; Gauntlet, Single Duel, Sealed Deck, the hall of records, and its own duels
 SOTA_MODULES = {
     "shandalar": ("shandalar.exe", ["STATWIN.DLL", "deckdll.dll", "cardartlib.dll", "drawcardlib.dll", "CdTools.dll"]),
     "facemaker": ("FaceMaker.exe", []),
     "sotadeck": ("DECK.EXE", ["deckdll.dll", "cardartlib.dll", "drawcardlib.dll", "CdTools.dll"]),
+    "shell": ("magic.exe", ["deckdll.dll", "cardartlib.dll", "drawcardlib.dll", "CdTools.dll"]),
 }
 
 

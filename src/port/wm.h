@@ -43,6 +43,7 @@ typedef struct Window {
     Class *cls;
     char *title;
     int visible, enabled, invalid, erase, builtin, ownerdraw;
+    int painting;                /* a WM_PAINT has been handed out and not yet answered (BeginPaint, or DispatchMessage returning): the update region still exists for GetUpdateRect and GetUpdateRgn, though `invalid` is clear */
     uint32_t tid;
     uint8_t *extra;
     int nextra;
@@ -102,6 +103,7 @@ void wm_show(uint32_t hwnd, int cmd);
 uint32_t wm_control_message(Window *w, const char *cls, uint32_t msg, uint32_t wp, uint32_t lp);
 Window *wm_dlg_item(uint32_t hdlg, uint32_t id);
 void wm_button_auto_check(Window *w);          /* a click on an automatic check box or radio button */
+void wm_query_ctl_colors(Window *parent, Window *c);   /* ask the parent's procedure how the control is coloured (WM_CTLCOLORSTATIC and the rest) and keep the answer for when it is drawn */
 
 /* a drop-down combo box (controls.c): the list is drawn over everything (ui.c) and takes the mouse and keys while it is down */
 enum { COMBO_CLOSED_H = 21 };

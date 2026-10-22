@@ -1117,6 +1117,14 @@ static uint32_t DispatchMessageA(const uint32_t *a)
         guest_call(lp, 4, args);
         return 0;
     }
+    if (msg == WM_PAINT) {
+        uint32_t r = wm_send(hwnd, msg, wp, lp);
+        Window *w = wm_window(hwnd);
+
+        if (w)
+            w->painting = 0;                           /* answered (a procedure that never began a paint leaves no update region behind) */
+        return r;
+    }
     return wm_send(hwnd, msg, wp, lp);
 }
 
@@ -1181,6 +1189,7 @@ static int next_message(int remove, uint32_t hwnd_filter, Msg *out)
 
             if (remove) {
                 w->invalid = 0;
+                w->painting = 1;                              /* the update region stays until the procedure's BeginPaint (or its return): a paint routine reads it first (GetUpdateRect) */
                 if (w->erase && w->proc && !w->dlgproc) {
                     /* Windows sends WM_ERASEBKGND ahead of the WM_PAINT it hands out for a window whose update region is marked for erasing,
                      * whether or not the procedure then begins a paint. STATWIN.DLL's window never does: it answers WM_PAINT with an
@@ -1191,6 +1200,17 @@ static int next_message(int remove, uint32_t hwnd_filter, Msg *out)
             }
             *out = (Msg){hwnd, WM_PAINT, 0, 0};
             return 1;
+        }
+    }
+    for (i = 0; remove && i < nwindows; i++) {  /* a standard control on an ordinary window that needs painting: Windows asks the parent how to colour it (WM_CTLCOLOR...) each time it draws it; the compositor
+                                                 * draws the control later (compose.c), so the answer is taken here, on the thread that owns the window, and kept */
+        Window *w = windows[i], *p;
+
+        if (w && w->builtin && w->invalid && w->visible && !w->proc && !w->ownerdraw && w->cname && w->tid == sched_tid() && (p = wm_window(w->parent)) && p->proc && !p->dlgproc &&
+            !p->is_dialog && !ui_dialog_of(p)) {
+            w->invalid = 0;
+            wm_query_ctl_colors(p, w);
+            wm_dirty = 1;
         }
     }
     for (i = 0; i < nwindows; i++) {           /* owner-draw buttons: the parent is asked to paint them */
@@ -1412,6 +1432,7 @@ static uint32_t BeginPaint(const uint32_t *a)
         WR32(a[1] + (uint32_t)i, 0);
     if (win) {
         win->invalid = 0;
+        win->painting = 0;                          /* BeginPaint validates the update region */
         gdi_forget_texts(win);                      /* the text on a window is what its latest paint wrote */
         if (win->erase) {                           /* the update region was marked for erasing */
             win->erase = 0;
@@ -1440,7 +1461,7 @@ static uint32_t GetUpdateRect(const uint32_t *a)
     Window *w = wm_window(a[0]);
     int cw = 0, ch = 0;
 
-    if (w && w->invalid && w->visible && has_client_area(w)) {
+    if (w && (w->invalid || w->painting) && w->visible && has_client_area(w)) {
         wm_client_size(w, &cw, &ch);
         if (a[1])
             put_rect(a[1], 0, 0, cw, ch);
@@ -1460,7 +1481,7 @@ static uint32_t GetUpdateRgn(const uint32_t *a)
 
     if (!w || !r)
         return 0;
-    painting = w->invalid && w->visible && has_client_area(w);
+    painting = (w->invalid || w->painting) && w->visible && has_client_area(w);
     if (painting)
         wm_client_size(w, &cw, &ch);
     r->l = 0; r->t = 0; r->r = painting ? cw : 0; r->b = painting ? ch : 0;
