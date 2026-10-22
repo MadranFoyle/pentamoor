@@ -33,6 +33,10 @@ GOLD, FOOD, HOVER, UI_CTX, PARTY_X, PARTY_Y = 0x522444, 0x522448, 0x519ff4, 0x51
 MONSTERS, LOCATIONS, DUNGEONS = 0x67f2d0, 0x67bdf0, 0x67f000
 K_CARD, K_BUTTON, K_ROW, K_MENU = 1, 2, 4, 9
 
+# The seeds the script is played with (PORT_SEED, src/port/seed.h; docs/notes/controller.md, "A repeatable run"). The new game of each starts the party on open ground.
+PINNED = {
+}
+
 failures = 0
 
 
@@ -542,7 +546,19 @@ def main():
     ap.add_argument("--workdir", default="/tmp/screen_nav_play")
     ap.add_argument("--shots")
     ap.add_argument("--only", help="comma separated: title is always run first; the village, worldmap, clues and stats go together")
+    ap.add_argument("--seed", help="PORT_SEED for the run(s), comma separated (default: the PINNED seeds, one whole run each)")
     a = ap.parse_args()
+    base = a.workdir
+    for seed in [int(x) for x in a.seed.split(",")] if a.seed else sorted(PINNED) or [1]:
+        os.environ["PORT_SEED"] = str(seed)
+        a.workdir = os.path.join(base, "seed%d" % seed)
+        print("=== seed %d: %s" % (seed, PINNED.get(seed, "(not a pinned seed)")), flush=True)
+        play(a)
+    print("%d failed" % failures)
+    return 1 if failures else 0
+
+
+def play(a):
     s = Session(a)
     only = set(a.only.split(",")) if a.only else None
     try:
@@ -556,8 +572,6 @@ def main():
                 break
     finally:
         s.g.stop()
-    print("%d failed" % failures)
-    return 1 if failures else 0
 
 
 if __name__ == "__main__":

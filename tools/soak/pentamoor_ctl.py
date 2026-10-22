@@ -13,6 +13,7 @@ control pipe, its own overlay directory (a copy of sources/emu_overlay, so saves
 Everything the program prints on stderr goes to <workdir>/game.log; `windows` dumps are read back from there.
 """
 import os
+import hashlib
 import re
 import shutil
 import signal
@@ -25,6 +26,20 @@ WIN_RE = re.compile(
     r"^  win 0x(?P<h>[0-9a-f]+) parent 0x(?P<p>[0-9a-f]+) (?P<cls>\S+) '(?P<title>.*)' "
     r"\((?P<x0>-?\d+),(?P<y0>-?\d+)\)-\((?P<x1>-?\d+),(?P<y1>-?\d+)\) z=(?P<z>\S+) style=0x(?P<style>[0-9a-f]+) "
     r"tid=(?P<tid>\d+)(?P<rest>.*)$")
+
+
+def ppm_region_hash(data, box=None):
+    """A short hash of the pixels in box=(x0, y0, x1, y1) of a binary PPM (all of it if None), or None if `data` is not one: what a screen region looks like, to tell two runs' pictures apart."""
+    m = re.match(rb"P6\s+(\d+)\s+(\d+)\s+(\d+)\s", data)
+    if not m:
+        return None
+    w, h = int(m[1]), int(m[2])
+    pix = data[m.end():m.end() + 3 * w * h]
+    x0, y0, x1, y1 = box or (0, 0, w, h)
+    x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, w), min(y1, h)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return hashlib.sha1(b"".join(pix[3 * (y * w + x0):3 * (y * w + x1)] for y in range(y0, y1))).hexdigest()[:12]
 
 
 class Win:
@@ -300,6 +315,17 @@ class Game:
         except Exception:
             shutil.copy(ppm, path.replace(".png", ".ppm"))
             return path.replace(".png", ".ppm")
+
+    def region_hash(self, box=None):
+        """A hash of the pixels of box=(x0, y0, x1, y1) of the screen (all of it if None) as it is now, or None if no picture could be taken (see ppm_region_hash)."""
+        ppm = os.path.join(self.workdir, "shot.ppm")
+        if not self.shot(os.path.join(self.workdir, "region.png")):
+            return None
+        try:
+            with open(ppm, "rb") as f:
+                return ppm_region_hash(f.read(), box)
+        except OSError:
+            return None
 
     def peek(self, addr, n=1):
         off = self.log_size()

@@ -33,6 +33,10 @@ LIFE = (0x6a4a00, 0x6a4a04)                    # the two life totals (docs/notes
 # NavTarget kinds (src/port/nav.h)
 K_CARD, K_BUTTON, K_FIELD, K_ROW, K_PLAYER, K_PILE, K_MANA, K_PHASE, K_MENU = 1, 2, 3, 4, 5, 6, 7, 8, 9
 
+# The seeds the checks are run with by tools/soak/pad_regression.py (--seed): what the saved game's duel is like with each (the opponent, the opening hands and the draws come from the seed).
+PINNED = {
+}
+
 failures = 0
 
 
@@ -471,11 +475,12 @@ def main():
     ap.add_argument("--res", default="1024x768", choices=["640x480", "800x600", "1024x768"])
     ap.add_argument("--workdir", default="/tmp/nav_play")
     ap.add_argument("--shots", default=None)
-    ap.add_argument("--seed", type=int, default=5)
+    ap.add_argument("--seed", type=int, default=5, help="the script's own choices, and PORT_SEED for the game (src/port/seed.h): the same seed plays the same duel")
     ap.add_argument("--game", choices=["magic", "duel"], default="magic", help="magic: MAGIC.EXE's saved game; duel: DUEL.EXE, the standalone duel program (its setup dialog)")
     ap.add_argument("--keep", action="store_true", help="leave the game running at the populated board (its process id and control pipe are printed) for trying things by hand")
     ap.add_argument("--attach", nargs=2, metavar=("WORKDIR", "PID"), help="run the checks on a game that is already at a populated board (made with --keep): its work folder and process id")
     a = ap.parse_args()
+    os.environ["PORT_SEED"] = str(a.seed)               # the game's own chance (src/port/seed.h) is pinned too: the same seed deals the same cards
     if a.attach:
         g = Game(REPO, res=a.res, workdir=a.attach[0])
         g.attach(int(a.attach[1]))

@@ -276,3 +276,16 @@ def test_sota_shell_duels_tell_the_pages_from_the_duel_dialogs(tmp_path):
     s.root = s.game
     t = s.look("x")
     assert [d.h for d in t.dialogs()] == [0x30] and s.on_duel_page(t, "solo") and not s.on_duel_page(t, "gauntlet")
+
+
+def test_ppm_region_hash_tells_pictures_and_regions_apart():
+    from pentamoor_ctl import ppm_region_hash
+    w, h = 4, 3
+    base = bytes(range(w * h * 3))
+    ppm = b"P6\n4 3\n255\n" + base
+    other = b"P6\n4 3\n255\n" + base[:-1] + bytes([base[-1] ^ 1])            # the last pixel's blue differs
+    assert ppm_region_hash(ppm) != ppm_region_hash(other)
+    assert ppm_region_hash(ppm, (0, 0, 2, 2)) == ppm_region_hash(other, (0, 0, 2, 2))      # ... and a region that does not hold it does not
+    assert ppm_region_hash(ppm, (3, 2, 4, 3)) != ppm_region_hash(other, (3, 2, 4, 3))
+    assert ppm_region_hash(ppm, (-5, -5, 99, 99)) == ppm_region_hash(ppm)          # the box is cut to the picture
+    assert ppm_region_hash(ppm, (2, 2, 2, 3)) is None and ppm_region_hash(b"not a ppm") is None

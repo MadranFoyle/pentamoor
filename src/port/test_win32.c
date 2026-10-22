@@ -10,6 +10,7 @@
 #include "port.h"
 #include "regstore.h"
 #include "sched.h"
+#include "seed.h"
 #include "test_util.h"
 
 int pe_find_resource(uint32_t hinst, uint32_t type, uint32_t name, uint32_t *addr, uint32_t *size) { (void)hinst; (void)type; (void)name; (void)addr; (void)size; return 0; }
@@ -529,6 +530,183 @@ static void test_win32_find_files(void)
     }
 }
 
+/* ---- PORT_SEED (seed.c, crt.c): the test aid that makes the game's chance repeatable, and does nothing when it is off ----------------------------------------------------------------- */
+/* rand() as the guest calls it: the return address is at port_sp, and the function that called rand has a frame of ebp, whose return address is the next word. */
+static uint32_t guest_rand(uint32_t site, uint32_t caller)
+{
+    uint32_t frame = 0x002FF000u;
+
+    WR32(port_sp, site);
+    WR32(frame + 4, caller);
+    lift_out.ebp = frame;
+    return CRT("rand");
+}
+
+static void rands(uint32_t site, uint32_t caller, uint32_t *out, int n)
+{
+    int i;
+
+    for (i = 0; i < n; i++)
+        out[i] = guest_rand(site, caller);
+}
+
+static int same(const uint32_t *a, const uint32_t *b, int n) { return memcmp(a, b, (size_t)n * sizeof(*a)) == 0; }
+
+static void test_seed(void)
+{
+    enum { N = 8 };
+    uint32_t v, a1[N], a2[N], b1[N], b2[N], c[N], big[100], x, ref = 99, low99;
+    int i;
+
+    /* the text of PORT_SEED */
+    CHECK(seed_parse("0", &v) && v == 0 && seed_parse("42", &v) && v == 42 && seed_parse("0x2a", &v) && v == 42 && seed_parse("4294967295", &v) && v == 0xffffffffu);
+    CHECK(!seed_parse("", &v) && !seed_parse(NULL, &v) && !seed_parse("-1", &v) && !seed_parse("+1", &v) && !seed_parse("abc", &v) && !seed_parse("12x", &v) && !seed_parse("4294967296", &v) && !seed_parse(" 5", &v));
+
+    /* off: the C runtime's own generator and the plain clock, as before the aid existed (srand(99) then Microsoft's rand) */
+    seed_set(0, 0);
+    CRT("srand", 99);
+    for (i = 0; i < 4; i++) {
+        ref = ref * 214013u + 2531011u;
+        CHECK(guest_rand(0x401000u, 0x402000u) == ((ref >> 16) & 0x7fffu));
+    }
+    CRT("srand", 99);
+    rands(0x401000u, 0x402000u, a1, N);
+    rands(0x403000u, 0x402000u, b1, N);               /* off: one stream, whoever asks, so the second place continues the first */
+    CRT("srand", 99);
+    rands(0x401000u, 0x402000u, a2, N);
+    rands(0x401000u, 0x402000u, b2, N);
+    CHECK(same(a1, a2, N) && same(b1, b2, N) && !same(a1, b1, N) && seed_srand_calls() == 0);
+    x = CRT("clock");
+    CHECK((double)x <= port_now() * 1000.0 + 1 && (double)x >= port_now() * 1000.0 - 50);
+
+    /* on: the same seed gives the same numbers, another seed other ones */
+    seed_set(1, 1234);
+    rands(0x401000u, 0x402000u, a1, N);
+    seed_set(1, 1234);
+    rands(0x401000u, 0x402000u, a2, N);
+    seed_set(1, 1235);
+    rands(0x401000u, 0x402000u, c, N);
+    CHECK(seed_active() && seed_value() == 1235 && same(a1, a2, N) && !same(a1, c, N));
+    for (i = 0; i < N; i++)
+        CHECK(a1[i] <= 0x7fffu);
+
+    /* each place that asks has its own stream: what another place draws in between (an idle screen's animation) moves nothing */
+    seed_set(1, 7);
+    rands(0x401000u, 0x402000u, a1, N);
+    rands(0x403000u, 0x402000u, b1, N);               /* another return address */
+    seed_set(1, 7);
+    rands(0x401000u, 0x402000u, a2, 3);
+    rands(0x403000u, 0x402000u, big, 100);              /* the idle place draws a hundred times in the middle */
+    rands(0x401000u, 0x402000u, a2 + 3, N - 3);
+    rands(0x403000u, 0x402000u, b2, N);               /* (it has used 100 numbers: b2 is the 101st to 108th of its stream) */
+    CHECK(same(a1, a2, N) && !same(a1, b1, N));
+    seed_set(1, 7);
+    rands(0x403000u, 0x402000u, big, 100);
+    rands(0x403000u, 0x402000u, b2, N);
+    CHECK(same(b2, b1, N) == 0);                      /* ... and the streams move on: the numbers 101 to 108 are not the first eight */
+    seed_set(1, 7);
+    rands(0x401000u, 0x404000u, c, N);                /* the same place called from another function is another stream */
+    CHECK(!same(a1, c, N));
+    seed_set(1, 7);
+    lift_out.ebp = 0;                                 /* no frame: the return address alone is the key (and nothing is read at address 4) */
+    WR32(port_sp, 0x401000u);
+    for (i = 0; i < N; i++)
+        c[i] = CRT("rand");
+    CHECK(!same(a1, c, N));
+
+    /* srand: whatever the argument (a tick count, a multiple of it, a number the game keeps), it is replaced: the same place seeding the same time is the same run, another place or another seed is not */
+    seed_set(1, 7);
+    WR32(port_sp, 0x4a0000u);
+    CRT("srand", port_now_ms());
+    rands(0x401000u, 0x402000u, a1, N);
+    seed_set(1, 7);
+    WR32(port_sp, 0x4a0000u);
+    CRT("srand", port_now_ms() + 300);                /* a moment later, as the same step of the game would read it in another run */
+    rands(0x401000u, 0x402000u, a2, N);
+    CHECK(same(a1, a2, N) && seed_srand_calls() == 1);
+    seed_set(1, 7);
+    WR32(port_sp, 0x4a0000u);
+    CRT("srand", 67 * (port_now_ms() & 0x7fffu));     /* the duel engine's: a multiple of a masked tick count, which looks like no clock */
+    rands(0x401000u, 0x402000u, b1, N);
+    seed_set(1, 7);
+    WR32(port_sp, 0x4a0000u);
+    CRT("srand", 4242);
+    rands(0x401000u, 0x402000u, c, N);
+    CHECK(same(a1, b1, N) && same(a1, c, N));
+    seed_set(1, 8);
+    WR32(port_sp, 0x4a0000u);
+    CRT("srand", 4242);
+    rands(0x401000u, 0x402000u, c, N);
+    CHECK(!same(a1, c, N));                          /* the same call under another seed: another run */
+    seed_set(1, 7);
+    WR32(port_sp, 0x4a0100u);
+    CRT("srand", 4242);
+    rands(0x401000u, 0x402000u, c, N);
+    CHECK(!same(a1, c, N));                          /* another place that seeds is another seed */
+
+    /* each srand starts every stream again (a new game is a new world), and the n-th seeding from one place is not the first */
+    seed_set(1, 7);
+    WR32(port_sp, 0x4a0000u);
+    CRT("srand", 1);
+    rands(0x401000u, 0x402000u, a1, N);
+    rands(0x401000u, 0x402000u, c, N);               /* the streams go on ... */
+    CHECK(!same(a1, c, N));
+    WR32(port_sp, 0x4a0000u);
+    CRT("srand", 1);                                 /* ... until the game seeds again: the second time from this place is another seed, not the first one over */
+    rands(0x401000u, 0x402000u, a2, N);
+    CHECK(!same(a1, a2, N) && !same(c, a2, N) && seed_srand_calls() == 2);
+    seed_set(1, 7);                                  /* and the same two seedings in a new run give the same two worlds */
+    WR32(port_sp, 0x4a0000u);
+    CRT("srand", 99);
+    rands(0x401000u, 0x402000u, b1, N);
+    rands(0x401000u, 0x402000u, c, N);
+    WR32(port_sp, 0x4a0000u);
+    CRT("srand", 12345);
+    rands(0x401000u, 0x402000u, b2, N);
+    CHECK(same(a1, b1, N) && same(a2, b2, N));
+
+    /* the clock: milliseconds still, the low seven bits the seed's, never going back */
+    seed_set(1, 99);
+    {
+        uint32_t last = 0, real, got, low = CRT("clock") & 0x7fu;
+        low99 = low;
+        int back = 0, far = 0, steady = 1, k;
+
+        for (k = 0; k < 200; k++) {
+            real = (uint32_t)(port_now() * 1000.0);
+            got = CRT("clock");
+            if (got < last)
+                back++;
+            if (got > real + 130 || got + 130 < real)
+                far++;
+            if ((got & 0x7fu) != low)
+                steady = 0;
+            last = got;
+            usleep(1000);
+        }
+        CHECK(!back && !far && steady);
+    }
+    CHECK(seed_clock(1000) != seed_clock(1000 + 128) && (seed_clock(1000) & 0x7fu) == (seed_clock(5000) & 0x7fu) && (seed_clock(0x12345680u) & ~0x7fu) == 0x12345680u);
+    seed_set(1, 100);
+    CHECK((CRT("clock") & 0x7fu) != low99);
+
+    /* the environment: PORT_SEED is read once, a bad one is reported and means off */
+    seed_set(0, 0);
+    setenv("PORT_SEED", "0x10", 1);
+    seed_reload_env();
+    CHECK(seed_active() && seed_value() == 16);
+    setenv("PORT_SEED", "sixteen", 1);
+    seed_reload_env();
+    CHECK(!seed_active());
+    setenv("PORT_SEED", "", 1);
+    seed_reload_env();
+    CHECK(!seed_active());
+    unsetenv("PORT_SEED");
+    seed_reload_env();
+    CHECK(!seed_active());
+    seed_set(0, 0);
+}
+
 int main(void)
 {
     char base[600];
@@ -555,6 +733,7 @@ int main(void)
     test_file_title();
     test_find_files();
     test_win32_find_files();
+    test_seed();
     test_rmtree(base);
     printf("test_win32: %d checks, %d failed\n", checks, failures);
     return failures != 0;

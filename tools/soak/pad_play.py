@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """pad_play.py: play Pentamoor with controller input only (no mouse, no keyboard command), headless, and check what the game did.
 
-    python3 tools/soak/pad_play.py [--res 1024x768] [--workdir /tmp/pad_play] [--shots DIR]
+    python3 tools/soak/pad_play.py [--seed N[,N...]] [--res 1024x768] [--workdir /tmp/pad_play] [--shots DIR]
 
 The program is started on SDL's dummy drivers with its own control pipe and overlay (as tools/soak does) and is driven with the `pad` steps of PORT_CONTROL, which go through the same
 code as a real controller's events (docs/notes/controller.md). Two games are played:
@@ -11,10 +11,12 @@ code as a real controller's events (docs/notes/controller.md). Two games are pla
   2. a duel from the saved game: Resume Game, the encounter's Duel, the coin toss dialogs by their buttons and X, then a card played from the hand with A, a card's menu opened with B
      and closed with Y, and the turn passed by the Done button.
 
-Prints one line per check and exits 1 if one failed. --shots DIR keeps a screenshot after each step (PNG, needs PIL; PPM otherwise). Needs the installed game (sources/installed) and the saved game
+A new game is a random world and a duel starts from shuffled decks, so every run is made with PORT_SEED (src/port/seed.h) set to one of the PINNED seeds below, which makes the world and the
+draws the same every time (docs/notes/controller.md, "A repeatable run"); --seed picks others. Prints one line per check and exits 1 if one failed. --shots DIR keeps a screenshot after each step (PNG, needs PIL; PPM otherwise). Needs the installed game (sources/installed) and the saved game
 (sources/emu_overlay), as the soak does. Only 1024x768 (the default size) is laid out below.
 """
 import argparse
+import hashlib
 import os
 import sys
 import time
@@ -32,6 +34,12 @@ VISAGE = (190, 200)
 RESUME = (528, 624)
 DUEL = (470, 486)
 PARTY_X, PARTY_Y, GOLD, FOOD = 0x52eff0, 0x52eff4, 0x522444, 0x522448
+LOCATIONS = 0x67bdf0                       # 128 records of 25 dwords: the world's places
+
+# The seeds the script is played with. The new game of each starts the party on open ground (the first steps east walk; no encounter comes first); the duel is from the saved game, so its world is fixed
+# and the seed decides the shuffles.
+PINNED = {
+}
 
 failures = 0
 
@@ -91,6 +99,8 @@ def new_game_once(a, attempt):
         p0 = r.party()
         gold = g.peek(GOLD, 1)
         check(p0 is not None and p0[0] > 0 and gold and gold[0] > 0, "a new game reached the map (party at %s, gold %s)" % (p0, gold))
+        loc = g.peek(LOCATIONS, 25 * 128)
+        print("DIGEST world %s %s" % (p0, hashlib.sha1(repr(loc).encode()).hexdigest()[:12]), flush=True)       # the same seed must make the same world
         g.pad("axis rt 1")                                 # the walk button held ...
         g.pad("stick l 1 0")                               # ... and the stick pushed east: the party walks
         time.sleep(2.5)
@@ -173,6 +183,10 @@ def duel(a):
                 g.pad_press("x")
         r.shot("board")
         check(t is not None and t.bar_shown(), "the duel started and the prompt bar is up")
+        h0 = hand_cards(t)
+        if t is not None and h0:
+            time.sleep(2)
+            print("DIGEST hand %s" % g.region_hash((min(w.x0 for w in h0), min(w.y0 for w in h0), max(w.x1 for w in h0), max(w.y1 for w in h0))), flush=True)
         if not (t and t.bar_shown()):
             return
         title0 = t.bar()[0].title
@@ -219,6 +233,7 @@ def duel(a):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--seed", help="PORT_SEED for the run(s), comma separated (default: the PINNED seeds, one whole run each)")
     ap.add_argument("--res", default="1024x768")
     ap.add_argument("--workdir", default="/tmp/pad_play")
     ap.add_argument("--shots", default=None)
@@ -226,16 +241,21 @@ def main():
     a = ap.parse_args()
     if a.only == "nav":
         import nav_play
-        sys.argv = [sys.argv[0], "--workdir", os.path.join(a.workdir, "nav")] + (["--shots", a.shots] if a.shots else [])
+        sys.argv = [sys.argv[0], "--workdir", os.path.join(a.workdir, "nav")] + (["--shots", a.shots] if a.shots else []) + (["--seed", a.seed.split(",")[0]] if a.seed else [])
         return nav_play.main()
     if a.res != "1024x768":
         print("only 1024x768 is laid out here", file=sys.stderr)
         return 2
-    os.makedirs(a.workdir, exist_ok=True)
-    if a.only in (None, "newgame"):
-        new_game(a)
-    if a.only in (None, "duel"):
-        duel(a)
+    base = a.workdir
+    for seed in [int(x) for x in a.seed.split(",")] if a.seed else sorted(PINNED) or [1]:
+        os.environ["PORT_SEED"] = str(seed)                         # every program of the run, and the nav_play above
+        a.workdir = os.path.join(base, "seed%d" % seed)
+        os.makedirs(a.workdir, exist_ok=True)
+        print("=== seed %d: %s" % (seed, PINNED.get(seed, "(not a pinned seed)")), flush=True)
+        if a.only in (None, "newgame"):
+            new_game(a)
+        if a.only in (None, "duel"):
+            duel(a)
     print("%d check(s) failed" % failures if failures else "all checks passed")
     return 1 if failures else 0
 

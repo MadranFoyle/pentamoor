@@ -6,7 +6,8 @@
 The program is started on SDL's dummy drivers with its own control pipe and an empty overlay (as sota_soak.py does) and driven with the `pad` steps of PORT_CONTROL only, which go through the
 same code as a real controller's events (docs/notes/controller.md); the only other things the script does are reading the game's memory and the window tree to check each step, keeping the wandering
 monsters off the map (pokes: they walk into the party at every step otherwise) and putting the party on a place or a monster of the map (pokes, as sota_soak.py does: walking there with the stick
-is not what is tested). 2.15 has no saved game to start from, so every run begins with a new game:
+is not what is tested). 2.15 has no saved game to start from, so every run begins with a new game, and a new game is a random world: so every process is started with PORT_SEED (src/port/seed.h) set to one of the
+PINNED seeds below, which makes the world, the shops and the decks the same every time (docs/notes/controller.md, "A repeatable run"), and the script plays each pinned seed in turn. The steps:
 
   newgame   the title menu, difficulty and colour with the D-pad and A, FaceMaker (a second program, no D-pad targets: the left stick and A put the portrait in), the name accepted empty with X
   map       walking (right trigger and the left stick; the right stick as arrow keys; the D-pad is the arrow keys there), B opening the game's menu of nine lines, the D-pad on it, Back closing it
@@ -22,6 +23,7 @@ is not what is tested). 2.15 has no saved game to start from, so every run begin
 Prints one line per check and exits 1 if one failed. Needs the 2.15 install (`pentamoor-install ... --sota ... --patch ...`) and the runtime; the addresses are shandalar.exe 2.15's.
 """
 import argparse
+import hashlib
 import os
 import sys
 import threading
@@ -38,7 +40,40 @@ GOLD, FOOD, HOVER = 0x57a7bc, 0x57a7c0, 0x5780bc
 base.GOLD, base.FOOD, base.HOVER = GOLD, FOOD, HOVER
 LIVES = sota_soak.LIVES
 K_CARD, K_BUTTON, K_ROW, K_MENU = 1, 2, 4, 9
+SHOP_IDS = 0x69eb70                 # the card ids of Cards for Sale (profile.c, buycards.ids for 2.15), -1 for a sold card
 FACE_LEAVE = (395, 160)             # FaceMaker's "Leave" button at 1024x768 (what sota_soak.py clicks for the portrait): the stick and A
+
+
+# The seeds the script is played with (PORT_SEED=N: src/port/seed.h). Each makes a world in which the script's assumptions hold, found with `--scan`: the party starts on open ground (no place of the map
+# within SCAN_PLACE_TILES tiles, so the first steps cannot walk into a village or a castle; the game itself starts the party a few tiles from a village), no wandering monster within SCAN_MONSTER_TILES tiles at
+# the start (no encounter before the script wants one; the script also keeps the monsters off the map with pokes),
+# and a village, a tower, a castle and a world magic exist (the steps that put the party on each find the nearest). The line says what else is special about the world.
+PINNED = {
+    2: "candidate",
+    7: "candidate",
+    21: "candidate",
+}
+SCAN_PLACE_TILES = 1
+SCAN_MONSTER_TILES = 3
+
+
+def scan_world(tile, places, monsters):
+    """(suits, why not, nearest place in tiles, nearest monster in tiles) for a new world: `tile` the party's, `places` [(kind, tx, ty)], `monsters` [(px, py)] in pixels."""
+    near_place = min([max(abs(tx - tile[0]), abs(ty - tile[1])) for _k, tx, ty in places] or [999])
+    near_mon = min([max(abs(px // 32 - tile[0]), abs(py // 32 - tile[1])) for px, py in monsters] or [999])
+    kinds = {k for k, _x, _y in places}
+    if near_place <= SCAN_PLACE_TILES:
+        return False, "a place %d tiles from the start" % near_place, near_place, near_mon
+    if near_mon <= SCAN_MONSTER_TILES:
+        return False, "a monster %d tiles from the start" % near_mon, near_place, near_mon
+    if not {1, 2, 3, 4} <= kinds:
+        return False, "no place of kind %s" % sorted({1, 2, 3, 4} - kinds), near_place, near_mon
+    return True, "", near_place, near_mon
+
+
+def digest(name, value):
+    """A line the pad_regression runner compares between runs of one seed: the same seed must give the same value (a different one means the run was not repeatable)."""
+    print("DIGEST %s %s" % (name, value), flush=True)
 
 failures = 0
 
@@ -58,12 +93,13 @@ class Session(base.Session):
         self.w, self.h = (int(v) for v in a.res.split("x"))
         self.nshot = 0
         self.quiet = False
-        self.wd = os.path.join(a.workdir, a.res)
+        self.seed = getattr(a, "seed_now", None)
+        self.wd = os.path.join(a.workdir, a.res) if self.seed is None else os.path.join(a.workdir, "seed%s" % self.seed, a.res)
         self.g = None
         self.keeper_on = threading.Event()
         threading.Thread(target=self._keeper, daemon=True).start()
         self.facemaker = None
-        self.extra_env = {}
+        self.extra_env = {} if self.seed is None else {"PORT_SEED": str(self.seed)}          # every process of the run: the game, FaceMaker, the one that resumes
 
     def new_process(self, seed=None, name="game"):
         """A new game process; `seed`: a folder copied to be its overlay (the saves of an earlier process)."""
@@ -107,6 +143,15 @@ class Session(base.Session):
     def tile(self):
         v = self.g.peek(sota_soak.PARTY_TILE[0], 2)
         return tuple(v) if v else None
+
+    def pix(self):
+        v = self.g.peek(sota_soak.PARTY_PIXEL[0], 2)
+        return tuple(v) if v else None
+
+    def world_digest(self):
+        """The world as the game made it: where the party starts and the 128 records of the places (kind, tile, ...), short enough to compare."""
+        loc = self.mem(sota_soak.LOCATIONS, 25 * 128)
+        return "%s %s" % ("%d,%d" % self.tile() if self.tile() else "?", hashlib.sha1(repr(loc).encode()).hexdigest()[:12])
 
     # ---- the pad ------------------------------------------------------------------------------------------------------
     def tap(self, name, wait=0.5):
@@ -215,20 +260,26 @@ def newgame(s):
     mode, tl = s.nav()
     check(mode in ("none", None) and not tl, "the name box has no targets: mode %s" % mode)
     s.keeper_on.set()
-    g.pad_press("x")                                      # Enter: the name stays empty
-    t_end = time.time() + 120
     ok = False
-    while time.time() < t_end:
-        time.sleep(2)
-        if not g.alive():
-            break
-        t = s.tile()
-        if t and t[0] > 0 and t[1] > 0 and "statwin.dll" in g.read_log(0):
-            ok = True
+    for attempt in range(4):
+        g.pad_press("x")                                  # Enter: the name stays empty (the box is not always up yet when FaceMaker has gone: X again if the world is not being made)
+        t_end = time.time() + 45
+        while time.time() < t_end:
+            time.sleep(2)
+            if not g.alive():
+                break
+            t = s.tile()
+            if t and t[0] > 0 and t[1] > 0 and "statwin.dll" in g.read_log(0):
+                ok = True
+                break
+        if ok or not g.alive():
             break
     time.sleep(5)
     check(ok and g.alive(), "X accepted the empty name: the world is made and the party stands at tile %s" % (s.tile(),))
     s.shot("map")
+    if ok:
+        digest("world", s.world_digest())
+        digest("start_gold_food", "%s %s" % (s.gold(), s.food()))
     return ok
 
 
@@ -245,17 +296,58 @@ def first_menu(s):
 
 
 # ---- the map --------------------------------------------------------------------------------------------------------------------------
-def to_map(s):
-    """Walking can end in a village or at an encounter (the map's places and the wandering monsters): a village is left by its last button, an encounter's two lines by the second one (pay or leave), a message by A."""
-    for _ in range(4):
+def is_encounter_menu(mode, tl, lines):
+    """The text menu of an encounter with `lines` lines (2: "Duel this X" and "Pay N gold"; 1: a duel with no way out), in the middle of the screen (the castle gate's menu is the same kind)."""
+    return mode == "screen" and len(tl) == lines and tl[0].label == "line 0"
+
+
+def is_village(mode, tl):
+    return mode == "screen" and len(tl) == 9 and all(t.kind == K_BUTTON for t in tl)
+
+
+def leave_button(s):
+    """The village's last big button ('Leave the village')."""
+    return lambda tl: sorted([t for t in tl if t.x0 > 0.05 * s.w], key=lambda t: (t.y0, t.x0))[-1] if tl else None
+
+
+def to_map(s, tries=8):
+    """Whatever the map had in store while the party stood on it is dealt with until the map is there again (mode none): a village the party walked into is left by its last button, an encounter's two
+    lines by the second one (pay or leave), an encounter of one line (nothing to pay: the monster is faster) is a duel, played out (forced_duel). Monsters come when they come (the wall clock moves them, the
+    seed does not), so every step that waits on the map can find one."""
+    for _ in range(tries):
         s.clear_monsters()
         mode, tl = s.nav()
-        if mode == "screen" and len(tl) == 9 and all(t.kind == K_BUTTON for t in tl):
-            s.press_target(lambda tl: sorted([t for t in tl if t.x0 > 0.05 * s.w], key=lambda t: (t.y0, t.x0))[-1] if tl else None, 4)
-        elif mode == "screen" and len(tl) == 2 and tl[0].label == "line 0":
+        if is_village(mode, tl):
+            s.press_target(leave_button(s), 4)
+        elif is_encounter_menu(mode, tl, 2):
             s.press_target(lambda tl: tl[1] if len(tl) > 1 else None, 4)
+        elif is_encounter_menu(mode, tl, 1):
+            forced_duel(s)
         else:
             return
+
+
+def forced_duel(s):
+    """The one-line encounter menu: A on it, the intro and the dialogs, the board, the opponent's life poked to 0 as win_duel does, and the reward ('Take the cards'), until the map is back. Counts no check."""
+    print("      a duel with no way out came up on the map: played out (the opponent's life poked to 0)", flush=True)
+    s.press_a(3)
+    if not await_board(s)[0]:
+        return False
+    win_duel(s)
+    end = time.time() + 150
+    while time.time() < end:
+        mode, tl = s.nav()
+        if is_encounter_menu(mode, tl, 2):
+            s.press_target(lambda tl: tl[0], 4)                  # "Take the cards"
+        elif mode in (None, "none"):
+            t = s.g.windows(timeout=10)
+            if t is not None and not t.find("MAGICGAME_MainClass"):
+                s.wait(2)
+                return True
+            s.tap("a", 3)
+        else:
+            s.wait(2)
+    return False
 
 
 def open_map_menu(s, tries=12):
@@ -265,9 +357,11 @@ def open_map_menu(s, tries=12):
         s.stick_to(s.w // 2 + 40 * (i % 3), s.h // 3 + 30 * (i % 2))
         s.hold("b", 0.3 if i % 2 == 0 else 0.15)
         mode, tl = s.wait_mode(("screen",), 2.5, 5)
-        if mode == "screen" and len(tl) == 9:
+        if mode == "screen" and len(tl) == 9 and all(t.kind == K_MENU for t in tl):
             return tl
-        if mode == "screen":
+        if is_village(mode, tl) or is_encounter_menu(mode, tl, 2) or is_encounter_menu(mode, tl, 1):
+            to_map(s)                                     # not the menu: the party walked into a village or met a monster
+        elif mode == "screen":
             s.tap("back", 1.0)
         elif mode not in (None, "none"):
             return None
@@ -278,6 +372,7 @@ def maponly(s):
     g = s.g
     s.keeper_on.set()
     s.wait(2)
+    to_map(s)
     mode, tl = s.nav()
     check(mode in ("none", None) and not tl, "on the map there is nothing for the D-pad to navigate (mode %s)" % mode)
     pix1 = pix0 = g.peek(sota_soak.PARTY_PIXEL[0], 2)
@@ -340,6 +435,7 @@ def saveload(s):
     g = s.g
     s.keeper_on.set()
     tile0 = s.tile()
+    pix0 = s.pix()
     if not menu_line(s, 0, "Save"):
         return
     mode, tl = s.wait_mode(("screen",), 8, 10)
@@ -354,10 +450,11 @@ def saveload(s):
     overlay = os.path.join(g.workdir, "overlay", "Program")
     names = sorted(os.listdir(overlay)) if os.path.isdir(overlay) else []
     check(all(any(n.lower() == "magic3." + e for n in names) for e in ("sve", "map", "fce")), "the save is on disk (MAGIC3.SVE, .map, .fce): %s" % [n for n in names if n.lower().startswith("magic")])
+    to_map(s)
     mode, tl = s.nav()
     check(mode in ("none", None), "back on the map (mode %s)" % mode)
-    # move the party away, then load
-    tx, ty = (tile0[0] + 5) % 40 + 10, (tile0[1] + 4) % 30 + 10
+    # move the party far away, then load
+    tx, ty = max(((x, y) for x in (10, 49) for y in (10, 39)), key=lambda p: (p[0] - tile0[0]) ** 2 + (p[1] - tile0[1]) ** 2)
     s.keeper_on.clear()
     g.poke_many(sota_soak.teleport_pokes(tx, ty))
     s.wait(3)
@@ -370,8 +467,13 @@ def saveload(s):
     n = s.to_target(lambda tl: min(tl, key=lambda t: t.y0) if tl else None)
     s.press_a(8)
     s.keeper_on.set()
+    to_map(s)
     back = s.tile()
-    check(back is not None and abs(back[0] - tile0[0]) <= 3 and abs(back[1] - tile0[1]) <= 3, "Load: the party is back where it was saved: saved %s, now %s" % (tile0, back))
+    # The click that picked the slot ends the screen and the map's first pass sees the button still down: the party walks a few tiles towards the pointer (the same thing happens to a mouse; pace.c, "a click
+    # that ends a screen"). So "where it was saved" is: nearer to the saved place than to the place the party was sent to, and no more than 8 tiles from it.
+    far = lambda p: max(abs(p[0] - tile0[0]), abs(p[1] - tile0[1]))
+    check(back is not None and far(back) <= 8 and far(back) < max(abs(tx - back[0]), abs(ty - back[1])),
+          "Load: the party is back where it was saved: saved %s, sent to %s, now %s (pixel %s, saved at %s)" % (tile0, (tx, ty), back, s.pix(), pix0))
     mode, tl = s.nav()
     check(mode in ("none", None), "and the map is on (mode %s)" % mode)
     # leave by the menu's Quit (line 2) and its question, then Resume Game on a new process
@@ -407,6 +509,42 @@ def saveload(s):
     resumed = s.tile()
     check(resumed is not None and abs(resumed[0] - left_at[0]) <= 3 and abs(resumed[1] - left_at[1]) <= 3, "Resume Game: the party is where it was when the game was left: %s, now %s" % (left_at, resumed))
     s.shot("resumed")
+
+
+def save_screen_loop(s, loops, sample_s=3.0):
+    """The Save screen opened and closed `loops` times (the first half with every slot empty, then one save and the second half with a slot in use): each time the number of D-pad targets is sampled every
+    0.15 s for `sample_s` seconds after A on the menu line. The Save screen has ten slots; this is the check for the one time a run showed six (docs/notes/controller.md, "The Save screen's targets")."""
+    g = s.g
+    s.keeper_on.set()
+    counts = {}
+    seen = []
+    for i in range(loops):
+        if i == loops // 2:
+            if menu_line(s, 0, "Save"):                                  # one real save: slot 0 is in use from here on
+                mode, tl = s.wait_mode(("screen",), 8, 10)
+                s.to_target(lambda tl: min(tl, key=lambda t: t.y0) if tl else None)
+                s.press_a(2)
+                g.pad_press("x")
+                s.wait(4)
+        if not menu_line(s, 0, "Save"):
+            check(False, "the Save screen opens (round %d)" % i)
+            continue
+        series = []
+        end = time.time() + sample_s
+        while time.time() < end:
+            r = g.nav_targets()
+            series.append(len(r[1]) if r and r[0] == "screen" else -1)
+            time.sleep(0.15)
+        settled = series[-1] if series else None
+        seen.append((i, settled, min(series) if series else None, series))
+        counts[settled] = counts.get(settled, 0) + 1
+        g.pad_press("back")                                              # Escape leaves the screen
+        s.wait_nav(lambda m, t: m in (None, "none"), 6)
+    print("      Save screen target counts after %.0f s, over %d rounds: %s" % (sample_s, loops, counts), flush=True)
+    for i, settled, low, series in seen:
+        if settled != 10:
+            print("      round %d settled at %s: %s" % (i, settled, series), flush=True)
+    check(set(counts) == {10}, "the Save screen has its ten slots as targets every time (%d rounds: %s)" % (loops, counts))
 
 
 # ---- a village -------------------------------------------------------------------------------------------------------------------------
@@ -462,6 +600,7 @@ def village(s):
     check(len(cards) >= 3 and sum(1 for t in tl if t.kind == K_BUTTON) == 1, "Cards for Sale: the cards (%d) and Done are targets" % len(cards))
     s.hover_check([t for t in tl if t.kind == K_BUTTON], "Cards for Sale")
     cards.sort(key=lambda t: t.x0)
+    digest("shop", s.mem(SHOP_IDS, 8))
     gold = s.gold()
     n = s.to_target(lambda tl: sorted([t for t in tl if t.kind == K_CARD], key=lambda t: t.x0)[0] if tl else None)
     check(n is not None, "the D-pad reaches the first card (%s presses)" % n)
@@ -537,10 +676,15 @@ def village(s):
 
 # ---- a duel ----------------------------------------------------------------------------------------------------------------------------
 def make_monster(s):
-    """A wandering monster next to the party: record 0 of the monster table (type, x, y, 3, 5, 0: copied from a real one; the type 22 is one of the game's) 40 pixels from the party. The party meets it at the
-    next step of the map's loop. (The keeper that clears the table while the script presses menus empties the table for good: the monsters of a game come with the world and from a save.)"""
+    """A wandering monster next to the party: record 0 of the monster table (type, x, y, 3, 5, 0: copied from a real one; the type 22 is one of the game's) 16 pixels from the party (the game meets it when it
+    is within a tile), and the other records, the monsters that really are near, sent to the far corner of the map so that none of them is the one that is met (which of them it was came with the wall clock:
+    a run's opponent, and its deck, would not be the seed's). The game rewrites the table every few seconds, so this is done again and again until it meets the monster (to_encounter)."""
     x, y = s.g.peek(sota_soak.PARTY_PIXEL[0], 2)
-    s.g.poke_many([(sota_soak.MONSTERS, 22), (sota_soak.MONSTERS + 4, x + 40), (sota_soak.MONSTERS + 8, y + 40), (sota_soak.MONSTERS + 12, 3), (sota_soak.MONSTERS + 16, 5), (sota_soak.MONSTERS + 20, 0)])
+    far = (2000, 2000) if x < 1024 else (40, 40)
+    pokes = [(sota_soak.MONSTERS, 22), (sota_soak.MONSTERS + 4, x + 16), (sota_soak.MONSTERS + 8, y + 16), (sota_soak.MONSTERS + 12, 3), (sota_soak.MONSTERS + 16, 5), (sota_soak.MONSTERS + 20, 0)]
+    for i in range(1, sota_soak.N_MONSTERS):
+        pokes += [(sota_soak.MONSTERS + sota_soak.MONSTER_STRIDE * i + 4, far[0]), (sota_soak.MONSTERS + sota_soak.MONSTER_STRIDE * i + 8, far[1])]
+    s.g.poke_many(pokes)
 
 
 def to_encounter(s, timeout=240):
@@ -548,9 +692,10 @@ def to_encounter(s, timeout=240):
     s.keeper_on.clear()
     end = time.time() + timeout
     made = 0
+    last_seen = None
     while time.time() < end:
         mode, tl = s.nav()
-        if mode == "screen" and len(tl) == 2 and tl[0].label == "line 0":
+        if mode == "screen" and len(tl) in (1, 2) and tl[0].label == "line 0":          # two lines: Duel or Pay; one: Duel only (the monster is faster)
             if tl[0].x0 > s.w // 4:                       # the encounter's menu is in the middle of the screen
                 return tl
             s.shot("other_menu")
@@ -560,22 +705,26 @@ def to_encounter(s, timeout=240):
             s.press_target(lambda tl: sorted([t for t in tl if t.x0 > 0.05 * s.w], key=lambda t: (t.y0, t.x0))[-1] if tl else None, 4)
             continue
         if mode in (None, "none"):
-            mon = s.monsters()
-            if mon and made % 2 == 0:                     # the party on the first monster of the table, as the game's own encounters do
-                s.g.poke_many(sota_soak.teleport_pokes(mon[0][0] // 32, mon[0][1] // 32))
-                s.wait(5)
-            else:
+            # The game rewrites its table of monsters near the party every few frames, so a monster poked into it lives for a moment: it is poked again and again, the party stepping, until the game meets it
+            # (always type 22: the monsters of the map come and go with the wall clock, and the opponent, with its deck, would not be the seed's).
+            s.g.pad("stick r 1 1")
+            for _ in range(12):
                 make_monster(s)
-                s.wait(1)
-                s.g.pad("stick r 1 1")                    # a step, so that the map's loop meets it
-                s.wait(0.6)
-                s.g.pad("stick r 0 0")
+                s.wait(0.25)
+                m2, t2 = s.nav()
+                if m2 not in (None, "none"):
+                    break
+            s.g.pad("stick r 0 0")
             made += 1
-            s.wait(3)
+            s.wait(1)
             mode, tl = s.nav()
             if mode in (None, "none"):
                 s.tap("a", 2)                             # "Witch summons a Warlock!" and the like wait for a click
         else:
+            if (mode, len(tl)) != last_seen:
+                last_seen = (mode, len(tl))
+                print("      waiting for an encounter: mode %s, %d targets %s" % (mode, len(tl), [t.label for t in tl][:6]), flush=True)
+                s.shot("not_an_encounter")
             s.wait(2)
     return None
 
@@ -629,18 +778,25 @@ def dialog_step(s, tl):
     return pick
 
 
-def start_duel(s):
-    """An encounter, its Duel line, the intro and the dialogs: the board. True when the duel is on."""
-    tl = to_encounter(s)
-    s.shot("encounter")
-    check(tl is not None, "an encounter: the text menu has two lines as targets")
-    if tl is None:
-        return False
-    n = s.to_target(lambda tl: tl[0] if tl else None)
-    check(n is not None, "the D-pad reaches 'Duel this ...' (%s presses)" % n)
-    s.press_a(3)
-    # the intro movie (a window with no targets), then the dialogs: coin toss and mulligan if there are, "Start the duel"
-    end = time.time() + 120
+def hand_hash(s, tries=8):
+    """A hash of the pixels of 'Your hand' (its seven cards after the draw), once two looks a second apart agree: the same seed must deal the same hand. None if there is no hand to look at."""
+    last = None
+    for _ in range(tries):
+        t = s.g.windows(timeout=10)
+        hands = [w for w in t.find("MAGICGAME_HandClass") if w.title.startswith("Your hand")] if t else []
+        if not hands:
+            return None
+        now = s.g.region_hash((hands[0].x0, hands[0].y0, hands[0].x1, hands[0].y1))
+        if now is not None and now == last:
+            return "%s %s" % (hands[0].title, now)
+        last = now
+        time.sleep(1.0)
+    return None
+
+
+def await_board(s, timeout=120):
+    """After 'Duel this ...': the intro movie (a window with no targets), then the dialogs (coin toss and mulligan if there are, 'Start the duel'), until the board is there. (True or False, the buttons pressed)."""
+    end = time.time() + timeout
     started = False
     said = []
     while time.time() < end:
@@ -658,7 +814,23 @@ def start_duel(s):
         else:
             s.wait(2)
         s.wait(1.5)
+    return started, said
+
+
+def start_duel(s):
+    """An encounter, its Duel line, the intro and the dialogs: the board. True when the duel is on."""
+    tl = to_encounter(s)
+    s.shot("encounter")
+    check(tl is not None, "an encounter: its text menu (the Duel line and, if the party can get away, the Pay line) is made of targets")
+    if tl is None:
+        return False
+    n = s.to_target(lambda tl: tl[0] if tl else None)
+    check(n is not None, "the D-pad reaches 'Duel this ...' (%s presses)" % n)
+    s.press_a(3)
+    started, said = await_board(s)
     s.shot("duel")
+    if started:
+        digest("hand", hand_hash(s))
     check(started, "the duel started: the board's targets (dialogs answered with the D-pad and A: %s)" % [x for x in said if x])
     return started
 
@@ -1022,15 +1194,41 @@ def places(s):
     check(g.alive() and s.nav()[0] in (None, "none"), "back on the map after the castle, the tower and the world magic (%s)" % ("; ".join("%s: %s" % kv for kv in seen.items()) or "no place was entered"))
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--res", default="1024x768", choices=["1024x768"])
-    ap.add_argument("--workdir", default="/tmp/sota_pad_play")
-    ap.add_argument("--shots")
-    ap.add_argument("--only", help="comma separated steps (newgame, map, save, village, places, duel, reward, back); the new game always runs first, except for back, which starts its own process")
-    a = ap.parse_args()
+def parse_seeds(text):
+    """'3,5,10-12' -> [3, 5, 10, 11, 12]"""
+    out = []
+    for part in text.split(","):
+        lo, _dash, hi = part.partition("-")
+        out += list(range(int(lo), int(hi or lo) + 1))
+    return out
+
+
+def scan(a, seeds):
+    """For each seed: a new game, and whether its world suits the script (scan_world). Prints one SCAN line each; the ones that suit are what goes into PINNED."""
+    good = []
+    for seed in seeds:
+        a.seed_now = seed
+        s = Session(a)
+        try:
+            ok = newgame(s)
+            if not ok:
+                print("SCAN seed %d: the new game did not reach the map" % seed, flush=True)
+                continue
+            s.wait(2)
+            suits, why, dp, dm = scan_world(s.tile(), s.places(), s.monsters())
+            print("SCAN seed %d: start %s, nearest place %d tiles, nearest monster %d tiles: %s%s" % (seed, s.tile(), dp, dm, "SUITS" if suits else "no", (" (" + why + ")") if why else ""), flush=True)
+            if suits:
+                good.append(seed)
+        finally:
+            if s.g is not None:
+                s.g.stop()
+    print("SCAN suits: %s" % good, flush=True)
+    return 0
+
+
+def play(a, only):
+    """One seed, all steps."""
     s = Session(a)
-    only = set(a.only.split(",")) if a.only else None
     steps = [("newgame", newgame), ("firstmenu", first_menu), ("map", maponly), ("save", saveload), ("village", village), ("places", places), ("duel", duel), ("reward", reward)]
     try:
         if only != {"back"}:
@@ -1042,6 +1240,9 @@ def main():
                 if s.g is not None and not s.g.alive() and name != "save":
                     check(False, "the program died in %s" % name)
                     break
+            if only and "savescreen" in only:
+                print("--- savescreen", flush=True)
+                save_screen_loop(s, a.save_loops)
         if s.g is not None:
             s.g.stop()
         if only is None or "back" in only:
@@ -1050,6 +1251,28 @@ def main():
     finally:
         if s.g is not None:
             s.g.stop()
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--res", default="1024x768", choices=["1024x768"])
+    ap.add_argument("--workdir", default="/tmp/sota_pad_play")
+    ap.add_argument("--shots")
+    ap.add_argument("--only", help="comma separated steps (newgame, map, save, village, places, duel, reward, back, savescreen); the new game always runs first, except for back, which starts its own process")
+    ap.add_argument("--seed", help="PORT_SEED for the run(s), comma separated or ranges (3,5,10-12); default: the PINNED seeds, one whole run each")
+    ap.add_argument("--scan", help="seeds to look at (1-40): new games only, prints which worlds suit the script")
+    ap.add_argument("--save-loops", type=int, default=24, help="savescreen: how many times the Save screen is opened (default 24)")
+    a = ap.parse_args()
+    if a.scan:
+        return scan(a, parse_seeds(a.scan))
+    only = set(a.only.split(",")) if a.only else None
+    if only == {"savescreen"}:
+        only = {"savescreen", "newgame"}
+    seeds = parse_seeds(a.seed) if a.seed else sorted(PINNED)
+    for seed in seeds:
+        a.seed_now = seed
+        print("=== seed %d: %s" % (seed, PINNED.get(seed, "(not a pinned seed)")), flush=True)
+        play(a, only)
     print("%d failed" % failures if failures else "all checks passed")
     return 1 if failures else 0
 
