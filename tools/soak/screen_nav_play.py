@@ -35,6 +35,9 @@ K_CARD, K_BUTTON, K_ROW, K_MENU = 1, 2, 4, 9
 
 # The seeds the script is played with (PORT_SEED, src/port/seed.h; docs/notes/controller.md, "A repeatable run"). The new game of each starts the party on open ground.
 PINNED = {
+    4: "the party starts beside a monster: the first encounter is a text menu of two lines (Duel or Pay), so the encounter step's checks run (world start 36,40)",
+    5: "an encounter at the start too, in another world (35,40); the village, the world map, the clues and the stats are reached from it",
+    8: "an encounter at the start, a world whose start is 3 tiles from a village (35,39): the same checks, a third world",
 }
 
 failures = 0
@@ -212,36 +215,15 @@ def title_and_newgame(s):
     g.pad_press("x")                                   # Enter accepts the name
     s.wait(12)
     s.quiet = True
-    for attempt in range(4):
-        mode, tl = s.wait_nav(lambda m, t: m == "screen" and t and t[0].label == "line 0", 14)
-        if mode == "screen" and len(tl) == 1:
-            print("NOTE  the first encounter is a forced duel (one line): starting again (%d)" % (attempt + 1), flush=True)
-            restart_quick(s)
-        else:
-            break
-
-
-def restart_quick(s):
-    """Stop the game and start a new one by clicking the table's buttons (no checks): for a start that was a forced duel."""
-    g = s.g
-    g.stop()
-    g.start()
-    s.quiet = False
-    s.wait(10)
-    for k in (0, 0, 0, 0):
-        mode, tl = s.wait_nav(is_screen(1), 10)
-        t = sorted(tl, key=lambda t: (t.y0, t.x0))[0]
-        g.click(*t.center)
-        s.wait(3)
-    g.key("return")
-    s.wait(12)
-    s.quiet = True
+    mode, tl = s.wait_nav(lambda m, t: m == "screen" and t and t[0].label == "line 0", 30)
+    if mode == "screen" and len(tl) == 1:
+        check(False, "the pinned seed's first encounter is a forced duel (one line): another seed, see PINNED")
 
 
 def encounter(s):
     mode, tl = s.wait_nav(lambda m, t: m == "screen" and len(t) == 2 and t[0].label == "line 0", 6)
     if mode != "screen" or len(tl) != 2:
-        print("NOTE  no encounter at the start this time: not checked", flush=True)
+        check(False, "the pinned seed's start has an encounter (a text menu of two lines): %s, %d targets (PINNED lists the seeds that have one)" % (mode, len(tl)))
         return
     s.shot("encounter")
     gold = s.gold()

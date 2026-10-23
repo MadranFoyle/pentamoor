@@ -167,6 +167,33 @@ class Session(base.Session):
     def stick_to(self, x, y):
         return self.g.pad_goto(x, y)
 
+    def settled(self):
+        """What the D-pad can move between, once two reads 0.5 s apart agree on the mode and the number of targets. (The targets are read off the game's memory by the kind of the loop that passed the button
+        table last, and for up to 0.4 s after a screen comes or goes the kind is the last screen's: the map's nine buttons for a moment where the map's menu is. Seen: a script that took them for a village
+        pressed A on the menu's last line; `docs/notes/controller.md`, "The Save screen's targets", has the likely cause of the one run that found six slots.)"""
+        a = self.nav()
+        for _ in range(4):
+            time.sleep(0.5)
+            b = self.nav()
+            if (a[0], len(a[1])) == (b[0], len(b[1])):
+                return b
+            a = b
+        return a
+
+    def wait_nav(self, pred, timeout=20.0):
+        """Poll `pad nav` until pred(mode, targets) holds and the answer is the same half a second later (settled)."""
+        end, last = time.time() + timeout, (None, [])
+        while time.time() < end:
+            last = self.nav()
+            if pred(*last):
+                again = self.settled()
+                if pred(*again):
+                    return again
+                last = again
+            else:
+                self.wait(0.3)
+        return last
+
     def wait_mode(self, modes, timeout=20.0, minimum=0):
         return self.wait_nav(lambda m, t: m in modes and len(t) >= minimum, timeout)
 
@@ -205,12 +232,26 @@ class Session(base.Session):
         return self.nav()
 
 
+# ---- starting a process ------------------------------------------------------------------------------------------------------------------
+def boot(s, name, seed=None, targets=2):
+    """A new game process, started until its title menu (`targets` of them) is up. A start can stall silently, with nothing in the log after the display line: seen four times in about a dozen starts when
+    several runtimes were started within the same second, never when one was; stopping it and starting it again worked each time (not investigated further). One more try, and a line that says so."""
+    g = None
+    for attempt in range(2):
+        g = s.new_process(seed=seed, name=name if attempt == 0 else "%s_again" % name)
+        g.start()
+        s.wait(12)
+        mode, tl = s.wait_mode(("screen",), 90, targets)
+        if mode == "screen" and len(tl) == targets:
+            return g, mode, tl
+        print("NOTE  (not counted) the program did not reach its title menu in 100 s (log: %s): started again" % g.log_path, flush=True)
+        g.stop()
+    return g, mode, tl
+
+
 # ---- new game ---------------------------------------------------------------------------------------------------------------------------
 def newgame(s):
-    g = s.new_process(name="game")
-    g.start()
-    s.wait(12)
-    mode, tl = s.wait_mode(("screen",), 20, 2)
+    g, mode, tl = boot(s, "game")
     check(mode == "screen" and len(tl) == 2, "the title menu: 2 targets (Load and Resume are greyed: no saved game yet): mode %s, %d" % (mode, len(tl)))
     s.hover_check(tl, "the title menu")
     check(g.pad_pos() is not None and g.pad_pos()[2] == 0, "no pad cursor before the pad is used")
@@ -259,7 +300,7 @@ def newgame(s):
         time.sleep(1)
     time.sleep(6)
     s.shot("name")
-    mode, tl = s.nav()
+    mode, tl = s.settled()
     check(mode in ("none", None) and not tl, "the name box has no targets: mode %s" % mode)
     s.keeper_on.set()
     ok = False
@@ -324,7 +365,7 @@ def to_map(s, tries=8):
     seed does not), so every step that waits on the map can find one."""
     for _ in range(tries):
         s.clear_monsters()
-        mode, tl = s.nav()
+        mode, tl = s.settled()
         if is_village(mode, tl):
             s.press_target(leave_button(s), 4)
         elif is_encounter_menu(mode, tl, 2):
@@ -390,6 +431,9 @@ def open_map_menu(s, tries=12):
         s.hold("b", 0.3 if i % 2 == 0 else 0.15)
         mode, tl = s.wait_mode(("screen",), 2.5, 5)
         seen.append((mode, len(tl)))
+        if mode == "screen" and not (len(tl) == 9 and all(t.kind == K_MENU for t in tl)):
+            print("      not the menu: %d targets of kinds %s, first %s" % (len(tl), sorted({t.kind for t in tl}), [(t.label, t.x0, t.y0) for t in tl[:3]]), flush=True)
+            s.shot("not_the_menu")
         if mode == "screen" and len(tl) == 9 and all(t.kind == K_MENU for t in tl):
             return tl
         if is_village(mode, tl) or is_encounter_menu(mode, tl, 2) or is_encounter_menu(mode, tl, 1) or is_page(mode, tl) or mode == "dialog":
@@ -408,7 +452,7 @@ def maponly(s):
     s.keeper_on.set()
     s.wait(2)
     to_map(s)
-    mode, tl = s.nav()
+    mode, tl = s.settled()
     check(mode in ("none", None) and not tl, "on the map there is nothing for the D-pad to navigate (mode %s)" % mode)
     pix1 = pix0 = g.peek(sota_soak.PARTY_PIXEL[0], 2)
     for dx, dy, name in ((1, 0, "east"), (0, 1, "south"), (-1, 0, "west"), (0, -1, "north")):      # the ground can be in the way on one side
@@ -447,8 +491,10 @@ def maponly(s):
     check(n is not None, "the D-pad reaches 'See Dungeon Clues' (%s presses)" % n)
     g.pad_press("back")                                   # Escape closes the menu
     s.wait(2)
-    mode, tl = s.nav()
-    check(mode in ("none", None), "Back closes the menu (mode %s)" % mode)
+    mode, tl = s.settled()
+    closed = not (mode == "screen" and any(t.kind == K_MENU for t in tl))          # the walk the party was on can end in a village once the menu is gone: that is the menu closed too
+    to_map(s)
+    check(closed, "Back closes the menu (mode %s, %d targets)" % (mode, len(tl)))
 
 
 # ---- save and load -----------------------------------------------------------------------------------------------------------------
@@ -486,7 +532,7 @@ def saveload(s):
     names = sorted(os.listdir(overlay)) if os.path.isdir(overlay) else []
     check(all(any(n.lower() == "magic3." + e for n in names) for e in ("sve", "map", "fce")), "the save is on disk (MAGIC3.SVE, .map, .fce): %s" % [n for n in names if n.lower().startswith("magic")])
     to_map(s)
-    mode, tl = s.nav()
+    mode, tl = s.settled()
     check(mode in ("none", None), "back on the map (mode %s)" % mode)
     # move the party far away, then load
     tx, ty = tile0[0] + (14 if tile0[0] < 32 else -14), tile0[1] + (12 if tile0[1] < 32 else -12)           # across the middle of the map, so well away (the party walks a few tiles after a load)
@@ -509,7 +555,7 @@ def saveload(s):
     far = lambda p: max(abs(p[0] - tile0[0]), abs(p[1] - tile0[1]))
     check(back is not None and far(back) <= 8 and far(back) < max(abs(tx - back[0]), abs(ty - back[1])),
           "Load: the party is back where it was saved: saved %s, sent to %s, now %s (pixel %s, saved at %s)" % (tile0, (tx, ty), back, s.pix(), pix0))
-    mode, tl = s.nav()
+    mode, tl = s.settled()
     check(mode in ("none", None), "and the map is on (mode %s)" % mode)
     # leave by the menu's Quit (line 2) and its question, then Resume Game on a new process
     if not menu_line(s, 2, "Quit"):
@@ -531,10 +577,7 @@ def saveload(s):
     seed = os.path.join(s.wd, "seed")
     shutil.rmtree(seed, ignore_errors=True)
     shutil.copytree(overlay_dir, seed)
-    g2 = s.new_process(seed=seed, name="resume")
-    g2.start()
-    s.wait(12)
-    mode, tl = s.wait_mode(("screen",), 20, 4)
+    g2, mode, tl = boot(s, "resume", seed=seed, targets=4)
     check(mode == "screen" and len(tl) == 4, "the title menu now has 4 targets: Load Saved Game and Resume Game are open (%d)" % len(tl))
     s.hover_check(tl, "the title menu with a saved game")
     n = s.to_target(lambda tl: sorted(tl, key=lambda t: t.y0)[2] if len(tl) > 2 else None)
@@ -547,12 +590,12 @@ def saveload(s):
 
 
 def save_screen_loop(s, loops, sample_s=3.0):
-    """The Save screen opened and closed `loops` times (the first half with every slot empty, then one save and the second half with a slot in use): each time the number of D-pad targets is sampled every
-    0.15 s for `sample_s` seconds after A on the menu line. The Save screen has ten slots; this is the check for the one time a run showed six (docs/notes/controller.md, "The Save screen's targets")."""
+    """The Save screen opened and closed `loops` times (the first half with every slot empty, then one save and the second half with a slot in use): each time the number of D-pad targets is read as fast as the
+    pipe answers for `sample_s` seconds after A on the menu line. The Save screen has ten slots; this is the check for the one time a run showed six (docs/notes/controller.md, "The Save screen's targets"):
+    what is printed is every count seen before the ten, and how long the ten took."""
     g = s.g
     s.keeper_on.set()
-    counts = {}
-    seen = []
+    settled_counts, before_ten, t_ten = {}, {}, []
     for i in range(loops):
         if i == loops // 2:
             if menu_line(s, 0, "Save"):                                  # one real save: slot 0 is in use from here on
@@ -561,25 +604,29 @@ def save_screen_loop(s, loops, sample_s=3.0):
                 s.press_a(2)
                 g.pad_press("x")
                 s.wait(4)
-        if not menu_line(s, 0, "Save"):
+        to_map(s)
+        tl = open_map_menu(s)
+        if not tl or s.to_target(lambda tl: tl[0] if tl else None) is None:
             check(False, "the Save screen opens (round %d)" % i)
             continue
-        series = []
-        end = time.time() + sample_s
-        while time.time() < end:
+        g.pad_press("a")                                                 # and the reading starts at once: the screen is being built
+        t0 = time.time()
+        last, first10 = None, None
+        while time.time() - t0 < sample_s:
             r = g.nav_targets()
-            series.append(len(r[1]) if r and r[0] == "screen" else -1)
-            time.sleep(0.15)
-        settled = series[-1] if series else None
-        seen.append((i, settled, min(series) if series else None, series))
-        counts[settled] = counts.get(settled, 0) + 1
+            last = len(r[1]) if r and r[0] == "screen" else -1
+            if last == 10 and first10 is None:
+                first10 = time.time() - t0
+            elif last != 10 and first10 is None:
+                before_ten[last] = before_ten.get(last, 0) + 1
+        settled_counts[last] = settled_counts.get(last, 0) + 1
+        t_ten.append(first10)
         g.pad_press("back")                                              # Escape leaves the screen
         s.wait_nav(lambda m, t: m in (None, "none"), 6)
-    print("      Save screen target counts after %.0f s, over %d rounds: %s" % (sample_s, loops, counts), flush=True)
-    for i, settled, low, series in seen:
-        if settled != 10:
-            print("      round %d settled at %s: %s" % (i, settled, series), flush=True)
-    check(set(counts) == {10}, "the Save screen has its ten slots as targets every time (%d rounds: %s)" % (loops, counts))
+    seen = [t for t in t_ten if t is not None]
+    print("      Save screen, %d rounds: counts after %.0f s %s; counts read before the ten %s; the ten was there %s" % (
+        loops, sample_s, settled_counts, before_ten or "none", ("after at most %.2f s" % max(seen)) if seen else "never"), flush=True)
+    check(set(settled_counts) == {10}, "the Save screen has its ten slots as targets every time (%d rounds: %s)" % (loops, settled_counts))
 
 
 # ---- a village -------------------------------------------------------------------------------------------------------------------------
@@ -593,17 +640,19 @@ def left(s, tl):
 
 
 def enter_village(s):
-    for attempt in range(3):
+    """The party put on the nearest village (a poke): its screen of nine buttons. A monster can be at the gate first (its menu is dealt with and the same village tried again, twice, then the next one)."""
+    for attempt in range(6):
         to_map(s)
         vil = [p for p in s.places() if p[0] == 1]
         t = s.tile()
         vil.sort(key=lambda p: (p[1] - t[0]) ** 2 + (p[2] - t[1]) ** 2)
-        s.teleport(vil[min(attempt, len(vil) - 1)][1], vil[min(attempt, len(vil) - 1)][2])
-        mode, tl = s.wait_mode(("screen",), 12, 9)
+        v = vil[min(attempt // 2, len(vil) - 1)]
+        s.teleport(v[1], v[2])
+        mode, tl = s.wait_nav(lambda m, t: m == "screen" and (len(t) == 9 or is_encounter_menu(m, t, 2) or is_encounter_menu(m, t, 1)), 12)
         if mode in (None, "none"):
             s.tap("a", 2)                                 # a message ("You happen upon ...") waits for a click
             mode, tl = s.wait_mode(("screen",), 6, 9)
-        if mode == "screen" and len(tl) == 9:
+        if is_village(mode, tl):
             return True
     return False
 
@@ -675,7 +724,7 @@ def village(s):
     if mode == "menu" and tl:
         n = s.to_target(lambda tl: tl[0] if tl else None)
         s.press_a(2.5)
-        mode, tl = s.nav()
+        mode, tl = s.settled()
         check(s.gold() > gold and mode == "deck", "A on it sold the card at once, with no question: gold %d -> %d (mode %s)" % (gold, s.gold(), mode))
     n = s.to_target(lambda tl: max([t for t in tl if t.kind == K_BUTTON], key=lambda t: t.x0) if tl else None)
     s.press_a(3)
@@ -705,7 +754,7 @@ def village(s):
         check(mode == "screen" and len(tl) == 9, "Done is back at the village (%d targets)" % len(tl))
     n = s.to_target(lambda tl: five(s, tl)[-1] if len(five(s, tl)) == 5 else None)
     s.press_a(4)
-    mode, tl = s.nav()
+    mode, tl = s.settled()
     check(mode in ("none", None), "A on 'Leave the village': the map (mode %s)" % mode)
 
 
@@ -937,7 +986,7 @@ def clear_prompt(s, t, tries):
     return True
 
 
-def to_main_phase(s, tries=70, perms=2, hand=5):
+def to_main_phase(s, tries=70, perms=2, hand=5, any_main=False):
     """Done (with the stick and A) and the dialogs, until it is your first main phase of a turn again, with your board and a hand: where nav_play's and card_view's checks start."""
     g = s.g
     for _ in range(tries):
@@ -950,7 +999,7 @@ def to_main_phase(s, tries=70, perms=2, hand=5):
             dialog_step(s, tl)
         elif mode == "menu":
             s.tap("back", 1)
-        elif mode == "duel" and "main phase (before combat)" in cur.lower() and len(my_permanents(t)) >= perms and len(hand_windows(t)) >= hand:
+        elif mode == "duel" and ("main phase (before combat)" in cur.lower() or (any_main and "main phase" in cur.lower())) and len(my_permanents(t)) >= perms and len(hand_windows(t)) >= hand:
             return True
         elif mode == "duel":
             b = t.bar()
@@ -971,7 +1020,7 @@ def duel(s):
         play_duel(s)
         if to_main_phase(s):
             nav_checks(s)
-            if to_main_phase(s, perms=1, hand=2):     # the D-pad's checks pass phases: the view button's need a board of the player's own turn again
+            if to_main_phase(s, perms=1, hand=2, any_main=True):     # the D-pad's checks pass phases: the view button's need a board of the player's own turn again
                 view_checks(s)
             else:
                 check(False, "a main phase again after the D-pad's checks, for the view button's checks")
@@ -989,13 +1038,17 @@ def play_duel(s):
         kinds[t.kind] = kinds.get(t.kind, 0) + 1
     check(len(tl) >= 30 and all(k in kinds for k in (1, 2, 5, 6, 7, 8)), "the board: %d targets (cards, Done, life totals, piles, mana rows, phase icons: kinds %s)" % (len(tl), sorted(kinds)))
     st = {"land": False, "cast": False, "attack": False, "pass": 0}
-    t_end = time.time() + 600
-    while time.time() < t_end and not (st["land"] and st["cast"] and st["attack"]) and st["pass"] < 12:
+    lost = 0
+    t_end = time.time() + 1500
+    while time.time() < t_end and not (st["land"] and st["cast"] and st["attack"]) and st["pass"] < 30:
         if not g.alive():
             break
         t = g.windows(timeout=10)
-        if t is None:
-            break
+        if t is None:                                   # no answer in 10 s (a loaded machine): three times before it is called a hang
+            lost += 1
+            if lost > 3:
+                break
+            continue
         mode, tl = s.nav()
         bar = t.bar()
         title = bar[0].title if bar and bar[0].visible else ""
@@ -1165,17 +1218,16 @@ def reward(s):
         mode, tl3 = s.nav()
         check(any(x.kind == K_ROW for x in tl3), "Done went back to the list")
         s.press_target(lambda tl: max([t for t in tl if t.kind == K_BUTTON], key=lambda t: t.x0) if [t for t in tl if t.kind == K_BUTTON] else None, 3)
-    mode, tl = s.nav()
-    check(mode in (None, "none"), "Done left the clues: the map (mode %s)" % mode)
+    mode, tl = s.settled()
+    left = not any(t.kind == K_ROW for t in tl) and not (mode == "screen" and len(tl) <= 2 and not is_encounter_menu(mode, tl, 2) and not is_encounter_menu(mode, tl, 1))   # not the list or its page (a village or a monster can be what the map has next)
+    to_map(s)
+    check(left or mode in (None, "none"), "Done left the clues: the map (mode %s, %d targets)" % (mode, len(tl)))
 
 
 # ---- Back at the title menu ----------------------------------------------------------------------------------------------------------------
 def back_guard(s):
     """Back is Escape, and Escape leaves the game from the title menu with no question: there it must be held half a second (docs/notes/controller.md); on the new game's screens a tap goes back."""
-    g = s.new_process(name="back")
-    g.start()
-    s.wait(12)
-    mode, tl = s.wait_mode(("screen",), 20, 2)
+    g, mode, tl = boot(s, "back")
     check(mode == "screen" and len(tl) == 2, "the title menu is up (2 targets)")
     g.pad_press("back")
     s.wait(2)

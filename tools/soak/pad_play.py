@@ -39,9 +39,9 @@ LOCATIONS = 0x67bdf0                       # 128 records of 25 dwords: the world
 # The seeds the script is played with. The new game of each starts the party on open ground (the first steps east walk; no encounter comes first); the duel is from the saved game, so its world is fixed
 # and the seed decides the shuffles.
 PINNED = {
-    1: "candidate",
-    2: "candidate",
-    3: "candidate",
+    1: "the party starts at pixel (1424,1296) and the first steps east walk; the saved game's duel deals one fixed hand (digest `hand`)",
+    2: "the party starts at pixel (1200,1456), the walk east is free; the duel's hand is another fixed one",
+    3: "the party starts at pixel (1200,560), the walk east is free; a third fixed hand",
 }
 
 failures = 0
