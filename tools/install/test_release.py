@@ -399,7 +399,7 @@ def test_release_archive_layout_unix(tmp_path):
     assert out.endswith("pentamoor-9.9.9-linux-x86_64.tar.gz")
     with tarfile.open(out) as t:
         names = {m.name[len(top) + 1:]: m for m in t.getmembers()}
-    for need in ("pentamoor-run", "pentamoor", "pentamoor-install", "README.txt", "NOTICE.txt", "VERSION", "SHA256SUMS", "tools/install/install.py", "tools/install/modbuild.py",
+    for need in ("pentamoor-run", "pentamoor", "pentamoor-install", "README.txt", "NOTICE.txt", "LICENSE", "VERSION", "SHA256SUMS", "tools/install/install.py", "tools/install/modbuild.py",
                  "tools/lift/gen_handlers.py", "tools/lift/x86lift.py", "tools/pydeps/pefile/__init__.py", "src/native/lift_rt.h", "src/native/lift_tables.h", "src/port/modglue.c",
                  "src/port/modules_none.c", "src/port/stubgame/handlers_gen.c", "tools/lift/fnscan.py", "tools/lift/import_signatures.py", "src/native/layout.c",
                  # Spells of the Ancients 2.15: the readers of the expansion's cabinets and of the patch, the folder maker, and the lifter's files for its programs

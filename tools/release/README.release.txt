@@ -93,6 +93,7 @@ tools/pydeps            the Python packages the lifter uses (pefile, capstone)
 src/                    the headers and glue your game modules are compiled with
 SHA256SUMS              checksums of every file here
 NOTICE.txt              what this is, licences, trademarks
+LICENSE                 Pentamoor's own license (MIT)
 
 After installing there will also be sources/ (your game files, the C made from them, objects) and
 game_magic, game_deck and game_duel (the game modules built from your files). Do not share those.

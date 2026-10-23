@@ -204,7 +204,7 @@ What the repository holds, and what it does not:
   machine code (and, early on, a decompiler's reading of it) and checked against the original running; notes on how the game works (`docs/`); and facts about the executables, such as the
   addresses of functions and variables and the argument counts of the Windows calls it makes.
 
-The repository has no license file; do not redistribute game files.
+Pentamoor's own source is under the [MIT license](LICENSE) (copyright Ben Royse). The license does not cover the game or anything made from it: do not redistribute game files. Where the code comes from: [docs/notes/provenance.md](docs/notes/provenance.md).
 
 ## History
 

@@ -219,7 +219,7 @@ for playing, not for comparing.
 ## Risks and open points
 
 - **Licence.** Unicorn is GPL-2.0. Linking it makes the port GPL-2 compatible, which suits a preservation
-  project but should be a deliberate choice. The repository has no licence file today.
+  project but should be a deliberate choice. (The repository is under the MIT license since 2026-10-23; the emulator spike that used Unicorn is not part of the native program.)
 - **Undocumented corners** of the Win32 behaviour the game leans on (window-message ordering, palette
   realisation, `timeSetEvent` timing) are found by running it; the QEMU oracle stays the reference for those.
 - **Only x86.** This avoids needing Wine. On x86 machines Wine already runs the game; this path is for
