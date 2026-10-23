@@ -2,7 +2,7 @@
  * world, shops, decks and draws (docs/notes/controller.md, "A repeatable run"). Unset, none of this runs and the C runtime behaves exactly as before.
  *
  * What the game does with chance, found by counting the calls of Spells of the Ancients 2.15 runs (written down so the next reader need not): it seeds the C runtime's generator from the clock
- * at eight places (`srand(GetTickCount())` at the start of the process and at "Start New Game", where the world is made, and in the duel engine's set-up, which seeds from a multiple of the tick count),
+ * at eight places (`srand(GetTickCount())` at the start of the process and at "Start New Game", where the world is made, and in the duel engine's set-up, which seeds from 67 times the low fifteen bits of a clock reading),
  * and everything else is `rand()` through one small function, `Random(n)`, which every part of the game calls. The world generator also starts its walk over the 128 places at `clock() & 0x7f`.
  * Two things make two runs differ even with the same seed: the clock readings, and the number of `rand()` calls that went before (the map draws a few hundred a second while it idles, so how long a
  * player or a script waited changes every number that comes after). So:

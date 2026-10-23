@@ -50,10 +50,11 @@ FACE_LEAVE = (395, 160)             # FaceMaker's "Leave" button at 1024x768 (wh
 # the start (no encounter before the script wants one; the script also keeps the monsters off the map with pokes),
 # and a village, a tower, a castle and a world magic exist (the steps that put the party on each find the nearest). The line says what else is special about the world.
 PINNED = {
-    8: "start (35,39), a village three tiles from the party (the first steps east walk into it); a hand of seven (digest `hand` 90deb70b62b2) that plays a land, casts a creature and attacks within 11 passes",
-    4: "start (36,40) with open ground round it; a hand (eb9403a13451) that needs 18 passes to get an attack, the longest of the three (which is what the 200 life the script gives itself is for)",
-    9: "start (37,32); a hand (f685f2a0dcf9) that casts and attacks within 5 passes, the shortest duel of the three",
+    8: "start (35,39), a village three tiles from the party; a hand of seven (digest `hand` 90deb70b62b2 or e0cda6238750, by the cards the village step buys and sells) that plays a land, casts a creature and attacks within 11 passes: 9 of 10 whole runs clean",
+    4: "start (36,40) with open ground round it; a hand (eb9403a13451) that needs 18 passes to get an attack (what the 200 life the script gives itself is for): 8 of 10 whole runs clean",
 }
+# Tried and left out: 9 (start (37,32); a one-line encounter, a duel with no way out, came up in 7 of 10 runs and left the party where no village can be entered by a poke: 4 of 10 clean), 30, 2, 12, 21, 24, 1, 26
+# (each failed one or two steps in every run for a reason of its own: a hand too small for the D-pad's checks, a creature that could not be paid for, an empty table of monsters, which the encounter step needs).
 SCAN_PLACE_TILES = 1
 SCAN_MONSTER_TILES = 3
 
