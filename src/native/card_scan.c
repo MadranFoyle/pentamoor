@@ -3,8 +3,8 @@
  *
  * MAGIC.EXE 0x00473f06, DUEL.EXE 0x0048c5a8. The duel engine's central dispatcher: card behaviour lives in per-card
  * handler functions (one pointer per master record, +0x10), and almost every rules question is answered by scanning the
- * cards and letting each one react to an event code (docs/SYMBOL_VERIFICATION.md). Written from the decompiled body
- * (identical in both programs apart from addresses) and checked against the disassembly: every compare is signed.
+ * cards and letting each one react to an event code (docs/SYMBOL_VERIFICATION.md). Reimplements the original's function
+ * (identical in both programs apart from addresses), checked against its machine code and the original running: every compare is signed.
  *
  * The handlers are the hundreds of per-card scripts and are not native: each is reached through vm_call_at with the
  * address read from memory. Paths the original ends in an assert or a fatal error (a scan nested ten deep, a card index

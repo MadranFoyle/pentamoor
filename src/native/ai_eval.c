@@ -9,7 +9,7 @@
  * a spell in hand on its cost class. When it is the evaluated player's own turn, Ai_PenalizeCounterattack then lowers the
  * score by what the opponent's best attackers could do back.
  *
- * Written from the disassembly of DUEL.EXE (the decompiled bodies hide casts and divisions; every divide here is the compiler's
+ * Reimplements the functions of DUEL.EXE named above, from its machine code (casts and divisions are easy to get wrong in a plain C reading; every divide here is the compiler's
  * truncating one, every compare signed), and checked three ways: against vectors recorded from the original and from fuzzed
  * boards, against its own machine code translated by tools/lift on every call of a real game (the host's shadow mode), and by
  * a whole-game comparison with the original. The two programs carry the same code at different addresses (the two

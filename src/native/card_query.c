@@ -2,7 +2,7 @@
  * card_query.c - Magic_QueryCardAttribute, Magic_IsManaSource, Card_GetColorAndTypeFlags.
  *
  * MAGIC.EXE 0x00473179 / 0x00474389 / 0x004d0a42, DUEL.EXE 0x0048b81a / 0x0048ca2a / 0x004521e2.
- * Written from the decompiled bodies; what the codes return was established on the emulator
+ * Reimplements the original's functions at the addresses above; what the codes return was established on the emulator
  * (docs/SYMBOL_VERIFICATION.md): 0x32 current power, 0x33 current toughness, 0x34 ability bitmask,
  * 0x3c the card's current card-table index. Codes 0x35 and 0x36 were never seen called and are not
  * implemented.
@@ -73,7 +73,7 @@ uint32_t Native_Magic_QueryCardAttribute(Vm *vm, int32_t player, int32_t slot, i
     const Layout *L = vm->L;
     uint32_t saved, result, local = 0, args[3] = {0, 0, 0};
     int32_t card;
-    int recompute = 0; /* the decompiler's 0x004737a0: store `local` as the result, let cards adjust it */
+    int recompute = 0; /* the original's 0x004737a0: store `local` as the result, let cards adjust it */
 
 #define SLOT(field) slot_addr(vm, player, slot, (field))
 
