@@ -550,6 +550,12 @@ static void rands(uint32_t site, uint32_t caller, uint32_t *out, int n)
         out[i] = guest_rand(site, caller);
 }
 
+#ifdef _WIN32
+#define SETENV(name, value) _putenv_s(name, value)         /* (an empty value removes the variable) */
+#else
+#define SETENV(name, value) setenv(name, value, 1)
+#endif
+
 static int same(const uint32_t *a, const uint32_t *b, int n) { return memcmp(a, b, (size_t)n * sizeof(*a)) == 0; }
 
 static void test_seed(void)
@@ -682,7 +688,12 @@ static void test_seed(void)
             if ((got & 0x7fu) != low)
                 steady = 0;
             last = got;
-            usleep(1000);
+            {
+                double t1 = port_now();
+
+                while (port_now() - t1 < 0.001)             /* a millisecond: the clock moves between the reads */
+                    ;
+            }
         }
         CHECK(!back && !far && steady);
     }
@@ -692,16 +703,16 @@ static void test_seed(void)
 
     /* the environment: PORT_SEED is read once, a bad one is reported and means off */
     seed_set(0, 0);
-    setenv("PORT_SEED", "0x10", 1);
+    SETENV("PORT_SEED", "0x10");
     seed_reload_env();
     CHECK(seed_active() && seed_value() == 16);
-    setenv("PORT_SEED", "sixteen", 1);
+    SETENV("PORT_SEED", "sixteen");
     seed_reload_env();
     CHECK(!seed_active());
-    setenv("PORT_SEED", "", 1);
+    SETENV("PORT_SEED", "");
     seed_reload_env();
     CHECK(!seed_active());
-    unsetenv("PORT_SEED");
+    SETENV("PORT_SEED", "");
     seed_reload_env();
     CHECK(!seed_active());
     seed_set(0, 0);
