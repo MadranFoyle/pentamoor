@@ -3,8 +3,8 @@
  * colour-remap lookups.
  *
  * MAGIC.EXE 0x00471c32 / 0x00473cc5 / 0x0041d9d2 / 0x0041d963, DUEL.EXE 0x0048a33f / 0x0048c367 /
- * 0x004af7bb / 0x004af74c. Written from the decompiled bodies (identical in both programs apart
- * from addresses). The decompiler's names for three of them were wrong. Card_IsInPlay was Card_IsTapped,
+ * 0x004af7bb / 0x004af74c. Reimplements the original's functions (identical in both programs apart
+ * from addresses), checked against the original running. The names first given to three of them were wrong. Card_IsInPlay was Card_IsTapped,
  * but recorded calls show it returns 1 for flags 0x30882 (untapped) and 0x30892 (the same plus the tap
  * bit) and 0 only for cards not in play: it ignores tapping. The two remap lookups were Card_UntapCard /
  * Card_SetTapState (MAGIC) and Duel_GetCardModifiedPower / Duel_GetCardColorOverride (DUEL); they are named

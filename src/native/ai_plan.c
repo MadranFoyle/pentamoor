@@ -10,9 +10,9 @@
  * 256-entry arrays of dwords (choice, packed slot, card index, mode), indexed by one shared cursor. A choice of 99
  * means "no recorded choice". Not here: Ai_BeginTrial, which calls the 0xb640-byte game-state restore.
  *
- * Written from the decompiled bodies. Ai_ReplayChoice also executes `if (best_mode[cursor] != mode) mode |= 0x100`
- * just before it clears `mode`; the decompiler drops that dead store and so does this code (the final memory is the
- * same). Compares of the cursor are signed (jge/jle in the binary).
+ * Reimplements the original's functions at the addresses above, checked against the original running. Ai_ReplayChoice also
+ * executes `if (best_mode[cursor] != mode) mode |= 0x100` just before it clears `mode`; that store is dead and this code
+ * leaves it out (the final memory is the same). Compares of the cursor are signed (jge/jle in the binary).
  */
 #include "engine.h"
 

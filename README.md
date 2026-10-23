@@ -210,7 +210,7 @@ Pentamoor's own source is under the [MIT license](LICENSE) (copyright Ben Royse)
 
 Pentamoor started as a fork of [benprew/microprose-shandalar-source](https://github.com/benprew/microprose-shandalar-source), whose Ghidra decompilation work
 (the decompiled C of the game's programs, the renamed functions, and the scripts that produced them) was the starting point for understanding the game.
-That material has been removed from the tree, and nothing here depends on it any more: the lifter reads the game's own executables. The tools that only
+Where each part of the code comes from is in [docs/notes/provenance.md](docs/notes/provenance.md). That material has been removed from the tree, and nothing here depends on it any more: the lifter reads the game's own executables. The tools that only
 worked on it (the one that paired the two programs' functions by their decompiled bodies, the name-duplicate audit, two helpers of the lifter's test harness) went with
 it, and the maintainer keeps a private copy outside the repository. This repository begins from a copy of the finished tree, so its own history does not contain that material; the earlier history stays in the maintainer's previous repository and is not part of this one. The notes in `docs/` were written while it was in the tree, so they mention its file names, the generated names a decompiler gives
 (`FUN_00401000` and the like) and its symbol maps; those refer to the removed material.
