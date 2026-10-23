@@ -50,9 +50,9 @@ FACE_LEAVE = (395, 160)             # FaceMaker's "Leave" button at 1024x768 (wh
 # the start (no encounter before the script wants one; the script also keeps the monsters off the map with pokes),
 # and a village, a tower, a castle and a world magic exist (the steps that put the party on each find the nearest). The line says what else is special about the world.
 PINNED = {
-    2: "candidate",
-    7: "candidate",
-    21: "candidate",
+    8: "start (35,39), a village three tiles from the party (the first steps east walk into it); a hand of seven (digest `hand` 90deb70b62b2) that plays a land, casts a creature and attacks within 11 passes",
+    4: "start (36,40) with open ground round it; a hand (eb9403a13451) that needs 18 passes to get an attack, the longest of the three (which is what the 200 life the script gives itself is for)",
+    9: "start (37,32); a hand (f685f2a0dcf9) that casts and attacks within 5 passes, the shortest duel of the three",
 }
 SCAN_PLACE_TILES = 1
 SCAN_MONSTER_TILES = 3
