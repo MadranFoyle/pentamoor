@@ -2,7 +2,7 @@
  * layout.c - addresses of the duel engine's globals and functions in MAGIC.EXE and DUEL.EXE.
  *
  * Every address was read off the machine code of the function that uses it, in both programs, not taken from a
- * symbol name: several of the names a decompiler had given in DUEL.EXE pointed at neighbouring fields.
+ * symbol name: several of the names first given in DUEL.EXE pointed at neighbouring fields.
  */
 #include <string.h>
 

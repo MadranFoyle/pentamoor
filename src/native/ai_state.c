@@ -8,7 +8,7 @@
  * and Ai_PopBoardState are a second snapshot of nearly the same regions in another area, one deep.
  *
  * Each of the four is a list of steps (below), run in the original's order. The lists were read off the machine code of both
- * programs (the two programs' functions were lined up by their code), because the names a decompiler gave these globals are not
+ * programs (the two programs' functions were lined up by their code), because the earlier names given to these globals are not
  * reliable; `docs/SYMBOL_VERIFICATION.md` has what is known of what each region is.
  *
  * Instruction counts: a native function adds to native_cost_extra the number of instructions its original's own code runs, so

@@ -4,7 +4,7 @@
  * MAGIC.EXE 0x00474428 / 0x004744de, DUEL.EXE 0x0048cac9 / 0x0048cb7f. The card-event machinery keeps
  * its "current event" in seven globals (source player and slot, card id, card colour mask, target player
  * and slot, result). Entering a nested event saves them as a frame on a 32-deep stack; leaving restores them.
- * Written from the decompiled bodies; both programs' bodies are identical apart from addresses.
+ * Reimplements the original's functions, checked against the original running; both programs' bodies are identical apart from addresses.
  */
 #include "engine.h"
 
