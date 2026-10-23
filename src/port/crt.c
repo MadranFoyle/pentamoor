@@ -10,6 +10,7 @@
 #include "port.h"
 #include "process.h"
 #include "sched.h"
+#include "seed.h"
 
 #define P(a) ((char *)(G + (a)))
 #define U8(a) (*(uint8_t *)(G + (a)))
@@ -244,17 +245,48 @@ static uint32_t crt_itoa(const uint32_t *a)
 }
 
 /* ---- random numbers and the clock: the C runtime's own generator, so a seeded game repeats ------------------------------------------- */
+/* PORT_SEED (seed.h): which part of the game asked for a number. The game's functions are a debug build's (push ebp, mov ebp esp), so the saved ebp links the frames and the word above it is a return
+ * address: the key is made of the return addresses of the first three frames (the game's Random(n) and the two functions above it). A chain that stops looking like one ends there. */
+static uint32_t rand_caller(void)
+{
+    uint32_t ebp = lift_out.ebp, key = 0;
+    int depth;
+
+    for (depth = 0; depth < 3 && ebp > 0x10000u && ebp < 0xf0000000u && (ebp & 3) == 0; depth++) {
+        uint32_t next = RD32(ebp);
+
+        key = key * 0x9e3779b1u + RD32(ebp + 4) + 1;
+        if (next <= ebp)                                   /* the stack grows down: the caller's frame is above */
+            break;
+        ebp = next;
+    }
+    return key;
+}
 static uint32_t crt_rand(const uint32_t *a)
 {
     (void)a;
+    if (seed_active())
+        return seed_rand(RD32(port_sp), rand_caller());
     rand_seed = rand_seed * 214013u + 2531011u;
     return (rand_seed >> 16) & 0x7fffu;
 }
-static uint32_t crt_srand(const uint32_t *a) { rand_seed = a[0]; return 0; }
+static uint32_t crt_srand(const uint32_t *a)
+{
+    if (seed_active()) {
+        uint32_t site = RD32(port_sp), base = seed_srand(site);
+
+        fprintf(stderr, "seed: srand(%u) from 0x%x: replaced, the streams start from 0x%08x\n", a[0], site, base);
+        return 0;
+    }
+    rand_seed = a[0];
+    return 0;
+}
 static uint32_t crt_clock(const uint32_t *a)
 {
+    uint32_t ms = (uint32_t)(port_now() * 1000.0);        /* milliseconds since the program started, by the wall clock (the host's clock() counts CPU time) */
+
     (void)a;
-    return (uint32_t)(port_now() * 1000.0);        /* milliseconds since the program started, by the wall clock (the host's clock() counts CPU time) */
+    return seed_active() ? seed_clock(ms) : ms;
 }
 static uint32_t crt_time(const uint32_t *a)
 {

@@ -33,6 +33,13 @@ GOLD, FOOD, HOVER, UI_CTX, PARTY_X, PARTY_Y = 0x522444, 0x522448, 0x519ff4, 0x51
 MONSTERS, LOCATIONS, DUNGEONS = 0x67f2d0, 0x67bdf0, 0x67f000
 K_CARD, K_BUTTON, K_ROW, K_MENU = 1, 2, 4, 9
 
+# The seeds the script is played with (PORT_SEED, src/port/seed.h; docs/notes/controller.md, "A repeatable run"). The new game of each starts the party on open ground.
+PINNED = {
+    4: "the party starts beside a monster: the first encounter is a text menu of two lines (Duel or Pay), so the encounter step's checks run (world start 36,40)",
+    5: "an encounter at the start too, in another world (35,40); the village, the world map, the clues and the stats are reached from it",
+    8: "an encounter at the start, a world whose start is 3 tiles from a village (35,39): the same checks, a third world",
+}
+
 failures = 0
 
 
@@ -208,36 +215,15 @@ def title_and_newgame(s):
     g.pad_press("x")                                   # Enter accepts the name
     s.wait(12)
     s.quiet = True
-    for attempt in range(4):
-        mode, tl = s.wait_nav(lambda m, t: m == "screen" and t and t[0].label == "line 0", 14)
-        if mode == "screen" and len(tl) == 1:
-            print("NOTE  the first encounter is a forced duel (one line): starting again (%d)" % (attempt + 1), flush=True)
-            restart_quick(s)
-        else:
-            break
-
-
-def restart_quick(s):
-    """Stop the game and start a new one by clicking the table's buttons (no checks): for a start that was a forced duel."""
-    g = s.g
-    g.stop()
-    g.start()
-    s.quiet = False
-    s.wait(10)
-    for k in (0, 0, 0, 0):
-        mode, tl = s.wait_nav(is_screen(1), 10)
-        t = sorted(tl, key=lambda t: (t.y0, t.x0))[0]
-        g.click(*t.center)
-        s.wait(3)
-    g.key("return")
-    s.wait(12)
-    s.quiet = True
+    mode, tl = s.wait_nav(lambda m, t: m == "screen" and t and t[0].label == "line 0", 30)
+    if mode == "screen" and len(tl) == 1:
+        check(False, "the pinned seed's first encounter is a forced duel (one line): another seed, see PINNED")
 
 
 def encounter(s):
     mode, tl = s.wait_nav(lambda m, t: m == "screen" and len(t) == 2 and t[0].label == "line 0", 6)
     if mode != "screen" or len(tl) != 2:
-        print("NOTE  no encounter at the start this time: not checked", flush=True)
+        check(False, "the pinned seed's start has an encounter (a text menu of two lines): %s, %d targets (PINNED lists the seeds that have one)" % (mode, len(tl)))
         return
     s.shot("encounter")
     gold = s.gold()
@@ -542,7 +528,19 @@ def main():
     ap.add_argument("--workdir", default="/tmp/screen_nav_play")
     ap.add_argument("--shots")
     ap.add_argument("--only", help="comma separated: title is always run first; the village, worldmap, clues and stats go together")
+    ap.add_argument("--seed", help="PORT_SEED for the run(s), comma separated (default: the PINNED seeds, one whole run each)")
     a = ap.parse_args()
+    base = a.workdir
+    for seed in [int(x) for x in a.seed.split(",")] if a.seed else sorted(PINNED) or [1]:
+        os.environ["PORT_SEED"] = str(seed)
+        a.workdir = os.path.join(base, "seed%d" % seed)
+        print("=== seed %d: %s" % (seed, PINNED.get(seed, "(not a pinned seed)")), flush=True)
+        play(a)
+    print("%d failed" % failures)
+    return 1 if failures else 0
+
+
+def play(a):
     s = Session(a)
     only = set(a.only.split(",")) if a.only else None
     try:
@@ -556,8 +554,6 @@ def main():
                 break
     finally:
         s.g.stop()
-    print("%d failed" % failures)
-    return 1 if failures else 0
 
 
 if __name__ == "__main__":

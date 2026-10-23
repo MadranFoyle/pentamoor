@@ -30,6 +30,10 @@ import soak  # noqa: E402
 from pentamoor_ctl import Game  # noqa: E402
 
 REPO = nav_play.REPO
+# The seeds the checks are run with (--seed; tools/soak/nav_play.py has the table of what each deals)
+PINNED = {
+}
+
 failures = 0
 
 
@@ -220,6 +224,12 @@ def duel_checks(g, res, shots):
     g.cmd("move %d %d" % x.center)                                   # back on the first: the game's own hover shows it after its wait
     nav_play.settled_crop(nv, box, "hover_wait", limit=16.0)
     by_hover = v.big_hash(box)
+    if by_hover != by_button:                                         # the game's hover can still be on the other card for a moment (seen once in ten runs): once more, from the other card
+        g.cmd("move %d %d" % second.center)
+        time.sleep(0.5)
+        g.cmd("move %d %d" % x.center)
+        nav_play.settled_crop(nv, box, "hover_wait", limit=16.0)
+        by_hover = v.big_hash(box)
     check(by_button != other and by_hover == by_button, "the picture LB gives is the one the game's own hover gives after its wait (%s, %s)" % (by_button, by_hover))
 
     # ---- a pointer on no card: Page Up, and V and the middle button do nothing ----
@@ -385,10 +395,11 @@ def main():
     ap.add_argument("--res", default="1024x768", choices=["640x480", "800x600", "1024x768"])
     ap.add_argument("--workdir", default="/tmp/card_view")
     ap.add_argument("--shots", default=None, help="keep the window pictures here (they show the game: never commit them)")
-    ap.add_argument("--seed", type=int, default=5)
+    ap.add_argument("--seed", type=int, default=5, help="the script's own choices, and PORT_SEED for the game (src/port/seed.h): the same seed plays the same duel")
     ap.add_argument("--game", choices=["magic", "duel"], default="magic", help="magic: MAGIC.EXE's saved game; duel: DUEL.EXE's setup dialog")
     ap.add_argument("--deck", action="store_true", help="also check DECK.EXE, the stand-alone deck builder")
     a = ap.parse_args()
+    os.environ["PORT_SEED"] = str(a.seed)               # the game's own chance (src/port/seed.h) is pinned too: the same seed deals the same cards
     os.environ["PORT_PAD_LOG"] = "stderr"
     os.makedirs(a.workdir, exist_ok=True)
     p = nav_play.Player(a)
