@@ -224,6 +224,12 @@ def duel_checks(g, res, shots):
     g.cmd("move %d %d" % x.center)                                   # back on the first: the game's own hover shows it after its wait
     nav_play.settled_crop(nv, box, "hover_wait", limit=16.0)
     by_hover = v.big_hash(box)
+    if by_hover != by_button:                                         # the game's hover can still be on the other card for a moment (seen once in ten runs): once more, from the other card
+        g.cmd("move %d %d" % second.center)
+        time.sleep(0.5)
+        g.cmd("move %d %d" % x.center)
+        nav_play.settled_crop(nv, box, "hover_wait", limit=16.0)
+        by_hover = v.big_hash(box)
     check(by_button != other and by_hover == by_button, "the picture LB gives is the one the game's own hover gives after its wait (%s, %s)" % (by_button, by_hover))
 
     # ---- a pointer on no card: Page Up, and V and the middle button do nothing ----

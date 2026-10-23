@@ -107,8 +107,8 @@ class Session(base.Session):
         """A new game process; `seed`: a folder copied to be its overlay (the saves of an earlier process)."""
         ext = "dylib" if sys.platform == "darwin" else "so"
         wd = os.path.join(self.wd, name)
-        self.g = Game(REPO, res=self.res, workdir=wd, exe="src/port/build/pentamoor-run", program="sources/installed_sota/Magic/Program/shandalar.exe",
-                      module=os.path.join(REPO, "src/port/build", "game_shandalar." + ext), overlay_seed=seed, extra_env=dict({"PORT_PAD_LOG": "stderr"}, **self.extra_env))
+        self.g = Game(REPO, res=self.res, workdir=wd, exe="src/port/build/pentamoor-run", program=os.path.join(os.environ.get("PENTAMOOR_SOTA") or "sources/installed_sota/Magic/Program", "shandalar.exe"),
+                      module=os.environ.get("PENTAMOOR_MODULE") or os.path.join(REPO, "src/port/build", "game_shandalar." + ext), overlay_seed=seed, extra_env=dict({"PORT_PAD_LOG": "stderr"}, **self.extra_env))
         return self.g
 
     # ---- the monsters ------------------------------------------------------------------------------------------------
@@ -134,6 +134,7 @@ class Session(base.Session):
 
     def teleport(self, tx, ty):
         """The party on tile (tx, ty), the map told to draw itself whole (sota_soak.teleport_pokes), no monster near."""
+        party_still(self)                                 # a party that is still walking (after a click that ended a screen) would walk out of the place it is put on
         self.keeper_on.clear()
         self.clear_monsters()
         self.g.poke(GOLD, max(self.mem(GOLD)[0], 400))
@@ -365,6 +366,7 @@ def to_map(s, tries=8):
     seed does not), so every step that waits on the map can find one."""
     for _ in range(tries):
         s.clear_monsters()
+        party_still(s)                                    # a click that ends a screen walks the party towards the pointer for a few seconds (see saveload): nothing is read or poked until it stands
         mode, tl = s.settled()
         if is_village(mode, tl):
             s.press_target(leave_button(s), 4)
@@ -643,8 +645,8 @@ def enter_village(s):
     """The party put on the nearest village (a poke): its screen of nine buttons. A monster can be at the gate first (its menu is dealt with and the same village tried again, twice, then the next one)."""
     for attempt in range(6):
         to_map(s)
-        vil = [p for p in s.places() if p[0] == 1]
         t = s.tile()
+        vil = [p for p in s.places() if p[0] == 1 and max(abs(p[1] - t[0]), abs(p[2] - t[1])) > 1]       # not the one the party stands at (put there, it would not walk in)
         vil.sort(key=lambda p: (p[1] - t[0]) ** 2 + (p[2] - t[1]) ** 2)
         v = vil[min(attempt // 2, len(vil) - 1)]
         s.teleport(v[1], v[2])
@@ -654,6 +656,7 @@ def enter_village(s):
             mode, tl = s.wait_mode(("screen",), 6, 9)
         if is_village(mode, tl):
             return True
+        print("      the party put on the village at %s did not enter it: mode %s, %d targets, party now at %s (pixel %s)" % ((v[1], v[2]), mode, len(tl), s.tile(), s.pix()), flush=True)
     return False
 
 
@@ -1037,7 +1040,7 @@ def play_duel(s):
     for t in tl:
         kinds[t.kind] = kinds.get(t.kind, 0) + 1
     check(len(tl) >= 30 and all(k in kinds for k in (1, 2, 5, 6, 7, 8)), "the board: %d targets (cards, Done, life totals, piles, mana rows, phase icons: kinds %s)" % (len(tl), sorted(kinds)))
-    st = {"land": False, "cast": False, "attack": False, "pass": 0}
+    st = {"land": False, "cast": False, "attack": False, "pass": 0, "skip": 0}
     lost = 0
     t_end = time.time() + 1500
     while time.time() < t_end and not (st["land"] and st["cast"] and st["attack"]) and st["pass"] < 30:
@@ -1081,8 +1084,10 @@ def play_duel(s):
             cur, _ = bar_title(g)
             if "casting" in cur.lower() or "activating" in cur.lower() or "target" in cur.lower() or cur.lower().startswith(("pick", "select")):
                 s.tap("back", 1.0)                         # not paid, or it wants a target there is none for (an aura with no creature): cancelled, not counted
+                st["skip"] += 1
             else:
                 st["cast"] = True
+                st["skip"] = 0
             continue
         if "attackers" in low:
             if mine and not st["attack"]:
@@ -1094,7 +1099,14 @@ def play_duel(s):
             continue
         if "main phase" in low and done is not None:
             n0 = len(mine)
-            for hc in list(reversed(hand))[:7]:
+            cards = list(reversed(hand))[st["skip"]:7]                  # the cards that could not be cast this phase are not tried again: the phase is passed when none is left
+            if not cards and done is not None:
+                s.stick_press(target_of(done), 2.5)
+                st["pass"] += 1
+                st["skip"] = 0
+                st["skip"] = 0
+                continue
+            for hc in cards:
                 s.stick_press(target_of(hc), 1.5)
                 cur, t3 = bar_title(g)
                 if t3 is None:
@@ -1110,16 +1122,20 @@ def play_duel(s):
             if "casting" not in cur.lower() and t3 is not None:
                 if len(my_permanents(t3)) > n0:
                     st["land"] = True
+                    st["skip"] = 0
                 b3 = t3.bar()
                 if b3 and b3[2]:
                     s.stick_press(target_of(b3[2]), 2.5)
                     st["pass"] += 1
+                    st["skip"] = 0
             continue
         if done is not None:
             s.stick_press(target_of(done), 2.5)
             st["pass"] += 1
+            st["skip"] = 0
             continue
         s.wait(1)
+    print("      the play ended: %s, %d passes, %d s, last bar %r" % ("program gone" if not g.alive() else "all done" if (st["land"] and st["cast"] and st["attack"]) else "out of time or windows" if lost > 3 or time.time() >= t_end else "passes", st["pass"], 1500 - (t_end - time.time()), title if "title" in dir() else ""), flush=True)
     s.shot("duel_played")
     check(st["land"], "a land was played with A on a card of the hand")
     for key, what in (("cast", "a creature was cast: A on it, then A on my lands to pay (the prompt went away)"), ("attack", "an attack was declared: A on my creatures, then Done")):

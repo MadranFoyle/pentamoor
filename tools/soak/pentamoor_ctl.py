@@ -151,6 +151,9 @@ class Game:
         self.workdir = workdir or tempfile.mkdtemp(prefix="soak-")
         os.makedirs(self.workdir, exist_ok=True)
         self.exe = os.environ.get("PENTAMOOR_RUN") or os.path.join(repo, exe)          # the launcher's variables: another runtime, another game module
+        game = os.environ.get("PENTAMOOR_GAME")                 # the launcher's variable: the folder that holds MAGIC.EXE
+        if game and program == "sources/installed/Magic/Program/MAGIC.EXE":
+            program = os.path.join(game, "MAGIC.EXE")
         self.program = os.path.join(repo, program)
         # the game module (the library made from the lifted C) the runtime loads: game_magic / game_deck / game_duel next to it, by the program's name
         ext = "dylib" if sys.platform == "darwin" else "so"
