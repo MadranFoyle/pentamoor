@@ -16,7 +16,7 @@ The archive pentamoor-<version>-<platform>.zip (Windows) or .tar.gz (platform: w
     tools/install, tools/lift      the installer and the lifter (Python; it finds the game's functions in the game's own code), tools/pydeps: pefile and capstone for this platform
     tools/local/ziglang            Windows: the Zig compiler, so the game modules can be built on a machine with none (--bundle-zig)
     src/native, src/port           the headers and the glue files a game module is compiled with, and the stub module of --self-test
-    README.txt, NOTICE.txt, VERSION, SHA256SUMS
+    README.txt, NOTICE.txt, LICENSE, VERSION, SHA256SUMS
 
 and never anything made from the game: check_archive.py looks for that. Needs network only for --embed-python, --bundle-zig and --fetch-pydeps.
 """
@@ -151,6 +151,8 @@ def stage_files(stage, platform, version, runtime, libs, licenses, pydeps, fetch
     write_text(os.path.join(stage, "README.txt"), readme, win)
     with open(os.path.join(HERE, "NOTICE.txt")) as f:
         write_text(os.path.join(stage, "NOTICE.txt"), f.read(), win)
+    with open(os.path.join(HERE, "..", "..", "LICENSE")) as f:
+        write_text(os.path.join(stage, "LICENSE"), f.read(), win)
     write_text(os.path.join(stage, "VERSION"), version + "\n", win)
     if win:
         for name in ("pentamoor.bat", "pentamoor-install.bat"):             # cmd.exe mis-reads labels in a file with LF-only lines

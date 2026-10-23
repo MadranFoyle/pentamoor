@@ -24,8 +24,8 @@ owners. Pentamoor is not affiliated with or endorsed by them. This is preservati
 
 Licences of what is bundled
 ---------------------------
-Pentamoor's own source has no licence file in its repository; it is published for reading and for
-building from your own copy of the game. See https://github.com/MadranFoyle/pentamoor.
+Pentamoor's own source is under the MIT license (the file LICENSE in this download and in the repository,
+https://github.com/MadranFoyle/pentamoor). It does not cover the game or anything made from it.
 
 Third-party files carried in this download (where present; the licence texts are in licenses/ or beside
 the files):
