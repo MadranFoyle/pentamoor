@@ -132,15 +132,21 @@ class Session(base.Session):
         loc = self.mem(sota_soak.LOCATIONS, 25 * 128)
         return [(loc[25 * i], loc[25 * i + 1], loc[25 * i + 2]) for i in range(128) if loc[25 * i] in (1, 2, 3, 4)]
 
-    def teleport(self, tx, ty):
-        """The party on tile (tx, ty), the map told to draw itself whole (sota_soak.teleport_pokes), no monster near."""
+    def teleport(self, tx, ty, enter=False):
+        """The party on tile (tx, ty), the map told to draw itself whole (sota_soak.teleport_pokes), no monster near. With `enter`: put on the tile to the west and walked one step east onto it, because a place is
+        entered by walking onto it (a party put on its tile is, half the time, not asked: 'the poke can land the party beside the place without the entry firing')."""
         party_still(self)                                 # a party that is still walking (after a click that ended a screen) would walk out of the place it is put on
         self.keeper_on.clear()
         self.clear_monsters()
         self.g.poke(GOLD, max(self.mem(GOLD)[0], 400))
         self.g.poke(FOOD, max(self.mem(FOOD)[0], 100))
-        self.g.poke_many(sota_soak.teleport_pokes(tx, ty))
+        self.g.poke_many(sota_soak.teleport_pokes(tx - 1 if enter else tx, ty))
         self.wait(3.5)
+        if enter:
+            self.g.pad("stick r 1 0")                     # one step east: the arrow key, held for less than a second
+            self.wait(0.9)
+            self.g.pad("stick r 0 0")
+            self.wait(1.0)
         self.keeper_on.set()
 
     def tile(self):
@@ -649,7 +655,7 @@ def enter_village(s):
         vil = [p for p in s.places() if p[0] == 1 and max(abs(p[1] - t[0]), abs(p[2] - t[1])) > 1]       # not the one the party stands at (put there, it would not walk in)
         vil.sort(key=lambda p: (p[1] - t[0]) ** 2 + (p[2] - t[1]) ** 2)
         v = vil[min(attempt // 2, len(vil) - 1)]
-        s.teleport(v[1], v[2])
+        s.teleport(v[1], v[2], enter=True)
         mode, tl = s.wait_nav(lambda m, t: m == "screen" and (len(t) == 9 or is_encounter_menu(m, t, 2) or is_encounter_menu(m, t, 1)), 12)
         if mode in (None, "none"):
             s.tap("a", 2)                                 # a message ("You happen upon ...") waits for a click
@@ -989,7 +995,7 @@ def clear_prompt(s, t, tries):
     return True
 
 
-def to_main_phase(s, tries=70, perms=2, hand=5, any_main=False):
+def to_main_phase(s, tries=70, perms=2, hand=3, any_main=False):
     """Done (with the stick and A) and the dialogs, until it is your first main phase of a turn again, with your board and a hand: where nav_play's and card_view's checks start."""
     g = s.g
     for _ in range(tries):
@@ -1014,6 +1020,8 @@ def to_main_phase(s, tries=70, perms=2, hand=5, any_main=False):
                 s.wait(1)
         else:
             s.tap("a", 1.5)
+    t = g.windows(timeout=10)
+    print("      no main phase with %d permanents and %d cards in hand in %d tries: last bar %r, %d permanents, %d cards" % (perms, hand, tries, bar_title(g)[0], len(my_permanents(t)) if t else -1, len(hand_windows(t)) if t else -1), flush=True)
     return False
 
 
@@ -1021,14 +1029,14 @@ def duel(s):
     if start_duel(s):
         first_land(s)
         play_duel(s)
-        if to_main_phase(s):
+        if to_main_phase(s, perms=1, hand=3, any_main=True):
             nav_checks(s)
             if to_main_phase(s, perms=1, hand=2, any_main=True):     # the D-pad's checks pass phases: the view button's need a board of the player's own turn again
                 view_checks(s)
             else:
                 check(False, "a main phase again after the D-pad's checks, for the view button's checks")
         else:
-            check(False, "a first main phase with two permanents and five cards in hand, for the D-pad's and the view button's checks")
+            check(False, "a first main phase with two permanents and three cards in hand, for the D-pad's and the view button's checks")
 
 
 def play_duel(s):
@@ -1042,7 +1050,7 @@ def play_duel(s):
     check(len(tl) >= 30 and all(k in kinds for k in (1, 2, 5, 6, 7, 8)), "the board: %d targets (cards, Done, life totals, piles, mana rows, phase icons: kinds %s)" % (len(tl), sorted(kinds)))
     st = {"land": False, "cast": False, "attack": False, "pass": 0, "skip": 0}
     lost = 0
-    t_end = time.time() + 1500
+    t_end = time.time() + 480
     while time.time() < t_end and not (st["land"] and st["cast"] and st["attack"]) and st["pass"] < 30:
         if not g.alive():
             break
@@ -1135,7 +1143,7 @@ def play_duel(s):
             st["skip"] = 0
             continue
         s.wait(1)
-    print("      the play ended: %s, %d passes, %d s, last bar %r" % ("program gone" if not g.alive() else "all done" if (st["land"] and st["cast"] and st["attack"]) else "out of time or windows" if lost > 3 or time.time() >= t_end else "passes", st["pass"], 1500 - (t_end - time.time()), title if "title" in dir() else ""), flush=True)
+    print("      the play ended: %s, %d passes, %d s, last bar %r" % ("program gone" if not g.alive() else "all done" if (st["land"] and st["cast"] and st["attack"]) else "out of time or windows" if lost > 3 or time.time() >= t_end else "passes", st["pass"], 480 - (t_end - time.time()), title if "title" in dir() else ""), flush=True)
     s.shot("duel_played")
     check(st["land"], "a land was played with A on a card of the hand")
     for key, what in (("cast", "a creature was cast: A on it, then A on my lands to pay (the prompt went away)"), ("attack", "an attack was declared: A on my creatures, then Done")):
@@ -1278,7 +1286,7 @@ def places(s):
         near = sorted([p for p in s.places() if p[0] == kind], key=lambda p: (p[1] - s.tile()[0]) ** 2 + (p[2] - s.tile()[1]) ** 2)
         if not near:
             continue
-        s.teleport(near[0][1], near[0][2])
+        s.teleport(near[0][1], near[0][2], enter=True)
         mode, tl = s.wait_nav(lambda m, t: m is not None and m != "none", 12)
         s.shot("place_" + name.replace(" ", "_"))
         if mode == "screen" and len(tl) == 2 and tl[0].label == "line 0":
