@@ -382,6 +382,9 @@ def to_map(s, tries=8):
             forced_duel(s)
         elif is_page(mode, tl):                           # a page with Done only (the cards taken, a clue)
             s.press_target(lambda tl: tl[0], 3)
+        elif mode == "screen" and len(tl) > 2 and all(t.kind == K_MENU for t in tl):      # a text menu that is not a monster's (the village's quest menu, the map's own): Back closes it
+            print("      a text menu of %d lines on the map: closed with Back" % len(tl), flush=True)
+            s.tap("back", 1.5)
         elif mode == "dialog" and tl:                    # a message box of the game (a warning about food or the deck, ...): its button
             print("      a dialog on the map: %s" % [t.label for t in tl if t.kind == K_BUTTON], flush=True)
             s.shot("map_dialog")
@@ -931,6 +934,7 @@ def start_duel(s):
     s.shot("duel")
     if started:
         digest("hand", hand_hash(s))
+        s.g.poke(LIVES, 200)                              # the script passes phases and does not block: sixteen turns of the opponent's creatures would end the duel (and the board the D-pad's checks need)
     check(started, "the duel started: the board's targets (dialogs answered with the D-pad and A: %s)" % [x for x in said if x])
     return started
 
