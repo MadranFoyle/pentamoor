@@ -137,9 +137,15 @@ int wm_inject_mouse(int kind, int x, int y)
     int x0, y0, x1, y1, lx, ly, dbl = 0;
     uint32_t msg, keys;
 
-    if (kind == IN_WHEEL) {                            /* only the list of a combo box that is down uses the wheel */
-        if (wm_combo_open())
+    if (kind == IN_WHEEL) {                            /* the list of a combo box that is down, and a multi-line edit box under the pointer, use the wheel */
+        if (wm_combo_open()) {
             wm_combo_wheel(y);
+        } else {
+            Window *under = wm_window(window_at(wm_cursor_x, wm_cursor_y));
+
+            if (under && !under->proc && wm_edit_is_multiline(under))
+                wm_edit_wheel(under, y);
+        }
         return 1;
     }
     wm_cursor_x = x;
@@ -171,6 +177,8 @@ int wm_inject_mouse(int kind, int x, int y)
         }
     }
     h = wm_get_capture();
+    if (!h && (kind == IN_MOVE || kind == IN_UP))
+        h = wm_edit_dragging();                        /* a selection being dragged in an edit box follows the pointer out of it */
     if (!h) {
         h = window_at(x, y);
         if (kind == IN_UP && press_target) {
@@ -234,8 +242,17 @@ int wm_inject_mouse(int kind, int x, int y)
             wm_spin_click(tw, ly < (y1 - y0) / 2);
         return 1;
     }
-    if (!tw->proc && !strcasecmp(tw->cname, "EDIT") && tw->enabled && kind == IN_DOWN)
-        wm_set_focus(tw->hwnd);                                    /* a click puts the focus in an edit box (the keys go to it from then on) */
+    if (!tw->proc && !strcasecmp(tw->cname, "EDIT") && tw->enabled && !own_mouse_control(tw)) {
+        if (kind == IN_DOWN)
+            wm_set_focus(tw->hwnd);                                /* a click puts the focus in an edit box (the keys go to it from then on) */
+        if (kind == IN_DOWN || kind == IN_MOVE || kind == IN_UP)
+            wm_edit_mouse(tw, kind, x, y, wm_keys[0x10] != 0);    /* ... and the caret where it landed; a drag selects */
+    } else if (kind == IN_DOWN && (!tw->proc || tw->subclassed) && (!strcasecmp(tw->cname, "BUTTON") || !strcasecmp(tw->cname, "COMBOBOX") || !strcasecmp(tw->cname, "LISTBOX"))) {
+        Window *f = wm_window(wm_get_focus());
+
+        if (f && wm_edit_is_edit(f) && !f->proc && f != tw)
+            wm_set_focus(tw->hwnd);                                /* a button or list pressed takes the focus from an edit box, which stops showing a caret and taking keys */
+    }
     if ((!tw->proc || tw->subclassed) && !strcasecmp(tw->cname, "BUTTON")) {        /* a built-in push button (one the program only subclassed too): click = WM_COMMAND */
         if (!tw->enabled) {                                      /* a disabled control gets no mouse */
             press_hwnd = 0;
@@ -326,6 +343,26 @@ int wm_inject_key(uint32_t vk, uint32_t scancode, int down, int ch, int repeat)
                 wm_post(hdlg, WM_COMMAND, 1, 0);
             return 1;
         }
+        /* an edit box of the dialog that has the focus takes the keys that type (not Enter, Esc or Tab: those are the dialog's) */
+        {
+            Window *f = wm_window(wm_get_focus()), *dw = wm_window(hdlg);
+
+            if (f && dw && wm_edit_is_edit(f) && !f->proc && f->parent == hdlg && f->visible && f->enabled && !dw->own_keys && !dw->own_mouse && vk != 0x1B && vk != 0x0D && vk != 0x09) {
+                if (down) {
+                    if (vk < 256)
+                        wm_keys[vk] = 1;
+                    wm_edit_note_key(f->hwnd, vk, wm_keys[0x10] != 0, wm_keys[0x11] != 0 || wm_keys[0x5B] != 0 || wm_keys[0x5C] != 0);
+                    wm_post(f->hwnd, WM_KEYDOWN, vk, 1 | sc | (repeat ? 0x40000000u : 0));
+                    if (ch >= 0)
+                        wm_post(f->hwnd, WM_CHAR, (uint32_t)ch, 1 | sc | (repeat ? 0x40000000u : 0));
+                } else {
+                    if (vk < 256)
+                        wm_keys[vk] = 0;
+                    wm_post(f->hwnd, WM_KEYUP, vk, 0xC0000001u | sc);
+                }
+                return 1;
+            }
+        }
         /* a key of a modal dialog is for the dialog (a dialog without such buttons reads Space and Esc itself as characters) */
         if (down) {
             wm_post(hdlg, WM_KEYDOWN, vk, 1 | sc | (repeat ? 0x40000000u : 0));
@@ -339,6 +376,8 @@ int wm_inject_key(uint32_t vk, uint32_t scancode, int down, int ch, int repeat)
     h = wm_key_target();
     if (!h)
         return 0;
+    if (down && wm_edit_is_edit(wm_window(h)))
+        wm_edit_note_key(h, vk, wm_keys[0x10] != 0, wm_keys[0x11] != 0 || wm_keys[0x5B] != 0 || wm_keys[0x5C] != 0);
     if (down) {
         if (vk < 256)
             wm_keys[vk] = 1;

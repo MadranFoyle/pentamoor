@@ -1068,8 +1068,24 @@ static uint32_t GetClassNameA(const uint32_t *a)
     return (uint32_t)n;
 }
 
-static uint32_t SetFocus(const uint32_t *a) { uint32_t old = focus_hwnd; focus_hwnd = a[0]; return old; }
-void wm_set_focus(uint32_t hwnd) { focus_hwnd = hwnd; wm_dirty = 1; }
+/* The keyboard focus moves: an edit box that loses it hides its selection and one that gains it selects its text (the box's own business, edit.c; the program is not sent a message). */
+static void focus_to(uint32_t hwnd)
+{
+    uint32_t old = focus_hwnd;
+
+    if (old == hwnd)
+        return;
+    focus_hwnd = hwnd;
+    wm_dirty = 1;
+    if (old && wm_window(old) && wm_edit_is_edit(wm_window(old)))
+        wm_edit_focus(wm_window(old), 0);
+    if (hwnd && wm_window(hwnd) && wm_edit_is_edit(wm_window(hwnd)))
+        wm_edit_focus(wm_window(hwnd), 1);
+}
+
+static uint32_t SetFocus(const uint32_t *a) { uint32_t old = focus_hwnd; focus_to(a[0]); return old; }
+void wm_set_focus(uint32_t hwnd) { focus_to(hwnd); wm_dirty = 1; }
+uint32_t wm_get_focus(void) { return focus_hwnd; }
 static uint32_t GetFocus(const uint32_t *a) { (void)a; return focus_hwnd; }
 static uint32_t SetActiveWindow(const uint32_t *a) { active_hwnd = a[0]; return 0; }
 static uint32_t SetCapture(const uint32_t *a) { capture_hwnd = a[0]; return 0; }
@@ -1083,6 +1099,7 @@ static uint32_t SetWindowTextA(const uint32_t *a)
     if (w) {
         free(w->title);
         w->title = strdup(P(a[1]));
+        wm_edit_reset(w);
     }
     return 1;
 }
@@ -1525,8 +1542,8 @@ int wm_text_focus(void)
 
     if (!d) {
         f = wm_window(focus_hwnd);
-        if (!f || f->proc || !f->visible || !f->enabled || !f->cname || strcasecmp(f->cname, "EDIT"))
-            return 0;
+        if (!f || f->proc || !f->visible || !f->enabled || !f->cname || strcasecmp(f->cname, "EDIT") || (f->style & ES_READONLY))
+            return 0;                                       /* (a read-only box takes no typing: no on-screen keyboard for it) */
         for (i = 0, f = wm_window(f->parent); f && i < 16; i++, f = wm_window(f->parent))
             if (!f->visible)
                 return 0;

@@ -37,6 +37,11 @@ int front_take_frame(uint8_t *rgb, unsigned *seen);
 /* The game has ended: the window half stops. */
 int front_finished(void);
 
+/* The clipboard (the edit boxes' Ctrl+C, X and V): front_sdl.c uses SDL's; without SDL (front_none.c) and in the tests it is a string of the program's own. */
+char *front_clipboard_get(void);                                          /* the text as malloc'ed memory, or NULL for none; free() it */
+void front_clipboard_set(const char *text);
+void front_clipboard_hooks(char *(*get)(void), void (*set)(const char *));   /* the window half's: SDL_GetClipboardText and SDL_SetClipboardText */
+
 int front_text_wanted(void);                                              /* a text field has the focus: the on-screen keyboard may show (steamdeck.h) */
 
 /* ---- the guest side ---- */

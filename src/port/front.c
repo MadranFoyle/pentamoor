@@ -279,6 +279,33 @@ int front_hold_rule(uint32_t held_ms, int mouse, int seen, int ui_active)
 
 /* Text input (steamdeck.h, text_wanted_rule): whether an edit control of the open dialog has the focus (looked at on every serve), and when the game's own name box last asked for a
  * key (textfocus.c). The window half asks front_text_wanted. */
+static char *(*clip_get)(void);
+static void (*clip_set)(const char *);
+static char *own_clip;                                                /* the clipboard when there is no window half to ask (no SDL, the tests): a string of the program's own */
+
+void front_clipboard_hooks(char *(*get)(void), void (*set)(const char *))
+{
+    clip_get = get;
+    clip_set = set;
+}
+
+char *front_clipboard_get(void)
+{
+    if (clip_get)
+        return clip_get();
+    return own_clip ? strdup(own_clip) : NULL;
+}
+
+void front_clipboard_set(const char *text)
+{
+    if (clip_set) {
+        clip_set(text ? text : "");
+        return;
+    }
+    free(own_clip);
+    own_clip = strdup(text ? text : "");
+}
+
 static volatile int edit_focus;
 static volatile uint32_t name_entry_ms;
 
@@ -463,6 +490,7 @@ void front_serve(double max_wait)
                 last_asking = asking;
             }
         }
+        wm_edit_tick();
         if (got || wm_dirty || frame_n == 0 || now - last_compose >= 0.25) {
             static uint8_t scratch[SCREEN_MAX_W * SCREEN_MAX_H * 3];
 
