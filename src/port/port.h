@@ -88,6 +88,8 @@ void imports_report(void);
 uint32_t heap_alloc(uint32_t size);
 void heap_free(uint32_t addr);
 uint32_t heap_size(uint32_t addr);
+uint32_t heap_used_bytes(void);            /* bytes in blocks in use (a test counts them) */
+void heap_log_tick(void);                  /* PORT_HEAP_LOG: the host's own memory on the timer (called by the window's thread) */
 extern volatile int heap_report_request;   /* PORT_CONTROL `heap`: the game's thread prints the heap line at its next allocation (guest.c); PORT_HEAP_LOG=SECONDS prints it on a timer */
 
 extern __thread uint32_t port_sp;

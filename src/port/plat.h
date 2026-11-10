@@ -69,6 +69,9 @@ void plat_guest_commit(uint32_t addr, uint32_t len);
 #define plat_guest_commit(addr, len) ((void)(addr), (void)(len))
 #endif
 
+/* What the host's own allocator (malloc) holds right now: bytes in use and blocks, for PORT_HEAP_LOG. Returns 0 where the host cannot say (Windows), else 1. */
+int plat_host_heap(unsigned long long *bytes, unsigned long long *blocks);
+
 /* The game module (a shared library): the path may be relative. plat_dlopen returns NULL and writes a message into err on failure. */
 void *plat_dlopen(const char *path, char *err, size_t n);
 void *plat_dlsym(void *lib, const char *name);

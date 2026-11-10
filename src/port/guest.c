@@ -6,6 +6,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "gdi.h"
 #include "plat.h"
 #include "port.h"
 
@@ -98,6 +99,33 @@ static long heap_log_s = -1;            /* PORT_HEAP_LOG=SECONDS: a line about t
 static time_t heap_log_last;
 volatile int heap_report_request;       /* the control command `heap` (front_sdl.c) asks; the game's own thread answers at its next allocation, since it owns the block table */
 static void heap_report(FILE *out);
+
+/* The window's thread calls this in its loop: with PORT_HEAP_LOG the host's own memory is printed on the timer even when the game allocates nothing (a duel after its first minutes does not). It reads
+ * nothing of the guest's block table, which belongs to the game's thread. */
+void heap_log_tick(void)
+{
+    static long every = -1;
+    static time_t last;
+    time_t now;
+    unsigned long long hb, hn;
+
+    if (every < 0) {
+        const char *e = getenv("PORT_HEAP_LOG");
+
+        every = e ? atol(e) : 0;
+        last = time(NULL);
+    }
+    if (every <= 0)
+        return;
+    now = time(NULL);
+    if (now - last >= every && plat_host_heap(&hb, &hn)) {
+        last = now;
+        int table = 0, live = 0;
+
+        gdi_object_stats(&table, &live);            /* (read from this thread while the game's runs: a debugging figure, not a guarantee) */
+        fprintf(stderr, "host: malloc %llu KiB in %llu blocks, gdi objects %d in a table of %d\n", hb >> 10, hn, live, table);
+    }
+}
 
 uint32_t heap_alloc(uint32_t size)
 {
@@ -204,10 +232,30 @@ static void heap_report(FILE *out)
                 largest = blocks[i].size;
         }
     }
-    fprintf(out, "heap: top %llu KiB, in use %llu blocks %llu KiB, free %llu blocks %llu KiB (largest %u), %llu allocs %llu frees; in use by size: <=64 %llu/%lluK, <=256 %llu/%lluK, <=1K %llu/%lluK, <=4K %llu/%lluK, <=64K %llu/%lluK, <=1M %llu/%lluK, more %llu/%lluK\n",
-            (unsigned long long)(heap_top - HEAP_BASE) >> 10, used_n, used_b >> 10, free_n, free_b >> 10, largest, heap_allocs, heap_frees,
-            cls_n[0], cls_b[0] >> 10, cls_n[1], cls_b[1] >> 10, cls_n[2], cls_b[2] >> 10, cls_n[3], cls_b[3] >> 10, cls_n[4], cls_b[4] >> 10, cls_n[5], cls_b[5] >> 10, cls_n[6], cls_b[6] >> 10);
+    {
+        unsigned long long hb = 0, hn = 0;
+        int known = plat_host_heap(&hb, &hn);
+
+        fprintf(out, "heap: top %llu KiB, in use %llu blocks %llu KiB, free %llu blocks %llu KiB (largest %u), %llu allocs %llu frees; in use by size: <=64 %llu/%lluK, <=256 %llu/%lluK, <=1K %llu/%lluK, <=4K %llu/%lluK, <=64K %llu/%lluK, <=1M %llu/%lluK, more %llu/%lluK",
+                (unsigned long long)(heap_top - HEAP_BASE) >> 10, used_n, used_b >> 10, free_n, free_b >> 10, largest, heap_allocs, heap_frees,
+                cls_n[0], cls_b[0] >> 10, cls_n[1], cls_b[1] >> 10, cls_n[2], cls_b[2] >> 10, cls_n[3], cls_b[3] >> 10, cls_n[4], cls_b[4] >> 10, cls_n[5], cls_b[5] >> 10, cls_n[6], cls_b[6] >> 10);
+        if (known)
+            fprintf(out, "; host malloc %llu KiB", hb >> 10);          /* the runtime's own memory (windows, surfaces, device contexts ...), apart from the guest's */
+        fputc('\n', out);
+    }
     fflush(out);
+}
+
+/* Bytes in blocks that are in use (a test counts what a deleted object gave back). */
+uint32_t heap_used_bytes(void)
+{
+    uint64_t n = 0;
+    int i;
+
+    for (i = 0; i < nblocks; i++)
+        if (blocks[i].used)
+            n += blocks[i].size;
+    return (uint32_t)n;
 }
 
 uint32_t heap_size(uint32_t addr)

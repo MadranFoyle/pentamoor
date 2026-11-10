@@ -31,6 +31,7 @@ typedef struct Bitmap {
     int ddb;                 /* 1: device-dependent (idx / mono below), 0: DIB section (bits in guest memory) */
     int w, h, bpp;
     uint32_t bits;           /* DIB: guest address of the pixels */
+    int own_bits;            /* the pixels are a block of the guest's heap that this bitmap made (not a file mapping's memory): DeleteObject gives it back */
     int topdown;
     uint8_t palette[256][3]; /* DIB colour table */
     int npalette;

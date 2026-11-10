@@ -15,17 +15,20 @@ typedef struct Obj { int kind; void *p; } Obj;
 static Obj *objs;
 static int nobjs, capobjs;
 
-/* The slots of device contexts that were released (ReleaseDC, DeleteDC) are used again by the next one, as Windows hands a handle out again: a program that measures a character with
- * GetDC, SelectObject, GetCharABCWidths and ReleaseDC (Spells of the Ancients does it for every character it draws) would otherwise take a slot and a context for each. */
-static uint32_t *free_dcs;
-static int nfree_dcs, capfree_dcs;
+/* The slots of objects that were deleted (DeleteObject, ReleaseDC, DeleteDC) are used again by the next one, as Windows hands a handle out again: a program that measures a character with GetDC,
+ * SelectObject, GetCharABCWidths and ReleaseDC (Spells of the Ancients does it for every character it draws) would otherwise take a slot and a context for each, and one that makes a pen or a
+ * brush for every tile it draws (Spells of the Ancients does, making a world: twelve million of them in twelve seconds, 660 MiB of the host's memory that stayed for the rest of the run) a table
+ * that never stops growing. */
+static uint32_t *free_slots;
+static int nfree_slots, capfree_slots;
+static uint32_t default_bitmap_h;   /* the 1x1 bitmap a memory context starts with (SelectObject answers it): never deleted */
 static int dc_copies_live;          /* the copies SaveDC has made and nothing has given back yet (the tests count them: they leaked) */
 int gdi_dc_copies(void) { return dc_copies_live; }
 
 uint32_t obj_new(int kind, void *p)
 {
-    if (kind == O_DC && nfree_dcs) {
-        uint32_t i = free_dcs[--nfree_dcs];
+    if (nfree_slots) {
+        uint32_t i = free_slots[--nfree_slots];
 
         objs[i] = (Obj){kind, p};
         return OBJ_BASE + 4u * i;
@@ -36,6 +39,18 @@ uint32_t obj_new(int kind, void *p)
     }
     objs[nobjs] = (Obj){kind, p};
     return OBJ_BASE + 4u * (uint32_t)nobjs++;
+}
+
+/* For PORT_HEAP_LOG: how long the object table is and how many of its entries are live (a pen, a brush, a font ... a program has made and not deleted). */
+void gdi_object_stats(int *table, int *live)
+{
+    int i, n = 0;
+
+    for (i = 0; i < nobjs; i++)
+        if (objs[i].kind)
+            n++;
+    *table = nobjs;
+    *live = n;
 }
 
 static Obj *slot(uint32_t h)
@@ -62,12 +77,95 @@ int obj_kind(uint32_t h)
     return o ? o->kind : 0;
 }
 
+static void slot_release(uint32_t h)
+{
+    if (nfree_slots == capfree_slots) {
+        capfree_slots = capfree_slots ? capfree_slots * 2 : 64;
+        free_slots = realloc(free_slots, (size_t)capfree_slots * sizeof(*free_slots));
+    }
+    free_slots[nfree_slots++] = (h - OBJ_BASE) / 4;
+}
+
+static int object_is_permanent(uint32_t h);                    /* the stock objects and the default bitmap: DeleteObject leaves them alone, as Windows does */
+
+/* Is this font or bitmap selected into a device context (one of the saved copies too)? Windows will not delete such an object; here it is left alone, which also keeps the pointer the context holds. */
+static int object_selected(const void *p, int kind)
+{
+    int i;
+
+    for (i = 0; i < nobjs; i++)
+        if (objs[i].kind == O_DC) {
+            const DC *d;
+
+            for (d = objs[i].p; d; d = d->saved)
+                if ((kind == O_FONT && d->font == p) || (kind == O_BITMAP && d->bitmap == p))
+                    return 1;
+        }
+    return 0;
+}
+
+/* A DIB section's pixels are in the guest's heap, and Windows gives them back when the section is deleted. They are not given back at once: the last few are kept (8 MiB at most) before their memory is
+ * reused, so a program that draws once more through the pointer it still has (which would have gone on working on the original machine, where freed memory stays mapped until something else takes it)
+ * finds its pixels. */
+#define QUARANTINE_BYTES (8u << 20)
+static uint32_t quarantine[64];
+static int nquarantine;
+static uint32_t quarantine_bytes;
+
+static void release_pixels(uint32_t bits)
+{
+    quarantine_bytes += heap_size(bits);
+    quarantine[nquarantine++] = bits;
+    while (nquarantine > 0 && (nquarantine == 64 || quarantine_bytes > QUARANTINE_BYTES)) {
+        quarantine_bytes -= heap_size(quarantine[0]);
+        heap_free(quarantine[0]);
+        memmove(quarantine, quarantine + 1, (size_t)(--nquarantine) * sizeof(*quarantine));
+    }
+}
+
+static void bitmap_free(Bitmap *b)
+{
+    if (b->own_bits && b->bits)
+        release_pixels(b->bits);
+    free(b->idxmap);
+    free(b->idx);
+    free(b->mono);
+    free(b);
+}
+
+/* DeleteObject. A pen, a brush and a region are copied into a context when they are selected (and a region's rectangle when it clips), so the memory goes with the object; a font or a bitmap
+ * goes unless a context points at it; the slot is used again. Palettes (one may be the system palette), cursors, icons and accelerators keep what they had: the handle goes, the memory stays. */
 void obj_free(uint32_t h)
 {
     Obj *o = slot(h);
 
-    if (o)
+    if (!o)
+        return;
+    switch (o->kind) {
+    case O_PEN:
+    case O_BRUSH:
+    case O_REGION:
+        if (object_is_permanent(h))
+            return;
+        free(o->p);
+        break;
+    case O_FONT:
+        if (object_is_permanent(h) || object_selected(o->p, O_FONT))
+            return;
+        free(o->p);
+        break;
+    case O_BITMAP:
+        if (object_is_permanent(h) || object_selected(o->p, O_BITMAP))
+            return;
+        bitmap_free(o->p);
+        break;
+    default:
         o->kind = 0;
+        return;
+    }
+    o->kind = 0;
+    o->p = NULL;
+    slot_release(h);
 }
 
 /* ReleaseDC and DeleteDC: the context goes (with the copies SaveDC made) and its handle can be given out again. A handle that is not a context, or has been released, is left alone. */
@@ -86,11 +184,7 @@ void gdi_release_dc(uint32_t h)
     }
     o->kind = 0;
     o->p = NULL;
-    if (nfree_dcs == capfree_dcs) {
-        capfree_dcs = capfree_dcs ? capfree_dcs * 2 : 64;
-        free_dcs = realloc(free_dcs, (size_t)capfree_dcs * sizeof(*free_dcs));
-    }
-    free_dcs[nfree_dcs++] = (h - OBJ_BASE) / 4;
+    slot_release(h);
 }
 
 /* The window manager's names for the same table (cursors, icons, accelerators: opaque handles). */
@@ -973,6 +1067,18 @@ uint32_t stock_object(int which)
     return stock[which];
 }
 
+static int object_is_permanent(uint32_t h)
+{
+    int i;
+
+    if (h && h == default_bitmap_h)
+        return 1;
+    for (i = 0; i < 21; i++)
+        if (stock[i] && stock[i] == h)
+            return 1;
+    return 0;
+}
+
 static uint32_t GetStockObject(const uint32_t *a) { return stock_object((int)a[0]); }
 
 static uint32_t CreateSolidBrush(const uint32_t *a)
@@ -1206,16 +1312,14 @@ static uint32_t AddFontResourceA(const uint32_t *a)
 /* ---- selecting, deleting ------------------------------------------------------------------------------------------------------------ */
 static uint32_t default_bitmap_handle(void)
 {
-    static uint32_t h;
-
-    if (!h) {
+    if (!default_bitmap_h) {
         Bitmap *b = calloc(1, sizeof(*b));
 
         b->ddb = 1; b->w = b->h = 1; b->bpp = 1;
         b->idx = calloc(1, 1);
-        h = obj_new(O_BITMAP, b);
+        default_bitmap_h = obj_new(O_BITMAP, b);
     }
-    return h;
+    return default_bitmap_h;
 }
 
 static uint32_t SelectObject(const uint32_t *a)
@@ -1410,6 +1514,7 @@ static uint32_t CreateDIBSection(const uint32_t *a)
     if (!b->bits) {
         b->bits = heap_alloc((uint32_t)(stride * b->h));
         guest_zero(b->bits, (uint32_t)(stride * b->h));
+        b->own_bits = b->bits != 0;
     }
     if (a[3])
         WR32(a[3], b->bits);

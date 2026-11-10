@@ -168,6 +168,55 @@ static void test_box_resize_no_gaps(void)
     free(src);
 }
 
+/* DeleteObject gives a pen, a brush, a font or a bitmap back and the slot is used again: Spells of the Ancients makes a pen or a brush for every tile it draws while it makes a world (twelve million
+ * in twelve seconds), and every one stayed, in a table that grew and in the memory they were made of: 660 MiB. */
+static void test_objects_are_given_back(void)
+{
+    Window *win = window_with_surface(16, 16);
+    uint32_t hdc = API("GetDC", win->hwnd), h, pen, brush, bmi, bits = scratch(4), hmem = API("CreateCompatibleDC", hdc), before;
+    int table, live, table0, live0, i;
+
+    gdi_object_stats(&table0, &live0);
+    for (i = 0; i < 100000; i++) {
+        pen = API("CreatePen", 0, 1, RGB(i & 255, 0, 0));
+        brush = API("CreateSolidBrush", RGB(0, i & 255, 0));
+        API("SelectObject", hdc, pen);
+        API("SelectObject", hdc, brush);
+        API("DeleteObject", pen);
+        API("DeleteObject", brush);
+    }
+    gdi_object_stats(&table, &live);
+    CHECK(live <= live0 + 4 && table <= table0 + 4);                        /* 200,000 objects made and deleted: the table did not grow (SelectObject made the stock pen and brush it answers) */
+
+    /* the stock objects are not deleted */
+    h = API("GetStockObject", 0);
+    API("DeleteObject", h);
+    CHECK(API("GetStockObject", 0) == h && obj_kind(h) == O_BRUSH);
+
+    /* a font that a context holds stays; once the stock font is selected back it goes */
+    {
+        uint32_t font = API("CreateFontA", (uint32_t)-12, 0, 0, 0, 400, 0, 0, 0, 0, 0, 0, 0, 0, 0), stockfont = API("GetStockObject", 13);
+
+        API("SelectObject", hmem, font);
+        API("DeleteObject", font);
+        CHECK(obj_kind(font) == O_FONT && dc_of(hmem)->font != NULL);        /* Windows refuses to delete a selected object */
+        API("SelectObject", hmem, stockfont);
+        API("DeleteObject", font);
+        CHECK(obj_kind(font) == 0);
+    }
+
+    /* a DIB section's pixels are in the guest's heap and are given back (all but the last few, which wait) */
+    bmi = bitmapinfo(256, 256, 8, 0);
+    before = heap_used_bytes();
+    for (i = 0; i < 400; i++) {
+        uint32_t dib = API("CreateDIBSection", hmem, bmi, 0, bits, 0, 0);
+
+        CHECK(dib != 0 && RD32(bits) != 0);
+        API("DeleteObject", dib);
+    }
+    CHECK(heap_used_bytes() < before + (9u << 20));                         /* 400 sections of 64 KiB (25 MiB) were made: no more than the waiting ones are left */
+}
+
 static void test_state(void)
 {
     Window *win = window_with_surface(16, 16);
@@ -514,6 +563,7 @@ int main(void)
     test_stretch();
     test_box_resize_no_gaps();
     test_state();
+    test_objects_are_given_back();
     test_mono_bitmap_and_clip();
     test_palettes();
     test_palette_relative_tools();

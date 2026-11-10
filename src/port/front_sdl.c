@@ -1933,6 +1933,7 @@ int front_run(int (*game)(void *), void *arg)
             poll_control();
         }
         update_text_input();
+        heap_log_tick();
         if (touch_on && touch_active(&touch)) {
             static int was_map = -1;
             int on_map = pace_map_active();
