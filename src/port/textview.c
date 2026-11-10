@@ -100,8 +100,6 @@ static uint32_t textview_proc(const uint32_t *a)
             ed->title = strdup(shown_text);
             wm_edit_reset(ed);
             wm_set_focus(ed->hwnd);
-            ed->sel_anchor = ed->caret = 0;                         /* (the focus selected everything, and scrolled to its end) */
-            ed->edit_top = ed->edit_xscroll = 0;
         }
         return 0;                                                   /* the focus is set here */
     }

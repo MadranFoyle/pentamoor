@@ -1162,8 +1162,10 @@ static uint32_t IsDialogMessageA(const uint32_t *a)
     if (wp == 0x09) {                                                           /* VK_TAB: Shift moves backwards */
         uint32_t to = next_tab_stop(dlg, hwnd, wm_keys[0x10] != 0);
 
-        if (to && to != hwnd)
+        if (to && to != hwnd) {
             wm_set_focus(to);
+            wm_edit_focus(wm_window(to), EDIT_FOCUS_DIALOG);                       /* (a box that is not an edit box ignores it) */
+        }
         return 1;
     }
     return 0;
