@@ -54,6 +54,9 @@ void msgbox_set_mode(int mode);                                         /* overr
 /* The line the log gets for a message box: "MessageBox: caption: text -> IDYES", with " (answered)" when somebody answered (the box was shown) rather than the default being taken. */
 int msgbox_log_line(char *out, size_t cap, const char *caption, const char *text, int id, int answered);
 
+/* What is said when a game starts its Tutorial program (process.c, PROC_EXT_TUTORIAL): Pentamoor cannot run it. */
+const char *msgbox_tutorial_text(void);
+
 /* The API, for the host's own use as well. `owner` may be 0 or stale. msgbox_show always shows the box and returns the id of the button that ended it; msgbox_run is what MessageBoxA
  * does: the same, or in AUTO mode just the default button's id. */
 int msgbox_show(uint32_t owner, const char *caption, const char *text, uint32_t type);

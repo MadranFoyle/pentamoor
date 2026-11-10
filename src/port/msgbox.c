@@ -249,7 +249,13 @@ static const char *id_name(int id)
 
 int msgbox_log_line(char *out, size_t cap, const char *caption, const char *text, int id, int answered)
 {
-    return snprintf(out, cap, "MessageBox: %s: %s -> %s%s", caption, text, id_name(id), answered ? " (answered)" : "");
+    char flat[2200];
+    size_t i, n = 0;
+
+    for (i = 0; text[i] && n + 1 < sizeof(flat); i++)                /* one line in the log, whatever line breaks the text has (a message of this port's own has two paragraphs) */
+        flat[n++] = text[i] == '\n' || text[i] == '\r' ? ' ' : text[i];
+    flat[n] = 0;
+    return snprintf(out, cap, "MessageBox: %s: %s -> %s%s", caption, flat, id_name(id), answered ? " (answered)" : "");
 }
 
 int msgbox_show(uint32_t owner, const char *caption, const char *text, uint32_t type)
@@ -302,6 +308,12 @@ int msgbox_show(uint32_t owner, const char *caption, const char *text, uint32_t 
     free(txt);
     id = (int)result;
     return id >= 1 && id <= 7 ? id : sp.id[sp.def];
+}
+
+const char *msgbox_tutorial_text(void)
+{
+    return "The Tutorial program is not supported by Pentamoor.\n\nThe tutorial is a separate program (Tutorial.exe, a Macromedia Director projector that plays its lessons from the game's disc), "
+           "and Pentamoor does not run it.";
 }
 
 int msgbox_run(uint32_t owner, const char *caption, const char *text, uint32_t type)

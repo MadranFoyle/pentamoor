@@ -23,6 +23,12 @@ int winhelp_text(uint32_t cmd, const char *file, char *out, size_t cap);
 /* The file name part of a help file's path ("C:\MAGIC\PROGRAM\duel.hlp" gives "duel.hlp"). */
 void winhelp_file_name(const char *path, char *out, size_t cap);
 
+/* What starting WinHelp.exe on a help file does (process.c: a game's `WinHelp.exe <install>\\Duel.hlp`, the Magic Shell's Help File button): the same message WinHelpA gives for a help file that
+ * is there ("In-game help is not available in this port ..."), or one that says the file is not installed. `file` is the guest path. The text goes through MessageBox's rule (msgbox_run: shown,
+ * or in a run nobody watches only logged). winhelp_launch_text is the text. */
+int winhelp_launch_text(const char *file, int file_exists, char *out, size_t cap);
+int winhelp_launch(uint32_t owner, const char *file);
+
 /* A small modal dialog: the text (wrapped; '\n' breaks a line) over an OK button, made by msgbox.c. Returns when OK, Enter, Esc or the close box is used. */
 int port_message_dialog(uint32_t owner, const char *caption, const char *text);
 

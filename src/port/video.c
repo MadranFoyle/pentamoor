@@ -265,8 +265,8 @@ enum { MCI_OPEN = 0x803, MCI_CLOSE = 0x804, MCI_PLAY = 0x806, MCI_SEEK = 0x807, 
        MCI_REALIZE = 0x840, MCI_WINDOW = 0x841, MCI_PUT = 0x842, MCI_WHERE = 0x843, MCI_UPDATE = 0x854, MCI_GETDEVCAPS = 0x80B };
 enum { MCIERR_INVALID_DEVICE_ID = 257, MCIERR_UNRECOGNIZED_COMMAND = 261, MCIERR_INVALID_DEVICE_NAME = 263, MCIERR_CANNOT_LOAD_DRIVER = 266, MCIERR_MISSING_PARAMETER = 273,
        MCIERR_FILE_NOT_FOUND = 275, MCIERR_DEVICE_OPEN = 265 };
-enum { MCI_NOTIFY = 1, MCI_WAIT = 2, MCI_OPEN_ELEMENT = 0x200, MCI_OPEN_TYPE = 0x2000, MCI_DGV_OPEN_PARENT = 0x20000 };
-enum { MM_MCINOTIFY = 0x3B9, MCI_MODE_STOP = 524, MCI_MODE_PLAY = 525, MCI_MODE_PAUSE = 529 };
+enum { MCI_NOTIFY = 1, MCI_WAIT = 2, MCI_OPEN_ELEMENT = 0x200, MCI_OPEN_TYPE = 0x2000, MCI_DGV_OPEN_PARENT = 0x20000, MCI_DGV_PLAY_FULLSCREEN = 0x2000000 };
+enum { MM_MCINOTIFY = 0x3B9, MCI_MODE_STOP = 525, MCI_MODE_PLAY = 526, MCI_MODE_PAUSE = 529 };
 #define MCI_DEVICES 8
 
 typedef struct MciDev {
@@ -334,7 +334,7 @@ static uint32_t mci_open(uint32_t flags, uint32_t parms)
     return 0;
 }
 
-static uint32_t mciSendCommandA(const uint32_t *a)
+static uint32_t mci_command(const uint32_t *a)
 {
     uint32_t id = a[0], msg = a[1] & 0xFFFF, flags = a[2], parms = a[3];
     MciDev *d;
@@ -369,6 +369,16 @@ static uint32_t mciSendCommandA(const uint32_t *a)
             d->notify_pending = 1;
         }
         d->played = 1;
+        wm_clear_presses();                                 /* the click that began it is not the one that stops it (the game polls Esc and the buttons with GetAsyncKeyState while it plays) */
+        w->visible = 1;                                     /* a window made hidden shows itself when its movie plays (MCIAVI does) */
+        if (flags & MCI_DGV_PLAY_FULLSCREEN) {              /* "full screen": the movie in the middle of the screen at its own size, on whatever the program put behind it (the Magic Shell's black backdrop) */
+            const Window *p = wm_window(w->parent);
+            int px = 0, py = 0, px1, py1;
+
+            if (p)
+                wm_abs_rect(p, &px, &py, &px1, &py1);
+            movie_window_move(w, (screen_w - w->w) / 2 - px, (screen_h - w->h) / 2 - py);
+        }
         movie_window_play(w);                               /* the window plays it (and its sound) from the first picture */
         if (flags & MCI_WAIT) {
             while (movie_window_playing(wm_window(d->win))) {
@@ -408,6 +418,14 @@ static uint32_t mciSendCommandA(const uint32_t *a)
     default:
         return MCIERR_UNRECOGNIZED_COMMAND;
     }
+}
+
+static uint32_t mciSendCommandA(const uint32_t *a)
+{
+    uint32_t r = mci_command(a);
+
+    port_trace("mci: command 0x%x on device %u, flags 0x%x, parms 0x%x [%x %x %x %x] -> %u", a[1] & 0xFFFF, a[0], a[2], a[3], a[3] ? RD32(a[3]) : 0, a[3] ? RD32(a[3] + 4) : 0, a[3] ? RD32(a[3] + 8) : 0, a[3] ? RD32(a[3] + 12) : 0, r);
+    return r;
 }
 
 /* mciGetErrorStringA(error, buffer, size): the text Windows gives an MCI error number, in the buffer; FALSE for a number it has no text for. */

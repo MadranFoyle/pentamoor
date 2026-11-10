@@ -55,11 +55,37 @@ int winhelp_text(uint32_t cmd, const char *file, char *out, size_t cap)
     return 1;
 }
 
+int winhelp_launch_text(const char *file, int file_exists, char *out, size_t cap)
+{
+    char name[96];
+
+    winhelp_file_name(file, name, sizeof(name));
+    if (!name[0]) {
+        snprintf(out, cap, "In-game help is not available in this port.");
+        return 0;
+    }
+    if (file_exists)
+        return winhelp_text(HELP_INDEX, file, out, cap);
+    snprintf(out, cap, "In-game help is not available in this port.\n\nThe help file (%s) is not in the game's folder.", name);
+    return 0;
+}
+
 /* ---- the dialog ------------------------------------------------------------------------------------------------------------------ */
 /* A message box with only an OK button (msgbox.c): shown whatever the run (it is not the program's own MessageBox call, which a run nobody watches answers at once). */
 int port_message_dialog(uint32_t owner, const char *caption, const char *text)
 {
     return msgbox_show(owner, caption, text, MB_OK) == IDOK;
+}
+
+int winhelp_launch(uint32_t owner, const char *file)
+{
+    char text[400], host[1200];
+    int exists = file && *file && paths_host(file, 0, host, sizeof(host));
+
+    port_trace("WinHelp.exe: file '%s' (%s)", file ? file : "", exists ? "there" : "missing");
+    winhelp_launch_text(file ? file : "", exists, text, sizeof(text));
+    msgbox_run(owner, "Help", text, MB_OK | MB_ICONASTERISK);
+    return 1;
 }
 
 /* ---- WinHelpA(hWndMain, lpszHelp, uCommand, dwData) ------------------------------------------------------------------------------- */

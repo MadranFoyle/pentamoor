@@ -195,7 +195,7 @@ class World:
         archive = test_install.make_archive([("README.TXT", b"read me"), ("x.url", b"[url]")] + listing, [(d, len(fs)) for d, fs in self.first_layout])
         make_iso_tree(self.iso1, {"Setup/data.z": archive, "Setup/SETUP.INS": b"script", "Sound/BOOM.WAV": b"boom" * 10}, label="MTG v1.0")
         make_iso_tree(self.iso2, {"Setup/data1.cab": self.cab_bytes, "Setup/_sys1.cab": self.sys_bytes, "Setup/_user1.cab": self.user_bytes, "Setup/DATA.TAG": TAG % tag_version.encode(),
-                                  "Sound/NEW.WAV": b"a new sound" * 10, "Sound/LOCMUS0.WAV": b"music" * 50, "DuelSounds/Shell_Tooltime.wav": b"other voice" * 20}, label="MTG v2")
+                                  "Sound/NEW.WAV": b"a new sound" * 10, "Autoplay/credit.avi": b"credits" * 30, "Autoplay/INTRO.AVI": b"intro" * 30, "Sound/LOCMUS0.WAV": b"music" * 50, "DuelSounds/Shell_Tooltime.wav": b"other voice" * 20}, label="MTG v2")
         with open(self.patch, "wb") as f:
             f.write(self.patch_bytes)
 

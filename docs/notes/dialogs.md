@@ -149,3 +149,9 @@ Tested: `test_wm` (`test_dialog`: a dialog with a text and a push button still g
 text-only dialog got the 13 is gone) and `tools/soak/won_dialog.py` (a duel won by poking the opponent's life: Return leaves the dialog, a click closes it; 640x480). Esc (the pipe's `key escape`) closes it in the running game too, so on a controller **Back or A with the cursor on the dialog closes it** (X and Start are Enter, which does nothing here, as in the original). Space was
 not tried end to end: the control pipe's `key space` sends no character (SDL makes the character from a text event), and `text` cannot send a blank (the parser skips it), so only the unit test covers it.
 Not checked in the Windows 98 VM again: the reading above is of the code and agrees with what was seen there.
+
+## Edit boxes
+
+The EDIT control (`src/port/edit.c`, drawn by `ui.c`) has a caret, a selection, the clipboard and the `EM_` messages, one line or several (wrapped, with a scroll bar). An edit box with the focus takes the keys on an ordinary window and, since the shell polish,
+in a modal dialog too (not a dialog that does its own keys or mouse: the message box, the file dialogs, whose name box has its own caret code in `filedlg.c`). 1.0's Deck Info dialog (the deck builder's title, description, name and comment boxes) took no
+typing before and does now. The behaviour, the keys and what was run: [sota-comparison.md](sota-comparison.md), "Shell polish". Tests: `test_edit_box` and `test_textview` in `test_wm.c`.

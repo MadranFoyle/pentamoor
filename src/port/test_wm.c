@@ -21,6 +21,7 @@
 #include "sched.h"
 #include "test_util.h"
 #include "msgbox.h"
+#include "textview.h"
 #include "wm.h"
 
 /* setenv/unsetenv for the tests, on Windows too (where _putenv_s with an empty value removes the variable) */
@@ -1073,6 +1074,490 @@ static void test_spin_and_edit(void)
     API("DestroyWindow", parent);
 }
 
+/* ---- edit boxes: caret, selection, clipboard, the EM_ messages (edit.c) ------------------------------------------------------------------------------------------------------------ */
+static const char *etext(uint32_t h) { return wm_window(h)->title; }
+static int esel_start(uint32_t h) { int a, b; wm_edit_get_sel(wm_window(h), &a, &b); return a; }
+static int esel_end(uint32_t h) { int a, b; wm_edit_get_sel(wm_window(h), &a, &b); return b; }
+static void ekey(uint32_t h, uint32_t vk, int shift, int ctrl) { wm_edit_key(wm_window(h), vk, shift, ctrl); }
+static void echar(uint32_t h, uint32_t ch) { wm_edit_char(wm_window(h), ch); }
+static void etype(uint32_t h, const char *s) { wm_edit_text(wm_window(h), s, (int)strlen(s)); }
+static int clip_is(const char *want)
+{
+    char *c = front_clipboard_get();
+    int ok = c && !strcmp(c, want);
+
+    if (!ok)
+        printf("  clipboard is [%s], wanted [%s]\n", c ? c : "(none)", want);
+    free(c);
+    return ok;
+}
+
+static int navy_pixels(Window *w)                                                                 /* how many pixels of the selection's colour the box draws */
+{
+    static uint8_t rgb[3 * 320 * 240];
+    int i, navy = 0;
+
+    memset(rgb, 90, sizeof(rgb));
+    ui_draw_control(rgb, 320, 240, w, 0);
+    for (i = 0; i < 320 * 240; i++)
+        navy += rgb[3 * i] == 0 && rgb[3 * i + 1] == 0 && rgb[3 * i + 2] == 128;
+    return navy;
+}
+
+static uint32_t make_edit(uint32_t style, int x, int y, int w, int h, uint32_t parent, uint32_t id)           /* an edit box with no text (the window helper titles every window "t") */
+{
+    uint32_t e = create("EDIT", style, x, y, w, h, parent, id);
+
+    API("SetWindowTextA", e, cstr(""));
+    return e;
+}
+
+static void test_edit_box(void)
+{
+    enum { VKL = 0x25, VKU = 0x26, VKR = 0x27, VKD = 0x28, VKHOME = 0x24, VKEND = 0x23, VKDEL = 0x2E, VKPGUP = 0x21 };
+    uint32_t parent, e, m;
+    Window *w;
+    char buf[64];
+
+    register_class("EditParent", port_host_function(press_proc), 0, 0);
+    parent = create("EditParent", WS_VISIBLE | WS_POPUP, 0, 0, 400, 300, 0, 0);
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x800000 | 0x80, 10, 10, 200, 20, parent, 7);          /* a one-line box with a border, ES_AUTOHSCROLL */
+    w = wm_window(e);
+    API("SetFocus", e);
+    CHECK(API("GetFocus") == e && wm_get_focus() == e && wm_text_focus() == 1);                      /* the on-screen keyboard has a text field to type into */
+
+    /* typing at the caret, Left, Right, Home, End */
+    etype(e, "hello");
+    CHECK(!strcmp(etext(e), "hello") && w->caret == 5 && esel_start(e) == 5 && esel_end(e) == 5);
+    ekey(e, VKL, 0, 0);
+    ekey(e, VKL, 0, 0);
+    CHECK(w->caret == 3);
+    echar(e, 'X');
+    CHECK(!strcmp(etext(e), "helXlo") && w->caret == 4);                                            /* inserted at the caret, not appended */
+    ekey(e, VKHOME, 0, 0);
+    CHECK(w->caret == 0);
+    ekey(e, VKEND, 0, 0);
+    CHECK(w->caret == 6);
+    ekey(e, VKR, 0, 0);
+    CHECK(w->caret == 6);                                                                           /* nothing beyond the end */
+    /* Backspace at the caret, Delete */
+    ekey(e, VKL, 0, 0);
+    ekey(e, VKL, 0, 0);
+    echar(e, 8);
+    CHECK(!strcmp(etext(e), "hello") && w->caret == 3);                                             /* the X before the caret went */
+    ekey(e, VKDEL, 0, 0);
+    CHECK(!strcmp(etext(e), "helo") && w->caret == 3);                                              /* Delete takes the letter after it */
+    ekey(e, VKDEL, 0, 0);
+    CHECK(!strcmp(etext(e), "hel") && w->caret == 3);
+    ekey(e, VKDEL, 0, 0);
+    CHECK(!strcmp(etext(e), "hel"));                                                                /* at the end Delete does nothing */
+    ekey(e, VKHOME, 0, 0);
+    echar(e, 8);
+    CHECK(!strcmp(etext(e), "hel") && w->caret == 0);                                               /* and neither does Backspace at the start */
+    /* Shift+arrows select, Left and Right collapse, typing replaces */
+    ekey(e, VKR, 1, 0);
+    ekey(e, VKR, 1, 0);
+    CHECK(esel_start(e) == 0 && esel_end(e) == 2 && w->caret == 2 && w->sel_anchor == 0);
+    ekey(e, VKL, 1, 0);
+    CHECK(esel_start(e) == 0 && esel_end(e) == 1);
+    ekey(e, VKR, 0, 0);
+    CHECK(esel_start(e) == 1 && esel_end(e) == 1 && w->caret == 1);                                 /* Right with a selection: the caret goes to its end */
+    ekey(e, VKHOME, 0, 0);
+    ekey(e, VKEND, 1, 0);
+    CHECK(esel_start(e) == 0 && esel_end(e) == 3);
+    etype(e, "Z");
+    CHECK(!strcmp(etext(e), "Z") && w->caret == 1);                                                 /* typing over a selection replaces it */
+    etype(e, "bc");
+    ekey(e, VKHOME, 1, 0);
+    echar(e, 8);
+    CHECK(!strcmp(etext(e), "") && w->caret == 0);                                                  /* Backspace removes a selection whole */
+    etype(e, "one two  three");
+    /* words: Ctrl+Left and Ctrl+Right */
+    ekey(e, VKL, 0, 1);
+    CHECK(w->caret == 9);
+    ekey(e, VKL, 0, 1);
+    CHECK(w->caret == 4);
+    ekey(e, VKR, 0, 1);
+    CHECK(w->caret == 9);
+    ekey(e, VKL, 1, 1);
+    CHECK(esel_start(e) == 4 && esel_end(e) == 9);
+    echar(e, 127);                                                                                  /* Ctrl+Backspace: the selection goes, as for Backspace */
+    CHECK(!strcmp(etext(e), "one three"));
+
+    /* the clipboard: Ctrl+A, C, X, V */
+    ekey(e, 'A', 0, 1);
+    CHECK(esel_start(e) == 0 && esel_end(e) == 9);
+    ekey(e, 'C', 0, 1);
+    CHECK(clip_is("one three"));
+    ekey(e, VKEND, 0, 0);
+    ekey(e, 'V', 0, 1);
+    CHECK(!strcmp(etext(e), "one threeone three") && w->caret == 18);
+    ekey(e, VKHOME, 0, 0);
+    ekey(e, VKR, 1, 1);
+    ekey(e, 'X', 0, 1);                                                                             /* cut: "one " is gone and on the clipboard */
+    CHECK(!strcmp(etext(e), "threeone three") && clip_is("one "));
+    front_clipboard_set("a\r\nb");
+    ekey(e, VKHOME, 0, 0);
+    ekey(e, 'V', 0, 1);
+    CHECK(!strncmp(etext(e), "athreeone", 9));                                                      /* a one-line box takes the clipboard up to the first line break */
+    ekey(e, 0x2D, 1, 0);                                                                            /* Shift+Insert pastes too */
+    CHECK(!strncmp(etext(e), "aathreeone", 10));
+    API("SetWindowTextA", e, cstr("abcdef"));
+    API("SendMessageA", e, 0xB1, 0, 3);
+    ekey(e, 0x2D, 0, 1);                                                                            /* Ctrl+Insert copies */
+    CHECK(clip_is("abc"));
+    ekey(e, VKDEL, 1, 0);                                                                           /* Shift+Delete cuts */
+    CHECK(!strcmp(etext(e), "def"));
+
+    /* the messages: EM_SETSEL, EM_GETSEL, EM_REPLACESEL, EM_LIMITTEXT, EM_GETLIMITTEXT, WM_GETTEXT */
+    API("SetWindowTextA", e, cstr("abcdef"));
+    CHECK(w->caret == 0 && w->sel_anchor == 0);                                                     /* text set from outside: the caret is at the start */
+    API("SendMessageA", e, 0xB1, 1, 4);                                                             /* EM_SETSEL */
+    m = scratch(8);
+    CHECK(API("SendMessageA", e, 0xB0, m, m + 4) == ((4u << 16) | 1u) && RD32(m) == 1 && RD32(m + 4) == 4);   /* EM_GETSEL */
+    API("SendMessageA", e, 0xC2, 1, cstr("XY"));                                                    /* EM_REPLACESEL */
+    CHECK(!strcmp(etext(e), "aXYef") && w->caret == 3);
+    API("SendMessageA", e, 0xB1, 0, (uint32_t)-1);                                                  /* the whole text */
+    CHECK(esel_start(e) == 0 && esel_end(e) == 5);
+    API("SendMessageA", e, 0xB1, (uint32_t)-1, 0);                                                  /* no selection */
+    CHECK(esel_start(e) == esel_end(e));
+    API("SendMessageA", e, 0xC5, 7, 0);                                                             /* EM_LIMITTEXT 7 */
+    CHECK(API("SendMessageA", e, 0xD5, 0, 0) == 7);
+    API("SendMessageA", e, 0xB1, 5, 5);
+    etype(e, "123456789");
+    CHECK(!strcmp(etext(e), "aXYef12") && w->caret == 7);                                           /* only what fits goes in */
+    etype(e, "9");
+    CHECK(!strcmp(etext(e), "aXYef12"));
+    API("SendMessageA", e, 0xC5, 0, 0);
+    CHECK(API("SendMessageA", e, 0xD5, 0, 0) == 32767);
+    CHECK(API("SendMessageA", e, WM_GETTEXTLENGTH, 0, 0) == 7);
+    CHECK(API("SendMessageA", e, WM_GETTEXT, 64, scratch(64)) == 7);
+    API("SendMessageA", e, 0xB9, 0, 0);                                                             /* EM_SETMODIFY, EM_GETMODIFY */
+    CHECK(API("SendMessageA", e, 0xB8, 0, 0) == 0);
+    etype(e, "k");
+    CHECK(API("SendMessageA", e, 0xB8, 0, 0) == 1);
+    API("SendMessageA", e, 0xB1, 0, 2);
+    API("SendMessageA", e, 0x301, 0, 0);                                                            /* WM_COPY, WM_CLEAR, WM_PASTE, WM_CUT */
+    CHECK(clip_is("aX"));
+    API("SendMessageA", e, 0x303, 0, 0);
+    CHECK(!strncmp(etext(e), "Yef12", 5));
+    API("SendMessageA", e, 0x302, 0, 0);
+    CHECK(!strncmp(etext(e), "aXYef12", 7));
+    API("SendMessageA", e, 0xB1, 3, 3);
+    API("SendMessageA", e, 0x300, 0, 0);                                                            /* WM_CUT of nothing changes nothing */
+    CHECK(!strncmp(etext(e), "aXYef12", 7));
+
+    /* EN_CHANGE reaches the parent on every change of the text, and only then */
+    drain_for(WM_COMMAND);
+    etype(e, "q");
+    CHECK(drain_for(WM_COMMAND) == parent);
+    ekey(e, VKL, 0, 0);
+    CHECK(drain_for(WM_COMMAND) == 0);
+
+    /* ES_READONLY: no typing, no deleting; moving, selecting and copying stay */
+    API("SetWindowTextA", e, cstr("fixed"));
+    API("SendMessageA", e, 0xCF, 1, 0);                                                             /* EM_SETREADONLY */
+    CHECK(w->style & 0x800);
+    etype(e, "no");
+    echar(e, 'z');
+    echar(e, 8);
+    ekey(e, VKDEL, 0, 0);
+    CHECK(!strcmp(etext(e), "fixed"));
+    ekey(e, 'A', 0, 1);
+    ekey(e, 'C', 0, 1);
+    ekey(e, 'V', 0, 1);
+    ekey(e, 'X', 0, 1);
+    CHECK(!strcmp(etext(e), "fixed") && esel_end(e) == 5 && clip_is("fixed"));
+    CHECK(wm_text_focus() == 0);                                                                    /* nothing to type into: no on-screen keyboard */
+    API("SendMessageA", e, 0xCF, 0, 0);
+    CHECK(!(w->style & 0x800) && wm_text_focus() == 1);
+    API("DestroyWindow", e);
+
+    /* ES_NUMBER takes digits only, typed or pasted; ES_PASSWORD keeps its text off the clipboard */
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x2000, 10, 10, 60, 20, parent, 8);
+    API("SetFocus", e);
+    front_clipboard_set("a1b2c3");
+    ekey(e, 'V', 0, 1);
+    CHECK(!strcmp(etext(e), "123"));
+    etype(e, "x9");
+    CHECK(!strcmp(etext(e), "1239"));
+    API("DestroyWindow", e);
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x20, 10, 10, 60, 20, parent, 9);
+    API("SetFocus", e);
+    front_clipboard_set("untouched");
+    etype(e, "secret");
+    ekey(e, 'A', 0, 1);
+    ekey(e, 'C', 0, 1);
+    CHECK(clip_is("untouched"));
+    API("DestroyWindow", e);
+
+    /* the mouse: a press puts the caret between the letters it is nearest to, a drag selects, Shift extends, a double click takes the word, a triple click all of it */
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x800000 | 0x80, 10, 100, 300, 20, parent, 10);
+    w = wm_window(e);
+    API("SetWindowTextA", e, cstr("alpha beta gamma"));
+    wm_inject_mouse(IN_DOWN, 11, 110);                                                              /* the very left of the text */
+    wm_inject_mouse(IN_UP, 11, 110);
+    CHECK(API("GetFocus") == e && w->caret == 0 && w->sel_anchor == 0);
+    wm_inject_mouse(IN_DOWN, 300, 110);                                                             /* well to the right of all of it */
+    wm_inject_mouse(IN_UP, 300, 110);
+    CHECK(w->caret == 16 && w->sel_anchor == 16);
+    wm_inject_mouse(IN_DOWN, 11, 110);
+    wm_inject_mouse(IN_MOVE, 100, 110);
+    wm_inject_mouse(IN_MOVE, 290, 260);                                                             /* the pointer leaves the box: the selection goes on with it */
+    CHECK(wm_edit_dragging() == e);
+    wm_inject_mouse(IN_UP, 290, 260);
+    CHECK(wm_edit_dragging() == 0 && esel_start(e) == 0 && esel_end(e) == 16);
+    wm_inject_mouse(IN_DOWN, 11, 110);
+    wm_inject_mouse(IN_UP, 11, 110);
+    wm_inject_key(0x10, 0x2A, 1, -1, 0);                                                            /* Shift held */
+    wm_inject_mouse(IN_DOWN, 300, 110);
+    wm_inject_mouse(IN_UP, 300, 110);
+    wm_inject_key(0x10, 0x2A, 0, -1, 0);
+    CHECK(esel_start(e) == 0 && esel_end(e) == 16);                                                 /* Shift+click extends from the old caret */
+    {
+        int x = 11 + 1 + ui_edit_x_in_line(w, 8);                                                    /* inside "beta" */
+
+        wm_inject_mouse(IN_DOWN, x, 110);
+        wm_inject_mouse(IN_UP, x, 110);
+        wm_inject_mouse(IN_DOWN, x, 110);                                                           /* the second press in a row */
+        wm_inject_mouse(IN_UP, x, 110);
+        snprintf(buf, sizeof(buf), "%.*s", esel_end(e) - esel_start(e), etext(e) + esel_start(e));
+        CHECK(!strcmp(buf, "beta"));
+        wm_inject_mouse(IN_DOWN, x, 110);                                                           /* the third: the whole line */
+        wm_inject_mouse(IN_UP, x, 110);
+        CHECK(esel_start(e) == 0 && esel_end(e) == 16);
+    }
+    CHECK(ui_edit_index_at(w, 11, 110) == 0 && ui_edit_index_at(w, 5000, 110) == 16);
+    API("DestroyWindow", e);
+
+    /* a press on a button takes the focus from the box (no caret, no keys for it any more); focus by the keyboard selects the text; the caret blinks from the last change */
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x800000, 10, 130, 200, 20, parent, 11);
+    w = wm_window(e);
+    m = create("BUTTON", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 250, 130, 60, 20, parent, 12);
+    API("SetWindowTextA", e, cstr("tab text"));
+    API("SetFocus", e);
+    CHECK(esel_start(e) == 0 && esel_end(e) == 0);                                                  /* SetFocus and a click leave the selection as it was ... */
+    wm_edit_focus(w, EDIT_FOCUS_DIALOG);
+    CHECK(esel_start(e) == 0 && esel_end(e) == 8);                                                  /* ... the dialog manager's Tab selects all of the text */
+    w->edit_t = port_now_ms();
+    CHECK(wm_edit_caret_visible(w) == 1);                                                           /* the blink starts with the caret shown ... */
+    w->edit_t = port_now_ms() - 600;
+    CHECK(wm_edit_caret_visible(w) == 0);                                                           /* ... is off for the second half of its period ... */
+    w->edit_t = port_now_ms() - 1100;
+    CHECK(wm_edit_caret_visible(w) == 1);                                                           /* ... and on again */
+    wm_dirty = 0;
+    w->edit_t = port_now_ms();
+    wm_edit_tick();
+    wm_dirty = 0;
+    w->edit_t = port_now_ms() - 600;
+    wm_edit_tick();
+    CHECK(wm_dirty == 1);                                                                           /* a change of the blink's phase is a change of the picture */
+    wm_inject_mouse(IN_DOWN, 255, 135);
+    wm_inject_mouse(IN_UP, 255, 135);
+    CHECK(API("GetFocus") == m && wm_edit_caret_visible(w) == 0 && wm_text_focus() == 0);
+    API("SetFocus", e);
+    API("SetFocus", m);                                                                             /* leaving the box: no caret */
+    CHECK(wm_edit_caret_visible(w) == 0);
+    API("DestroyWindow", m);
+    API("DestroyWindow", e);
+
+    /* GetAsyncKeyState: the high bit is "down now", bit 0 "pressed since it was last asked" (a poll between two taps still sees the tap); the mouse buttons are keys 1 and 2 */
+    wm_clear_presses();
+    CHECK(API("GetAsyncKeyState", 0x2C) == 0);
+    wm_inject_key(0x2C, 0x37, 1, -1, 0);
+    wm_inject_key(0x2C, 0x37, 0, -1, 0);
+    CHECK(API("GetAsyncKeyState", 0x2C) == 1);                                                      /* let go again, but it was pressed */
+    CHECK(API("GetAsyncKeyState", 0x2C) == 0);                                                      /* once only */
+    wm_inject_key(0x2C, 0x37, 1, -1, 0);
+    CHECK(API("GetAsyncKeyState", 0x2C) == 0x8001u && API("GetKeyState", 0x2C) == 0x8000u);         /* still held: both bits; GetKeyState does not use up the press */
+    wm_inject_key(0x2C, 0x37, 0, -1, 0);
+    pump_to_dispatch();
+    wm_inject_mouse(IN_DOWN, 15, 300);
+    wm_inject_mouse(IN_UP, 15, 300);
+    CHECK((API("GetAsyncKeyState", 1) & 1) == 1 && API("GetAsyncKeyState", 1) == 0);
+    wm_inject_mouse(IN_RDOWN, 15, 300);
+    wm_inject_mouse(IN_RUP, 15, 300);
+    CHECK((API("GetAsyncKeyState", 2) & 1) == 1);
+    wm_inject_key(0x2C, 0x37, 1, -1, 0);
+    wm_inject_key(0x2C, 0x37, 0, -1, 0);
+    wm_clear_presses();                                                                             /* a movie starting forgets the click that started it */
+    CHECK(API("GetAsyncKeyState", 0x2C) == 0);
+    pump_to_dispatch();
+
+    /* the dialog manager's Tab: the focus goes to the next tab stop, and an edit box it arrives at has all its text selected */
+    e = make_edit( WS_CHILD | WS_VISIBLE | WS_TABSTOP, 10, 160, 80, 20, parent, 20);
+    m = make_edit( WS_CHILD | WS_VISIBLE | WS_TABSTOP, 100, 160, 80, 20, parent, 21);
+    API("SetWindowTextA", m, cstr("second box"));
+    API("SetFocus", e);
+    {
+        uint32_t key = scratch(28);
+
+        WR32(key, e); WR32(key + 4, WM_KEYDOWN); WR32(key + 8, 0x09); WR32(key + 12, 0);
+        CHECK(API("IsDialogMessageA", parent, key) == 1 && API("GetFocus") == m);
+        CHECK(esel_start(m) == 0 && esel_end(m) == 10);
+    }
+    API("DestroyWindow", m);
+    API("DestroyWindow", e);
+
+    /* keys reach the focused box through the queue, with Control held (Ctrl+A) */
+    e = make_edit( WS_CHILD | WS_VISIBLE, 10, 160, 200, 20, parent, 13);
+    w = wm_window(e);
+    API("SetFocus", e);
+    etype(e, "queued");
+    wm_inject_key(0x11, 0x1D, 1, -1, 0);
+    wm_inject_key('A', 0x1E, 1, -1, 0);
+    wm_inject_key('A', 0x1E, 0, -1, 0);
+    wm_inject_key(0x11, 0x1D, 0, -1, 0);
+    pump_to_dispatch();
+    CHECK(esel_start(e) == 0 && esel_end(e) == 6);
+    wm_inject_key('Q', 0x10, 1, 'q', 0);                                                            /* a letter: replaces the selection */
+    wm_inject_key('Q', 0x10, 0, -1, 0);
+    pump_to_dispatch();
+    CHECK(!strcmp(etext(e), "q"));
+    wm_inject_key(0x10, 0x2A, 1, -1, 0);                                                            /* Shift+Left (the Shift key is held while Left goes down) */
+    wm_inject_key(VKL, 0x4B, 1, -1, 0);
+    wm_inject_key(VKL, 0x4B, 0, -1, 0);
+    wm_inject_key(0x10, 0x2A, 0, -1, 0);
+    pump_to_dispatch();
+    CHECK(w->caret == 0 && w->sel_anchor == 1);
+    API("DestroyWindow", e);
+
+    /* a multi-line box: CR LF line breaks, Up and Down by visual lines, Home and End of a line, no Enter without ES_WANTRETURN, the caret never between CR and LF */
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x800000 | 0x4 | 0x40, 10, 190, 120, 60, parent, 14);       /* ES_MULTILINE | ES_AUTOVSCROLL: no ES_AUTOHSCROLL, so it wraps */
+    w = wm_window(e);
+    API("SetFocus", e);
+    etype(e, "one\r\ntwo\nthree\rfour");
+    CHECK(!strcmp(etext(e), "one\r\ntwo\r\nthree\r\nfour") && API("SendMessageA", e, 0xBA, 0, 0) == 4);       /* every break is CR LF; EM_GETLINECOUNT */
+    echar(e, 13);
+    CHECK(!strcmp(etext(e), "one\r\ntwo\r\nthree\r\nfour"));                                         /* Enter is the dialog's (the default button) unless ES_WANTRETURN */
+    echar(e, 10);                                                                                   /* Ctrl+Enter is a new line */
+    CHECK(!strcmp(etext(e), "one\r\ntwo\r\nthree\r\nfour\r\n") && w->caret == (int)strlen(etext(e)));
+    echar(e, 8);                                                                                    /* Backspace takes the whole line break */
+    CHECK(!strcmp(etext(e), "one\r\ntwo\r\nthree\r\nfour"));
+    ekey(e, VKU, 0, 0);
+    CHECK(w->caret >= 10 && w->caret <= 15);                                                        /* up from "four" to "three" */
+    ekey(e, VKHOME, 0, 0);
+    CHECK(w->caret == 10);
+    ekey(e, VKEND, 0, 0);
+    CHECK(w->caret == 15);
+    ekey(e, VKR, 0, 0);
+    CHECK(w->caret == 17);                                                                          /* Right over CR LF is one step */
+    ekey(e, VKL, 0, 0);
+    CHECK(w->caret == 15);
+    ekey(e, VKHOME, 0, 1);
+    CHECK(w->caret == 0);
+    ekey(e, VKD, 0, 0);
+    CHECK(w->caret == 5);                                                                           /* down from the start of "one" to the start of "two" */
+    ekey(e, VKD, 1, 0);
+    ekey(e, VKD, 1, 0);
+    CHECK(esel_start(e) == 5 && esel_end(e) > 14);
+    ekey(e, VKEND, 0, 1);
+    CHECK(w->caret == (int)strlen(etext(e)));
+    ekey(e, VKD, 0, 0);
+    CHECK(w->caret == (int)strlen(etext(e)));                                                       /* Down on the last line stays at the end */
+    API("DestroyWindow", e);
+
+    /* ES_WANTRETURN: Enter is a new line (and IsDialogMessage leaves it to the box) */
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x4 | 0x1000, 10, 190, 120, 60, parent, 15);
+    API("SetFocus", e);
+    echar(e, 'a');
+    echar(e, 13);
+    echar(e, 'b');
+    CHECK(!strcmp(etext(e), "a\r\nb"));
+    {
+        uint32_t key = scratch(28), plain;
+
+        WR32(key, e); WR32(key + 4, WM_KEYDOWN); WR32(key + 8, 0x0D); WR32(key + 12, 0);
+        CHECK(API("IsDialogMessageA", parent, key) == 0);                                           /* Enter in a box that wants it is the box's ... */
+        plain = make_edit( WS_CHILD | WS_VISIBLE | 0x4, 10, 190, 120, 60, parent, 19);
+        WR32(key, plain);
+        CHECK(API("IsDialogMessageA", parent, key) == 1);                                           /* ... and in one that does not, the dialog's (the default button) */
+        API("DestroyWindow", plain);
+    }
+    API("DestroyWindow", e);
+
+    /* wrapping and scrolling: long text wraps to the width into more lines than the box shows; the wheel, EM_LINESCROLL and the caret move the first line shown */
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x800000 | 0x4 | 0x40 | 0x200000, 10, 190, 90, 40, parent, 16);        /* with a scroll bar */
+    w = wm_window(e);
+    API("SetFocus", e);
+    {
+        int i, lines, part = -1;
+        char text[800];
+
+        text[0] = 0;
+        for (i = 0; i < 60; i++)
+            strcat(text, "word ");
+        API("SetWindowTextA", e, cstr(text));
+        lines = (int)API("SendMessageA", e, 0xBA, 0, 0);
+        CHECK(lines > 10 && lines == ui_edit_line_count(w) && ui_edit_page_lines(w) >= 1 && ui_edit_page_lines(w) < lines);       /* wrapped at its width */
+        CHECK(API("SendMessageA", e, 0xCE, 0, 0) == 0);                                              /* EM_GETFIRSTVISIBLELINE */
+        wm_edit_wheel(w, -2);                                                                       /* the wheel toward the user: down three lines a click */
+        CHECK(w->edit_top == 6);
+        wm_edit_wheel(w, 10);
+        CHECK(w->edit_top == 0);
+        API("SendMessageA", e, 0xB6, 0, 4);                                                         /* EM_LINESCROLL */
+        CHECK(w->edit_top == 4);
+        API("SendMessageA", e, 0xB1, 0, 0);
+        API("SendMessageA", e, 0xB7, 0, 0);                                                         /* EM_SCROLLCARET: the caret is on the first line */
+        CHECK(w->edit_top == 0);
+        ekey(e, 'A', 0, 1);
+        ekey(e, VKEND, 0, 1);
+        CHECK(w->edit_top == lines - ui_edit_page_lines(w));                                        /* the caret at the end: the last page */
+        ekey(e, VKPGUP, 0, 0);
+        CHECK(w->edit_top < lines - ui_edit_page_lines(w));
+        CHECK(ui_edit_vscroll_hit(w, 10 + 90 - 4, 190 + 20, &part) == 1 && part >= 0 && part <= 4);          /* a press on the scroll bar */
+        CHECK(ui_edit_vscroll_hit(w, 12, 190 + 20, &part) == 0);                                  /* ... not on the text */
+        CHECK(ui_edit_vscroll_hit(w, 10 + 90 - 4, 190 + 3, &part) == 1 && part == 0);             /* the up arrow */
+        CHECK(ui_edit_vscroll_hit(w, 10 + 90 - 4, 190 + 38, &part) == 1 && part == 1);            /* the down arrow */
+        w->edit_top = 3;
+        wm_inject_mouse(IN_DOWN, 10 + 90 - 4, 190 + 3);                                              /* the up arrow scrolls one line */
+        wm_inject_mouse(IN_UP, 10 + 90 - 4, 190 + 3);
+        CHECK(w->edit_top == 2);
+        wm_inject_mouse(IN_MOVE, 20, 200);                                                          /* the wheel over the box scrolls it */
+        wm_inject_mouse(IN_WHEEL, 0, -1);
+        CHECK(w->edit_top == 5);
+    }
+    API("DestroyWindow", e);
+
+    /* the layout functions the mouse and the caret use give the same answers: an offset maps to a line, a line to its range, and the offset at an x on a line back */
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x4, 10, 190, 100, 80, parent, 17);
+    w = wm_window(e);
+    API("SetWindowTextA", e, cstr("ab\r\ncd\r\n\r\nef"));
+    {
+        int s, en;
+
+        CHECK(ui_edit_line_count(w) == 4);
+        CHECK(ui_edit_line_range(w, 1, &s, &en) == 1 && s == 4 && en == 6);
+        CHECK(ui_edit_line_range(w, 2, &s, &en) == 1 && s == 8 && en == 8);                         /* an empty line */
+        CHECK(ui_edit_line_range(w, 4, &s, &en) == 0);
+        CHECK(ui_edit_line_of(w, 5) == 1 && ui_edit_line_of(w, 8) == 2 && ui_edit_line_of(w, 10) == 3);
+        CHECK(ui_edit_offset_at(w, 3, 0) == 10 && ui_edit_offset_at(w, 3, 5000) == 12);
+        CHECK(ui_edit_x_in_line(w, 4) == 0 && ui_edit_x_in_line(w, 6) > 0);
+    }
+    API("DestroyWindow", e);
+
+    /* the file dialog's box (has_caret) keeps its own caret in `caret` and never has a selection but all of its text (has_caret 2): its unset `sel_anchor` is not one */
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x800000, 10, 200, 100, 20, parent, 18);
+    w = wm_window(e);
+    API("SetWindowTextA", e, cstr("name.dek"));
+    w->has_caret = 1;
+    w->caret = 8;
+    w->sel_anchor = 0;
+    CHECK(navy_pixels(w) == 0);
+    w->has_caret = 2;
+    CHECK(navy_pixels(w) > 50);                                                                     /* all selected: white on navy */
+    w->has_caret = 0;
+    API("SetFocus", parent);
+    API("SetFocus", e);
+    w->sel_anchor = 2;
+    w->caret = 5;
+    CHECK(navy_pixels(w) > 20);                                                                     /* an ordinary box with the focus shows its selection */
+    API("SetFocus", parent);
+    CHECK(navy_pixels(w) == 0);                                                                     /* and hides it without the focus (no ES_NOHIDESEL) */
+    pump_to_dispatch();                                                                             /* the EN_CHANGE messages of all this are nobody's business any more */
+    API("DestroyWindow", parent);
+}
+
 /* The Magic Shell's pages are WS_CHILD dialogs made with CreateDialogParamA inside its main window: modeless, shown where the template puts them, their controls laid out by the page
  * itself when it gets WM_SIZE (the shell's MoveWindow of the page to its area). */
 static uint32_t pageproc(const uint32_t *a)
@@ -1959,6 +2444,112 @@ static int mb_run(uint32_t type, const char *caption, const char *text, const ch
     return (int)r;
 }
 
+/* ---- the text viewer (textview.c): what the Magic Shell's Read Me shows ---------------------------------------------------------------------------------------------------------------- */
+static int tv_mode, tv_done, tv_found, tv_ro, tv_focus, tv_top, tv_sel_end;
+static char tv_title[64], tv_clip[64];
+static const char *tv_text;
+
+static uint32_t tv_driver(const uint32_t *a)
+{
+    int waited = 0;
+    uint32_t hdlg;
+    Window *d, *ed, *close;
+
+    (void)a;
+    while (!wm_top_dialog() && waited++ < 2000)
+        sched_sleep(0.002);
+    sched_sleep(0.05);
+    hdlg = wm_top_dialog();
+    d = wm_window(hdlg);
+    ed = wm_dlg_item(hdlg, 100);
+    close = wm_dlg_item(hdlg, 2);
+    tv_found = d != NULL && ed != NULL && close != NULL;
+    if (tv_found) {
+        snprintf(tv_title, sizeof(tv_title), "%s", d->title ? d->title : "");
+        tv_ro = (ed->style & ES_READONLY) != 0 && (ed->style & ES_MULTILINE) != 0;
+        tv_focus = wm_get_focus() == ed->hwnd && ed->caret == 0 && ed->edit_top == 0;
+        wm_inject_key(0x22, 0x51, 1, -1, 0);                             /* Page Down: the text scrolls, the dialog stays */
+        wm_inject_key(0x22, 0x51, 0, -1, 0);
+        sched_sleep(0.05);
+        tv_top = ed->edit_top;
+        wm_inject_key(0x11, 0x1D, 1, -1, 0);                             /* Ctrl+A, Ctrl+C: the whole text goes to the clipboard */
+        wm_inject_key('A', 0x1E, 1, -1, 0);
+        wm_inject_key('A', 0x1E, 0, -1, 0);
+        wm_inject_key('C', 0x2E, 1, -1, 0);
+        wm_inject_key('C', 0x2E, 0, -1, 0);
+        wm_inject_key(0x11, 0x1D, 0, -1, 0);
+        sched_sleep(0.05);
+        tv_sel_end = esel_end(ed->hwnd);
+        {
+            char *c = front_clipboard_get();
+
+            snprintf(tv_clip, sizeof(tv_clip), "%.60s", c ? c : "");
+            free(c);
+        }
+        if (tv_mode == 0)
+            wh_click_window(close);
+        else if (tv_mode == 1) {
+            wm_inject_key(0x0D, 0x1C, 1, 0x0D, 0);
+            wm_inject_key(0x0D, 0x1C, 0, -1, 0);
+        } else if (tv_mode == 2) {
+            wm_inject_key(0x1B, 0x01, 1, 0x1B, 0);
+            wm_inject_key(0x1B, 0x01, 0, -1, 0);
+        } else
+            wm_post(hdlg, WM_CLOSE, 0, 0);
+    }
+    tv_done = 1;
+    return 0;
+}
+
+static void test_textview(void)
+{
+    TextViewLayout L;
+    static char big[16000];
+    char *t;
+    int k, cut, waits, i;
+
+    /* the layout fits the screen it is for, with the box over the button and both inside */
+    textview_layout(800, 600, &L);
+    CHECK(L.client_w <= 800 - 100 && L.client_h <= 600 - 100 && L.text_x + L.text_w <= L.client_w && L.text_y + L.text_h <= L.btn_y && L.btn_y + L.btn_h <= L.client_h);
+    textview_layout(320, 240, &L);
+    CHECK(L.client_w <= 320 && L.client_h <= 240 && L.text_w > 100 && L.text_h > 50 && L.btn_x >= 0 && L.btn_x + L.btn_w <= L.client_w);
+    textview_layout(1920, 1080, &L);
+    CHECK(L.client_w <= 700 && L.client_h <= 520);                                                  /* a big screen does not make an unreadably wide box */
+    /* a file's bytes as text: cut at the cap with a note, ending at a NUL */
+    t = textview_prepare("abc\r\ndef", 8, 100, &cut);
+    CHECK(t && !strcmp(t, "abc\r\ndef") && !cut);
+    free(t);
+    t = textview_prepare("abcdefghij", 10, 4, &cut);
+    CHECK(t && !strncmp(t, "abcd", 4) && cut && strstr(t, "not shown") != NULL);
+    free(t);
+    t = textview_prepare("ab\0cd", 5, 100, &cut);
+    CHECK(t && !strcmp(t, "ab") && !cut);
+    free(t);
+
+    /* the dialog: a read-only multi-line box with the text, focused at its start, a Close button; Page Down scrolls it, Ctrl+A and Ctrl+C copy it; Close, Enter, Esc and the close box end it */
+    big[0] = 0;
+    for (i = 0; i < 150; i++)
+        strcat(big, "A line of the read me file that is long enough to need wrapping in the box.\r\n");
+    tv_text = big;
+    for (k = 0; k < 4; k++) {
+        tv_mode = k;
+        tv_done = tv_found = 0;
+        tv_clip[0] = 0;
+        sched_spawn(port_host_function(tv_driver), 0, 0);
+        CHECK(textview_show(0, "ReadMe.txt", tv_text) == 1);
+        for (waits = 0; !tv_done && waits < 500; waits++)
+            sched_sleep(0.004);
+        CHECK(tv_done && tv_found && wm_dialog_count() == 0);
+        CHECK(!strcmp(tv_title, "ReadMe.txt") && tv_ro && tv_focus);
+        CHECK(tv_top > 3);                                                                          /* Page Down moved the view a page */
+        CHECK(tv_sel_end == (int)strlen(big) && !strncmp(tv_clip, "A line of the read me file", 26));
+    }
+    /* a run nobody watches does not wait for a window nobody can close (the log says so) */
+    msgbox_set_mode(MSGBOX_AUTO);
+    CHECK(textview_run(0, "ReadMe.txt", "text") == 0 && wm_dialog_count() == 0);
+    msgbox_set_mode(0);
+}
+
 static void test_msgbox(void)
 {
     MsgBoxSpec s;
@@ -2069,6 +2660,12 @@ static void test_msgbox(void)
     msgbox_log_line(line, sizeof(line), "End of duel", "Want to play again?", IDYES, 0);
     CHECK(!strcmp(line, "MessageBox: End of duel: Want to play again? -> IDYES"));
     msgbox_log_line(line, sizeof(line), "Deck Maker", "Save?", IDCANCEL, 1);
+    {
+        char two[200];
+
+        msgbox_log_line(two, sizeof(two), "Help", "First paragraph.\n\nSecond.", IDOK, 0);
+        CHECK(!strcmp(two, "MessageBox: Help: First paragraph.  Second. -> IDOK") && strchr(two, '\n') == NULL);       /* one line in the log */
+    }
     CHECK(!strcmp(line, "MessageBox: Deck Maker: Save? -> IDCANCEL (answered)"));
 
     /* the size: the text wrapped to a width, the icon beside it, the buttons in a row under both */
@@ -2860,11 +3457,13 @@ int main(void)
     test_dialog();
     test_modeless_dialog();
     test_spin_and_edit();
+    test_edit_box();
     test_sc_close();
     test_standard_controls_on_ordinary_windows();
     test_popup_menu();
     test_file_dialogs();
     test_winhelp();
+    test_textview();
     test_msgbox();
     test_yesno();
     test_auto_controls();

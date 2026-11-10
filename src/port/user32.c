@@ -1068,8 +1068,25 @@ static uint32_t GetClassNameA(const uint32_t *a)
     return (uint32_t)n;
 }
 
-static uint32_t SetFocus(const uint32_t *a) { uint32_t old = focus_hwnd; focus_hwnd = a[0]; return old; }
-void wm_set_focus(uint32_t hwnd) { focus_hwnd = hwnd; wm_dirty = 1; }
+/* The keyboard focus moves: an edit box that loses it hides its selection and one that gains it shows its caret (the box's own business, edit.c; the program is not sent a message). The dialog
+ * manager's Tab selects all of the text of the box it moves to (IsDialogMessageA). */
+static void focus_to(uint32_t hwnd)
+{
+    uint32_t old = focus_hwnd;
+
+    if (old == hwnd)
+        return;
+    focus_hwnd = hwnd;
+    wm_dirty = 1;
+    if (old && wm_window(old) && wm_edit_is_edit(wm_window(old)))
+        wm_edit_focus(wm_window(old), EDIT_FOCUS_LOST);
+    if (hwnd && wm_window(hwnd) && wm_edit_is_edit(wm_window(hwnd)))
+        wm_edit_focus(wm_window(hwnd), EDIT_FOCUS_SET);
+}
+
+static uint32_t SetFocus(const uint32_t *a) { uint32_t old = focus_hwnd; focus_to(a[0]); return old; }
+void wm_set_focus(uint32_t hwnd) { focus_to(hwnd); wm_dirty = 1; }
+uint32_t wm_get_focus(void) { return focus_hwnd; }
 static uint32_t GetFocus(const uint32_t *a) { (void)a; return focus_hwnd; }
 static uint32_t SetActiveWindow(const uint32_t *a) { active_hwnd = a[0]; return 0; }
 static uint32_t SetCapture(const uint32_t *a) { capture_hwnd = a[0]; return 0; }
@@ -1083,6 +1100,7 @@ static uint32_t SetWindowTextA(const uint32_t *a)
     if (w) {
         free(w->title);
         w->title = strdup(P(a[1]));
+        wm_edit_reset(w);
     }
     return 1;
 }
@@ -1194,6 +1212,28 @@ static uint32_t WindowFromPoint(const uint32_t *a)                 /* WindowFrom
     return 0;
 }
 static uint32_t GetKeyState(const uint32_t *a) { return a[0] < 256 && wm_keys[a[0]] ? 0x8000 : 0; }
+
+/* GetAsyncKeyState: the high bit says the key is down now, and bit 0 that it was pressed since the last call for it: a loop that polls Esc or the mouse buttons now and then (the Magic Shell's
+ * movies stop on either) sees a tap that was over between two polls. */
+static uint8_t pressed_since[256];
+void wm_note_press(uint32_t vk)
+{
+    if (vk < 256)
+        pressed_since[vk] = 1;
+}
+
+void wm_clear_presses(void) { memset(pressed_since, 0, sizeof(pressed_since)); }
+
+static uint32_t GetAsyncKeyState(const uint32_t *a)
+{
+    uint32_t r = GetKeyState(a);
+
+    if (a[0] < 256 && pressed_since[a[0]]) {
+        pressed_since[a[0]] = 0;
+        r |= 1;
+    }
+    return r;
+}
 
 /* ---- the queue ------------------------------------------------------------------------------------------------------------------ */
 void wm_post(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp)
@@ -1525,8 +1565,8 @@ int wm_text_focus(void)
 
     if (!d) {
         f = wm_window(focus_hwnd);
-        if (!f || f->proc || !f->visible || !f->enabled || !f->cname || strcasecmp(f->cname, "EDIT"))
-            return 0;
+        if (!f || f->proc || !f->visible || !f->enabled || !f->cname || strcasecmp(f->cname, "EDIT") || (f->style & ES_READONLY))
+            return 0;                                       /* (a read-only box takes no typing: no on-screen keyboard for it) */
         for (i = 0, f = wm_window(f->parent); f && i < 16; i++, f = wm_window(f->parent))
             if (!f->visible)
                 return 0;
@@ -1662,7 +1702,7 @@ const WinApi USER32_APIS[] = {
     {"user32.dll", "DestroyIcon", one}, {"user32.dll", "DestroyCursor", one}, {"user32.dll", "LoadAcceleratorsA", LoadAcceleratorsA},
     {"user32.dll", "TranslateAcceleratorA", zero}, {"user32.dll", "GetDoubleClickTime", GetDoubleClickTime},
     {"user32.dll", "GetCursorPos", GetCursorPos}, {"user32.dll", "SetCursorPos", SetCursorPos}, {"user32.dll", "WindowFromPoint", WindowFromPoint},
-    {"user32.dll", "GetKeyState", GetKeyState}, {"user32.dll", "GetAsyncKeyState", GetKeyState}, {"user32.dll", "SendMessageA", SendMessageA},
+    {"user32.dll", "GetKeyState", GetKeyState}, {"user32.dll", "GetAsyncKeyState", GetAsyncKeyState}, {"user32.dll", "SendMessageA", SendMessageA},
     {"user32.dll", "PostMessageA", PostMessageA}, {"user32.dll", "PostQuitMessage", PostQuitMessage}, {"user32.dll", "GetMessageTime", GetMessageTime},
     {"user32.dll", "TranslateMessage", zero}, {"user32.dll", "DispatchMessageA", DispatchMessageA}, {"user32.dll", "PeekMessageA", PeekMessageA},
     {"user32.dll", "GetMessageA", GetMessageA}, {"user32.dll", "SetTimer", SetTimer}, {"user32.dll", "KillTimer", KillTimer},

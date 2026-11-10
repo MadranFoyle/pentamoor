@@ -337,7 +337,7 @@ static void test_mci(void)
     CHECK(MCI(id, 0x811, 0x100 | 0x200, parms) == 0);
     /* MCI_STATUS, MCI_STATUS_ITEM of the mode: stopped, then playing after MCI_PLAY; the length in frames; the position at the start */
     WR32(parms + 8, 4);
-    CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 524);
+    CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 525);
     WR32(parms + 8, 1);
     CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 3);
     WR32(parms + 8, 2);
@@ -347,10 +347,21 @@ static void test_mci(void)
     WR32(parms, parent->hwnd);                                                        /* MCI_NOTIFY: the window that wants MM_MCINOTIFY */
     CHECK(MCI(id, 0x806, 0x1, parms) == 0);
     WR32(parms + 8, 4);
-    CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 525 && movie_window_playing(w));      /* playing */
+    CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 526 && movie_window_playing(w));      /* playing */
     port_clock_skew += 0.5;                                                           /* past the end (3 frames at 15 a second): the clock is moved, not slept */
     movie_tick();
-    CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 524);         /* stopped again */
+    CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 525);         /* stopped again (mmsystem.h's MCI_MODE_STOP is 525, MCI_MODE_PLAY 526: the shell's loop compares with 0x20e) */
+    CHECK(w->visible);                                                                /* playing shows a window that was made hidden */
+    WR32(parms, 0);
+    CHECK(MCI(id, 0x806, 0x2000000, parms) == 0);                                     /* MCI_DGV_PLAY_FULLSCREEN: the movie goes to the middle of the screen */
+    {
+        int x0, y0, x1, y1;
+
+        wm_abs_rect(w, &x0, &y0, &x1, &y1);
+        CHECK(x0 == (screen_w - 16) / 2 && y0 == (screen_h - 8) / 2);
+    }
+    port_clock_skew += 0.5;
+    movie_tick();
     WR32(parms + 8, 2);
     CHECK(MCI(id, 0x814, 0x2 | 0x100, parms) == 0 && RD32(parms + 4) == 3);          /* and at the end */
     {   /* MM_MCINOTIFY (0x3b9) with MCI_NOTIFY_SUCCESSFUL (1) and the device id reached the window that asked for it */

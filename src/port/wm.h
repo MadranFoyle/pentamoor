@@ -61,7 +61,13 @@ typedef struct Window {
     int own_mouse;               /* a dialog whose procedure does the clicks on its list boxes and combo boxes itself (the file dialog): they are not the standard ones'  */
     int own_keys;                /* a dialog whose procedure reads Enter and Esc itself (a message box: the default button need not be IDOK): the dialog manager does not turn them into IDOK and IDCANCEL */
     int lb_icons;                /* a list box whose items are drawn with a folder or file icon (an item's data: 1 a folder), as the file dialog's list is */
-    int has_caret, caret;        /* an edit box that shows a text cursor (1; 2: with all its text selected), and where (a byte offset in its text): the file dialog's */
+    int has_caret, caret;        /* an edit box that shows a text cursor (1; 2: with all its text selected), and where (a byte offset in its text): the file dialog's. Every edit box keeps
+                                  * its caret here (the active end of the selection) whether or not it has_caret: the caret is drawn when the box has the focus */
+    int sel_anchor;              /* an edit box: the other end of the selection (equal to `caret`: none); the selection is [min, max) of the two, as a byte range of the text (edit.c) */
+    int edit_xscroll, edit_top;  /* an edit box: how many pixels a one-line box is scrolled to the left, and the first visual line a multi-line one shows */
+    uint32_t edit_t;             /* when the caret last moved or the text last changed (port_now_ms): the blink restarts there */
+    int edit_drag;               /* the left button is held down in an edit box selecting with the mouse (1), or dragging a multi-line box's scroll thumb (2) */
+    int edit_modified;           /* EM_GETMODIFY */
     /* dialogs */
     uint32_t dlgproc, result;
     int ended, is_dialog;
@@ -108,7 +114,8 @@ uint32_t wm_control_message(Window *w, const char *cls, uint32_t msg, uint32_t w
 Window *wm_dlg_item(uint32_t hdlg, uint32_t id);
 void wm_button_auto_check(Window *w);          /* a click on an automatic check box or radio button */
 void wm_spin_click(Window *w, int up);                 /* a click on a spin button's upper or lower arrow */
-void wm_set_focus(uint32_t hwnd);                      /* the keyboard focus (user32.c), as the dialog manager moves it with Tab */
+void wm_set_focus(uint32_t hwnd);                      /* the keyboard focus (user32.c), as the dialog manager moves it with Tab; an edit box that loses it hides its selection and one that gains it selects its text (the program is sent no message) */
+uint32_t wm_get_focus(void);                           /* ... and who has it */
 void wm_query_ctl_colors(Window *parent, Window *c);   /* ask the parent's procedure how the control is coloured (WM_CTLCOLORSTATIC and the rest) and keep the answer for when it is drawn */
 
 /* a drop-down combo box (controls.c): the list is drawn over everything (ui.c) and takes the mouse and keys while it is down */
@@ -126,6 +133,40 @@ void ui_listbox_geometry(const Window *w, int *y_first, int *rowh, int *rows, in
 int wm_is_hit_target(const Window *w);                      /* whether the pointer can be on this window at all (the test wm_hit_test applies first; input.c) */
 void ui_combo_list(uint8_t *rgb, int sw, int sh, const Window *w);
 
+/* The edit boxes (edit.c): single-line and multi-line, with a caret, a selection, the clipboard and the EM_ messages of Windows. Everything works on the window's own text (`title`) in
+ * bytes (Latin-1, one byte a character); a multi-line box keeps its line breaks as CR LF, as Windows does. The functions are what the keyboard and the mouse do, so that a controller's
+ * on-screen keyboard (or anything else that types) can call them: wm_edit_text inserts text where the caret is, replacing the selection, as typing does. */
+enum { ES_MULTILINE = 0x4, ES_PASSWORD = 0x20, ES_AUTOVSCROLL = 0x40, ES_AUTOHSCROLL = 0x80, ES_NOHIDESEL = 0x100, ES_READONLY = 0x800, ES_NUMBER = 0x2000 };
+int wm_edit_is_edit(const Window *w);                                            /* a built-in EDIT control (not one the program subclassed with a procedure of its own) */
+int wm_edit_is_multiline(const Window *w);
+void wm_edit_get_sel(const Window *w, int *start, int *end);                      /* the selection, start <= end (equal: none) */
+void wm_edit_set_sel(Window *w, int start, int end);                              /* EM_SETSEL: -1 for the end is "the end of the text"; start -1 with end 0 removes the selection */
+int wm_edit_text(Window *w, const char *s, int n);                                /* type n bytes: replaces the selection, the limit and ES_NUMBER apply; returns how many were taken; no-op when read-only or disabled */
+int wm_edit_key(Window *w, uint32_t vk, int shift, int ctrl);                     /* a key press: arrows, Home, End, Page Up and Down, Delete, Ctrl+A C X V; returns 1 if the box used the key */
+int wm_edit_char(Window *w, uint32_t ch);                                         /* WM_CHAR: a printable character, Backspace, Enter in a multi-line box */
+int wm_edit_mouse(Window *w, int kind, int x, int y, int shift);                  /* IN_DOWN, IN_MOVE (with the button held) and IN_UP at a screen point (a second and third press in a row are the double and triple click); returns 1 if used */
+void wm_edit_note_key(uint32_t hwnd, uint32_t vk, int shift, int ctrl);           /* input.c: Shift and Control as they were when this key press was made (the keys may be let go before the box gets the message) */
+uint32_t wm_edit_dragging(void);                                                  /* the edit box whose text the mouse is selecting (or whose scroll thumb it is dragging), or 0 */
+void wm_edit_reset(Window *w);                                                    /* the text was set from outside (WM_SETTEXT, SetWindowText): the caret goes to the start, nothing is selected */
+void wm_edit_tick(void);                                                          /* from the host's serve loop: the caret's blink is a change of the picture */
+void wm_edit_wheel(Window *w, int clicks);                                        /* the mouse wheel over a multi-line box */
+enum { EDIT_FOCUS_LOST = 0, EDIT_FOCUS_SET = 1, EDIT_FOCUS_DIALOG = 2 };
+void wm_edit_focus(Window *w, int how);                                           /* the box loses the focus (it hides its selection), gains it from SetFocus or a click (the caret shows from now; the selection is as it was) or from the dialog manager (Tab: all of the text is selected, as Windows does) */
+uint32_t wm_edit_message(Window *w, uint32_t msg, uint32_t wp, uint32_t lp);      /* the EM_ messages, WM_CUT, WM_COPY, WM_PASTE, WM_CLEAR, WM_SETTEXT's effect on the caret ... */
+int wm_edit_caret_visible(const Window *w);                                        /* whether the caret is drawn now: the box has the focus (or the file dialog's has_caret) and the blink is in its on half */
+
+/* ui.c: where things are in an edit box, from the same layout the drawing uses */
+int ui_edit_index_at(const Window *w, int x, int y);                              /* the byte offset at a screen point */
+int ui_edit_scroll_to_caret(Window *w);                                           /* scroll so that the caret shows (changes edit_xscroll / edit_top); returns 1 if it did */
+int ui_edit_page_lines(const Window *w);                                          /* the visual lines a multi-line box shows */
+int ui_edit_line_count(const Window *w);                                          /* ... and all it has, wrapped to its width */
+int ui_edit_line_of(const Window *w, int offset);                                 /* the visual line a byte offset is on */
+int ui_edit_line_range(const Window *w, int line, int *start, int *end);          /* the byte range [start, end) of a visual line without its line break; 0 if there is no such line */
+int ui_edit_x_in_line(const Window *w, int offset);                               /* the pixels from the start of the visual line an offset is on to the offset */
+int ui_edit_offset_at(const Window *w, int line, int x);                          /* the offset on a visual line nearest to x pixels from its start */
+int ui_edit_vscroll_pos(const Window *w, int y);                                  /* the first line to show for the scroll thumb dragged to a screen y */
+int ui_edit_vscroll_hit(const Window *w, int x, int y, int *part);                /* a press on a multi-line box's scroll bar: 1 if it is on it; *part: 0 up arrow, 1 down arrow, 2 page up, 3 page down, 4 thumb */
+
 /* input from the host (the SDL front end): screen pixels */
 enum { IN_MOVE, IN_DOWN, IN_UP, IN_RDOWN, IN_RUP, IN_WHEEL };      /* IN_WHEEL: y is the number of clicks, positive away from the user (scrolls up) */
 int wm_inject_mouse(int kind, int x, int y);
@@ -134,6 +175,8 @@ int wm_inject_char(int ch);                      /* WM_CHAR alone, to the open d
 int wm_text_focus(void);                         /* an edit control of the open modal dialog, or (no dialog open) one with the keyboard focus on a page, is there to be typed into (the on-screen keyboard may show) */
 extern int wm_cursor_x, wm_cursor_y;
 extern uint8_t wm_keys[256];
+void wm_clear_presses(void);                      /* ... forget them all (a movie is about to start: the click that started it is not the one that stops it) */
+void wm_note_press(uint32_t vk);                 /* a key or mouse button went down (VK_LBUTTON 1, VK_RBUTTON 2): bit 0 of GetAsyncKeyState until it is asked */
 
 uint32_t wm_hit_test(int x, int y);
 void wm_dump(FILE *f);

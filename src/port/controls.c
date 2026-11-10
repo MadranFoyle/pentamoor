@@ -285,33 +285,6 @@ static uint32_t spin_message(Window *w, uint32_t msg, uint32_t wp, uint32_t lp)
     return 0;
 }
 
-/* a character typed into an edit box: printable ones are added (digits only with ES_NUMBER), Backspace takes the last one off (the port keeps no caret or selection) */
-static uint32_t edit_char(Window *w, uint32_t ch)
-{
-    size_t n = strlen(w->title);
-    int limit = w->edit_limit > 0 ? w->edit_limit : 32767;
-
-    if (!w->enabled)
-        return 0;
-    if (ch == 8 && n > 0) {
-        w->title[n - 1] = 0;
-    } else if (ch >= 32 && ch < 256 && ch != 127 && (int)n < limit && (!(w->style & 0x2000) || (ch >= '0' && ch <= '9'))) {
-        char *t = realloc(w->title, n + 2);
-
-        if (!t)
-            return 0;
-        w->title = t;
-        t[n] = (char)ch;
-        t[n + 1] = 0;
-    } else {
-        return 0;
-    }
-    w->invalid = 1;
-    wm_dirty = 1;
-    edit_changed(w);
-    return 0;
-}
-
 uint32_t wm_control_message(Window *w, const char *cls, uint32_t msg, uint32_t wp, uint32_t lp)
 {
     int cb = !strcasecmp(cls, "COMBOBOX");
@@ -319,6 +292,7 @@ uint32_t wm_control_message(Window *w, const char *cls, uint32_t msg, uint32_t w
     if (msg == WM_SETTEXT) {
         free(w->title);
         w->title = strdup(P(lp));
+        wm_edit_reset(w);
         return 1;
     }
     if (msg == WM_GETTEXT) {
@@ -343,15 +317,8 @@ uint32_t wm_control_message(Window *w, const char *cls, uint32_t msg, uint32_t w
     }
     if (!strcasecmp(cls, "msctls_updown32"))
         return spin_message(w, msg, wp, lp);
-    if (!strcasecmp(cls, "EDIT")) {
-        if (msg == 0x102)             /* WM_CHAR */
-            return edit_char(w, wp);
-        if (msg == 0xC5) {            /* EM_LIMITTEXT */
-            w->edit_limit = (int)wp;
-            return 0;
-        }
-        return 0;
-    }
+    if (!strcasecmp(cls, "EDIT"))
+        return wm_edit_message(w, msg, wp, lp);
     if (!strcasecmp(cls, "BUTTON")) {
         if (msg == 0xF1) {            /* BM_SETCHECK */
             w->checked = (int)wp;
@@ -1172,6 +1139,8 @@ static uint32_t IsDialogMessageA(const uint32_t *a)
         wm_post(dlg->hwnd, WM_COMMAND, 2u, 0);
         return 1;
     }
+    if (wp == 0x0D && wm_edit_is_multiline(wm_window(hwnd)) && (wm_window(hwnd)->style & 0x1000u))       /* a multi-line edit box with ES_WANTRETURN has Enter for itself */
+        return 0;
     if (wp == 0x0D) {                                                           /* VK_RETURN */
         Window *f = wm_window(hwnd), *def = NULL;
         int i, n = wm_window_count();
@@ -1193,8 +1162,10 @@ static uint32_t IsDialogMessageA(const uint32_t *a)
     if (wp == 0x09) {                                                           /* VK_TAB: Shift moves backwards */
         uint32_t to = next_tab_stop(dlg, hwnd, wm_keys[0x10] != 0);
 
-        if (to && to != hwnd)
+        if (to && to != hwnd) {
             wm_set_focus(to);
+            wm_edit_focus(wm_window(to), EDIT_FOCUS_DIALOG);                       /* (a box that is not an edit box ignores it) */
+        }
         return 1;
     }
     return 0;

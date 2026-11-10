@@ -224,7 +224,7 @@ overlay, and stop them by process id, not by name.
 
 | Path | What |
 |---|---|
-| `src/port/` | the native program: PE loader, thread scheduler, the Win32 layer (`user32.c`, `gdi*.c`, `kernel32*.c`, `crt.c`...), the dialog and control renderer (`ui.c`), SDL front end (`front_sdl.c`; its pure decisions: `pad.c`, `steamdeck.c`, `textin.c`), sound mixer, movies, tests |
+| `src/port/` | the native program: PE loader, thread scheduler, the Win32 layer (`user32.c`, `gdi*.c`, `kernel32*.c`, `crt.c`...), the dialog and control renderer (`ui.c`), the edit boxes (`edit.c`: caret, selection, clipboard, multi-line), the text viewer that answers a game's start of Write or Notepad (`textview.c`), SDL front end (`front_sdl.c`; its pure decisions: `pad.c`, `steamdeck.c`, `textin.c`), sound mixer, movies, tests |
 | `tools/lift/` | the lifter: x86 machine code to C (`x86lift.py`, `gen_handlers.py`, `gen_dll.py`), `fnscan.py` (finds the functions of a program in its own code), the import signatures, tests |
 | `src/native/` | the runtime header the lifted code uses (`lift_rt.h`, `lift_tables.h`), and hand-written C versions of verified engine functions with the addresses they stand in for (`layout.c`) |
 | `src/port/profile.c` | the build profiles: the build id (SHA-256 of a file), the table of known builds with every address of the game the port hard-codes, and the refusal of an unknown build ([docs/PHASE_C.md](docs/PHASE_C.md), "Build profiles") |

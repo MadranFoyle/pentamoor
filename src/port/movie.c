@@ -23,7 +23,7 @@
 #include "wm.h"
 
 enum { MCI_PLAY = 0x806, MCI_STOP = 0x808 };
-enum { MCIWNDM_NOTIFYMODE = 0x4C8, MCI_MODE_STOP = 524, MCI_MODE_PLAY = 525 };
+enum { MCIWNDM_NOTIFYMODE = 0x4C8, MCI_MODE_STOP = 525, MCI_MODE_PLAY = 526 };
 
 typedef struct Chunk { uint32_t off, size; } Chunk;
 

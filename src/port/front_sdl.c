@@ -82,6 +82,7 @@ static void init_keys(void)
     map(SDL_SCANCODE_RETURN, 13, 0x1C);       map(SDL_SCANCODE_KP_ENTER, 13, 0x1C);      map(SDL_SCANCODE_SPACE, 32, 0x39);
     map(SDL_SCANCODE_LCTRL, 0x11, 0x1D);      map(SDL_SCANCODE_RCTRL, 0x11, 0x1D);
     map(SDL_SCANCODE_LSHIFT, 0x10, 0x2A);     map(SDL_SCANCODE_RSHIFT, 0x10, 0x36);
+    map(SDL_SCANCODE_LGUI, 0x5B, 0x5B);       map(SDL_SCANCODE_RGUI, 0x5C, 0x5C);        /* the Command key of a Mac (the Windows key): an edit box takes it for Control (Cmd+C, V, X, A) */
     map(SDL_SCANCODE_LALT, 0x12, 0x38);       map(SDL_SCANCODE_RALT, 0x12, 0x38);        map(SDL_SCANCODE_CAPSLOCK, 0x14, 0x3A);
     map(SDL_SCANCODE_HOME, 0x24, 0x47);       map(SDL_SCANCODE_UP, 38, 0x48);            map(SDL_SCANCODE_PAGEUP, 0x21, 0x49);
     map(SDL_SCANCODE_LEFT, 37, 0x4B);         map(SDL_SCANCODE_RIGHT, 39, 0x4D);         map(SDL_SCANCODE_END, 0x23, 0x4F);
@@ -1785,6 +1786,22 @@ static int display_open(int deck)
     return 1;
 }
 
+/* The edit boxes' clipboard (wm.h): SDL's. They are asked from the game's thread (SDL 2 documents no thread for its clipboard calls); only tried on SDL's dummy driver, where the clipboard is a string of SDL's own. */
+static char *sdl_clip_get(void)
+{
+    char *t = SDL_GetClipboardText(), *r;
+
+    if (!t || !*t) {
+        SDL_free(t);
+        return NULL;
+    }
+    r = strdup(t);
+    SDL_free(t);
+    return r;
+}
+
+static void sdl_clip_set(const char *text) { SDL_SetClipboardText(text); }
+
 int front_run(int (*game)(void *), void *arg)
 {
     Game g = {game, arg, 0};
@@ -1818,6 +1835,7 @@ int front_run(int (*game)(void *), void *arg)
         fprintf(stderr, "SDL_Init: %s (running without a window)\n", SDL_GetError());
         return game(arg);
     }
+    front_clipboard_hooks(sdl_clip_get, sdl_clip_set);
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
     SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
     SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");           /* a full-screen game on one display must not minimize when another is clicked (or Steam's overlay, Gamescope's windows) */
@@ -2095,10 +2113,10 @@ int front_run(int (*game)(void *), void *arg)
                         flush_alt();
                         held[sc] = 1;
                         held_key[sc] = k;
-                        if (fixed_char(k.vk) >= 0 || k.vk < 0x10 || (k.vk >= 0x10 && k.vk <= 0x14) || (k.vk >= 0x21 && k.vk <= 0x2E) || (k.vk >= 0x70 && k.vk <= 0x7B))
+                        if (fixed_char(k.vk) >= 0 || k.vk < 0x10 || (k.vk >= 0x10 && k.vk <= 0x14) || k.vk == 0x5B || k.vk == 0x5C || (k.vk >= 0x21 && k.vk <= 0x2E) || (k.vk >= 0x70 && k.vk <= 0x7B))
                             front_push_key(k.vk, k.sc, 1, fixed_char(k.vk), ev.key.repeat != 0);
                         else if (!text_on)         /* no text will follow (SDL's text input is off): the character is the US layout's, as the game's own text boxes work it out (none with Ctrl or Alt down) */
-                            front_push_key(k.vk, k.sc, 1, (held[SDL_SCANCODE_LCTRL] || held[SDL_SCANCODE_RCTRL] || held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT]) ? -1 : textin_char_for_key(k.vk, shift_held()), ev.key.repeat != 0);
+                            front_push_key(k.vk, k.sc, 1, (held[SDL_SCANCODE_LCTRL] || held[SDL_SCANCODE_RCTRL] || held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT] || held[SDL_SCANCODE_LGUI] || held[SDL_SCANCODE_RGUI]) ? -1 : textin_char_for_key(k.vk, shift_held()), ev.key.repeat != 0);
                         else
                             pend = (Pending){k, 1, ev.key.repeat != 0};
                     } else {
