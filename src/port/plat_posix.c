@@ -13,6 +13,36 @@
 
 void plat_init(void) {}
 
+#ifdef __APPLE__
+#include <malloc/malloc.h>
+int plat_host_heap(unsigned long long *bytes, unsigned long long *blocks)
+{
+    malloc_statistics_t st;
+
+    malloc_zone_statistics(NULL, &st);
+    *bytes = st.size_in_use;
+    *blocks = st.blocks_in_use;
+    return 1;
+}
+#elif defined(__GLIBC__)
+#include <malloc.h>
+int plat_host_heap(unsigned long long *bytes, unsigned long long *blocks)
+{
+    struct mallinfo mi = mallinfo();            /* (int fields: right up to 2 GiB, far more than the runtime holds) */
+
+    *bytes = (unsigned long long)(unsigned)mi.uordblks + (unsigned long long)(unsigned)mi.hblkhd;
+    *blocks = 0;
+    return 1;
+}
+#else
+int plat_host_heap(unsigned long long *bytes, unsigned long long *blocks)
+{
+    (void)bytes;
+    (void)blocks;
+    return 0;
+}
+#endif
+
 uint8_t *plat_guest_reserve(void)
 {
     /* All of the 32-bit address space; pages are committed when first touched. */

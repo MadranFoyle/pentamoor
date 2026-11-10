@@ -333,3 +333,42 @@ def test_ppm_region_hash_tells_pictures_and_regions_apart():
     assert ppm_region_hash(ppm, (3, 2, 4, 3)) != ppm_region_hash(other, (3, 2, 4, 3))
     assert ppm_region_hash(ppm, (-5, -5, 99, 99)) == ppm_region_hash(ppm)          # the box is cut to the picture
     assert ppm_region_hash(ppm, (2, 2, 2, 3)) is None and ppm_region_hash(b"not a ppm") is None
+
+
+# ---- a start that stalls (docs/notes/start-stalls.md) ------------------------------------------------------------------------------------------
+def fake_runtime(tmp_path, body):
+    """A stand-in for pentamoor-run: a shell script that does `body` (the real one prints `loaded <program> at ...` when the game's code is about to run)."""
+    exe = tmp_path / "fake-run"
+    exe.write_text("#!/bin/sh\n" + body + "\n")
+    exe.chmod(0o755)
+    g = Game(str(tmp_path), workdir=str(tmp_path / "w"), exe=str(exe), module="none", program="x/MAGIC.EXE", overlay_seed=None)
+    return g
+
+
+def test_wait_loaded_sees_the_loaded_line(tmp_path):
+    g = fake_runtime(tmp_path, "echo 'display (start): window'\necho 'loaded /x/MAGIC.EXE at 0x00400000, entry 0x00513da0'\nsleep 5")
+    g.start()
+    try:
+        assert g.wait_loaded(10) and g.loaded()
+    finally:
+        g.stop()
+
+
+def test_a_start_that_never_prints_loaded_is_a_stall_and_is_diagnosed(tmp_path):
+    g = fake_runtime(tmp_path, "echo 'display (start): window'\nsleep 30")
+    g.start()
+    try:
+        assert not g.wait_loaded(1.0) and g.alive() and not g.loaded()        # alive, silent: a stall (not a crash, not a slow load)
+        text = g.diagnose_stall()
+        assert os.path.exists(os.path.join(g.workdir, "stall.txt")) and text != ""
+    finally:
+        g.stop()
+
+
+def test_a_start_that_dies_is_not_a_stall(tmp_path):
+    g = fake_runtime(tmp_path, "echo 'port: cannot reserve'\nexit 2")
+    g.start()
+    try:
+        assert not g.wait_loaded(10) and not g.alive()
+    finally:
+        g.stop()

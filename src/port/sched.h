@@ -26,6 +26,11 @@ uint32_t sched_thread_id(const GThread *t);
 int sched_thread_done(const GThread *t);
 uint32_t sched_thread_exit_code(const GThread *t);
 GThread *sched_thread_by_id(uint32_t tid);
+/* A finished thread's record is kept for whoever still names it (a handle from CreateThread, asked for the exit code; a timer, asked whether its last callback is done) and freed when its slot is
+ * reused and the last holder has dropped it. Hold the record while a pointer to it is kept, drop it when the pointer goes. */
+void sched_thread_hold(GThread *t);
+void sched_thread_drop(GThread *t);
+int sched_records_live(void);                    /* thread records alive, listed or held (a test counts them) */
 void sched_exit_current(uint32_t code);          /* ExitThread: does not return */
 
 /* Block the calling thread until `ready(ctx)` is true (NULL: never) or `timeout` seconds have passed (< 0: no timeout). */

@@ -57,7 +57,7 @@ def main():
         """No wandering monster reaches the party while the script presses menus: the table is emptied four times a second."""
         while True:
             time.sleep(0.25)
-            if keep["on"] and keep["game"] is not None and keep["game"].alive():
+            if keep["on"] and keep["game"] is not None and keep["game"].alive() and keep["game"].loaded():
                 clear(keep["game"])
 
     threading.Thread(target=keeper, daemon=True).start()

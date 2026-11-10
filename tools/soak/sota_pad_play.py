@@ -120,7 +120,7 @@ class Session(base.Session):
         while True:
             time.sleep(0.25)
             g = self.g
-            if self.keeper_on.is_set() and g is not None and g.alive():
+            if self.keeper_on.is_set() and g is not None and g.alive() and g.loaded():          # not before the program is loaded: a new process has no guest memory to poke yet
                 self.clear_monsters()
 
     def monsters(self):
@@ -242,12 +242,17 @@ class Session(base.Session):
 
 # ---- starting a process ------------------------------------------------------------------------------------------------------------------
 def boot(s, name, seed=None, targets=2):
-    """A new game process, started until its title menu (`targets` of them) is up. A start can stall silently, with nothing in the log after the display line: seen four times in about a dozen starts when
-    several runtimes were started within the same second, never when one was; stopping it and starting it again worked each time (not investigated further). One more try, and a line that says so."""
-    g = None
-    for attempt in range(2):
-        g = s.new_process(seed=seed, name=name if attempt == 0 else "%s_again" % name)
+    """A new game process, started until its title menu (`targets` of them) is up. A start that stalls before the game's code runs (no `loaded` line in the log) is told apart from a slow one in 30 s,
+    its threads' stacks are written beside its log (stall.txt) and printed, and it is started again; so is a process that never shows the title menu in 100 s."""
+    g, mode, tl = None, None, []
+    for attempt in range(3):
+        g = s.new_process(seed=seed, name=name if attempt == 0 else "%s_again%d" % (name, attempt))
         g.start()
+        if not g.wait_loaded(30):
+            where = "" if not g.alive() else "\n".join(g.diagnose_stall().splitlines()[:60])
+            print("NOTE  (not counted) the process did not start: no `loaded` line in 30 s (log: %s, %s)\n%s\nstarted again" % (g.log_path, "alive" if g.alive() else "gone, exit status %s (a negative one is a signal: -11 is a segmentation fault)" % g.exit_status(), where), flush=True)
+            g.stop()
+            continue
         s.wait(12)
         mode, tl = s.wait_mode(("screen",), 90, targets)
         if mode == "screen" and len(tl) == targets:

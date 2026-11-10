@@ -42,7 +42,7 @@ DUEL = {640: (290, 325), 800: (360, 388), 1024: (470, 486)}
 
 DUMP_PREFIXES = ("  win ", "  queue", "  popup", "  item ", "  peek", "  poke", "  hit ", "  pad:", "  nav:", "  target ",
                  "  thread ", "    [import]", "    [fn]", "    [call]")                # what `threads`, `trace on` and `calls on` print when someone looks at a stuck game by hand
-KNOWN_STDERR = (re.compile(r"^loaded .* at 0x"), re.compile(r"^display \(\w+\): (window|full screen), window \d+x\d+ points"),re.compile(r"^build: v\d"), re.compile(r"^\d\d:\d\d:\d\d\.\d+ padlog: "), re.compile(r"^LoadLibraryA\((deckdll|statwin)\.dll\) -> mapped"),
+KNOWN_STDERR = (re.compile(r"^loaded .* at 0x"), re.compile(r"^(heap: top|host: malloc) \d+ KiB"), re.compile(r"^display \(\w+\): (window|full screen), window \d+x\d+ points"),re.compile(r"^build: v\d"), re.compile(r"^\d\d:\d\d:\d\d\.\d+ padlog: "), re.compile(r"^LoadLibraryA\((deckdll|statwin)\.dll\) -> mapped"),
                  # the deck builder asks MAGIC.EXE for an export (ManaLink's has it) that 1.0's does not have (pefile: 15 exports, no szDeckName): Windows answers NULL too
                  re.compile(r"^GetProcAddress\(0x400000, szDeckName\) -> not found$"))
 
@@ -64,6 +64,7 @@ class Soak:
         self.nshots = 0
         self.in_title = False
         self.rss = []
+        self.last_life_poke = 0.0
         self.rss_last = 0.0
         self.known_stderr = list(KNOWN_STDERR)
         if os.path.basename(a.program).lower() == "deck.exe":          # DECK.EXE has no exports for the deck builder's ten lookups (docs/PHASE_C.md, "The deck builder"): it runs on an empty deck
@@ -393,7 +394,7 @@ class Soak:
         if any(k in title for k in ("CASTING", "ACTIVATING", "PROCESSING")) or low.startswith(("pick", "select")) or "pick " in low:
             return self.prompt_tick(t, ctx, title, cancel, done), "prompt"
         if "attackers" in low and done:
-            if ctx["n"] == 0 or ctx["n"] == 1:
+            if (ctx["n"] == 0 or ctx["n"] == 1) and not self.a.endless:
                 mine = self.my_permanents(t)
                 if mine:
                     for p in mine:
@@ -462,7 +463,12 @@ class Soak:
             if s[0] and "discard phase" in s[0].lower() and ctx["n"] == 0:
                 turns += 1
                 self.stats["turns"] += 1
-            if in_duel and now >= next_concede and (turns > concede_after or now - t_start > a.max_duel_s):
+            if self.a.endless and in_duel and now - self.last_life_poke > 5:         # both players' lives held high: the duel goes on until a library runs out
+                self.last_life_poke = now
+                lives = g.peek(0x6a4a00, 2)
+                if lives and min(lives) < 5000:
+                    g.poke_many([(0x6a4a00, 9999), (0x6a4a04, 9999)])
+            if in_duel and now >= next_concede and not a.endless and (turns > concede_after or now - t_start > a.max_duel_s):
                 next_concede = now + 20
                 ok = self.concede()
                 self.stats["concede_try"] += 1
@@ -597,6 +603,7 @@ def main():
     ap.add_argument("--max-duel-s", type=float, default=300)
     ap.add_argument("--stall-s", type=float, default=60)
     ap.add_argument("--tick-s", type=float, default=1.0)
+    ap.add_argument("--endless", action="store_true", help="long-duel mode for the memory curve: both lives are held at 9999 (poked every 5 s), nothing attacks and nothing concedes, so the duel runs until a library is empty or --minutes ends the run")
     ap.add_argument("--verbose", action="store_true", help="print every action")
     a = ap.parse_args()
     if a.workdir is None:

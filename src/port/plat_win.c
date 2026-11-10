@@ -299,6 +299,13 @@ int plat_child_state(long id, int *exit_code)
     return 1;
 }
 
+int plat_host_heap(unsigned long long *bytes, unsigned long long *blocks)
+{
+    (void)bytes;
+    (void)blocks;
+    return 0;
+}
+
 int plat_pid_alive(long pid)
 {
     HANDLE h;

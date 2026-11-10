@@ -29,6 +29,8 @@ struct GThread {
     int quit, empty_polls;
     uint32_t quit_code;
     int started;
+    int listed;                 /* the record is in threads[] */
+    int refs;                   /* holders of the record besides threads[]: a handle from CreateThread, a multimedia timer's last callback, a wait (sched_thread_hold/drop) */
     LiftThreadState lth;        /* this thread's x87 state and return EDX while another thread runs (lift_state.th is the running thread's) */
     int slot;                   /* which stack of the stack area it runs on (-1: the main thread has its own) */
     const char *last_call;      /* the last import this thread called, and from where in the guest: what a thread that blocks in it is waiting for (sched_dump) */
@@ -105,24 +107,55 @@ GThread *sched_thread_by_id(uint32_t tid)
     return NULL;
 }
 
+static int records_live;
+int sched_records_live(void) { return records_live; }
+
+static void thread_free(GThread *t)
+{
+    records_live--;
+    pthread_cond_destroy(&t->cv);
+    free(t);
+}
+
 static GThread *new_thread(void)
 {
     GThread *t = calloc(1, sizeof(*t));
     int i;
 
+    records_live++;
+
     t->tid = next_tid++;
     pthread_cond_init(&t->cv, NULL);
     t->until = -1;
     t->lth = lift_thread_initial();
-    for (i = 0; i < nthreads; i++)       /* reuse the slot of a finished thread (its record stays: a handle may still name it) */
+    t->listed = 1;
+    for (i = 0; i < nthreads; i++)       /* reuse the slot of a finished thread; its record stays while a handle or a timer still names it and is freed with the last of them (it was never freed:
+                                          * 256 bytes for each callback of a multimedia timer, which come some twenty times a second in a duel) */
         if (threads[i]->state == DONE && threads[i]->started == 2) {
+            GThread *old = threads[i];
+
             threads[i] = t;
+            old->listed = 0;
+            if (old->refs <= 0)
+                thread_free(old);
             return t;
         }
     if (nthreads == MAX_THREADS)
         port_fatal("too many guest threads");
     threads[nthreads++] = t;
     return t;
+}
+
+void sched_thread_hold(GThread *t)
+{
+    if (t)
+        t->refs++;
+}
+
+void sched_thread_drop(GThread *t)
+{
+    if (t && --t->refs <= 0 && !t->listed)
+        thread_free(t);
 }
 
 void sched_init(void)
@@ -315,8 +348,8 @@ void sched_exit_current(uint32_t code)
         fflush(NULL);
         exit((int)code);
     }
-    me->started = 2;
-    /* hand the baton on for good */
+    /* hand the baton on for good (started becomes 2, "the host thread is done with its record", only at the end: a timer that fires in the loop below starts a thread, which reuses the slot of
+     * a finished one, and the record of this one must still be there for the detach) */
     for (;;) {
         double now = port_now();
         int i;
@@ -342,6 +375,7 @@ void sched_exit_current(uint32_t code)
             usleep(5000);
     }
     pthread_detach(me->th);
+    me->started = 2;
     pthread_mutex_unlock(&big);
     pthread_exit(NULL);
 }
