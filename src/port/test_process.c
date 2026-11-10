@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "plat.h"
+#include "msgbox.h"
 #include "port.h"
 #include "process.h"
 #include "profile.h"
@@ -379,6 +380,83 @@ static void test_winexec(void)
     CHECK(API("kernel32.dll", "WinExec", cstr("C:\\Magic\\Program\\Child.exe /S"), 1) == 33);
 }
 
+/* ---- the programs of Windows that a game starts to show something ---------------------------------------------------------------------------------------------------------------- */
+static void test_external_programs(void)
+{
+    char arg[600], tmp[600], p[700], line[300];
+    long id = 0;
+    int code = -1;
+    FILE *f;
+    uint32_t fp, sp;
+
+    /* the names: Write, Notepad and WordPad show a text, WinHelp a help file, the game's own Tutorial is not supported; a program of the game, or anything else, is none of them */
+    CHECK(proc_external_kind("C:\\WINDOWS\\Write.exe") == PROC_EXT_TEXT && proc_external_kind("write") == PROC_EXT_TEXT && proc_external_kind("NOTEPAD.EXE") == PROC_EXT_TEXT);
+    CHECK(proc_external_kind("c:/windows/wordpad.exe") == PROC_EXT_TEXT);
+    CHECK(proc_external_kind("C:\\WINDOWS\\WinHelp.exe") == PROC_EXT_HELP && proc_external_kind("winhlp32") == PROC_EXT_HELP);
+    CHECK(proc_external_kind("C:\\MAGIC\\PROGRAM\\Tutorial.exe") == PROC_EXT_TUTORIAL && proc_external_kind("tutorial") == PROC_EXT_TUTORIAL);
+    CHECK(proc_external_kind("shandalar.exe") == PROC_EXT_NONE && proc_external_kind("") == PROC_EXT_NONE && proc_external_kind(NULL) == PROC_EXT_NONE);
+    CHECK(proc_external_kind("unwrite.exe") == PROC_EXT_NONE && proc_external_kind("write.exe.bak") == PROC_EXT_NONE && proc_external_kind("C:\\write\\other.exe") == PROC_EXT_NONE);
+    /* what a command line asks them to show */
+    CHECK(proc_external(NULL, "C:\\WINDOWS\\Write.exe C:\\MAGIC\\PROGRAM\\ReadMe.txt", arg, sizeof(arg)) == PROC_EXT_TEXT && !strcmp(arg, "C:\\MAGIC\\PROGRAM\\ReadMe.txt"));
+    CHECK(proc_external(NULL, "Write c:/spack.txt", arg, sizeof(arg)) == PROC_EXT_TEXT && !strcmp(arg, "c:/spack.txt"));
+    CHECK(proc_external("C:\\WINDOWS\\notepad.exe", "notepad \"C:\\My Files\\a b.txt\"", arg, sizeof(arg)) == PROC_EXT_TEXT && !strcmp(arg, "C:\\My Files\\a b.txt"));
+    CHECK(proc_external(NULL, "\"C:\\WINDOWS\\WinHelp.exe\" C:\\MAGIC\\PROGRAM\\Duel.hlp", arg, sizeof(arg)) == PROC_EXT_HELP && !strcmp(arg, "C:\\MAGIC\\PROGRAM\\Duel.hlp"));
+    CHECK(proc_external(NULL, "Write", arg, sizeof(arg)) == PROC_EXT_TEXT && arg[0] == 0);
+    CHECK(proc_external(NULL, "C:\\Magic\\Program\\Facemaker.exe /S", arg, sizeof(arg)) == PROC_EXT_NONE);
+
+    /* a game folder with a ReadMe.txt and no AutoPlay folder */
+    test_tmpdir(tmp, sizeof(tmp), "external_");
+    snprintf(p, sizeof(p), "%s/game", tmp);
+    plat_mkdir(p);
+    snprintf(p, sizeof(p), "%s/game/Program", tmp);
+    plat_mkdir(p);
+    snprintf(p, sizeof(p), "%s/game/Program/ReadMe.txt", tmp);
+    f = fopen(p, "wb");
+    if (f) {
+        fputs("Read me\r\nSecond line\r\n", f);
+        fclose(f);
+    }
+    snprintf(p, sizeof(p), "%s/game", tmp);
+    snprintf(line, sizeof(line), "%s/overlay", tmp);
+    plat_mkdir(line);
+    paths_init(p, line);
+    msgbox_set_mode(MSGBOX_AUTO);                                                           /* nobody is there to close a window or a message box */
+
+    /* started: the text viewer (here not shown), the help message, the Tutorial message: each is a finished process the program can wait for */
+    CHECK(proc_start(NULL, "C:\\WINDOWS\\Write.exe C:\\MAGIC\\PROGRAM\\ReadMe.txt", &id) == 0 && proc_done(id, &code) == 1 && code == 0);
+    CHECK(proc_start("C:\\WINDOWS\\WinHelp.exe", "C:\\WINDOWS\\WinHelp.exe C:\\MAGIC\\PROGRAM\\Duel.hlp", &id) == 0 && proc_done(id, &code) == 1 && code == 0);
+    CHECK(proc_start(NULL, "C:\\MAGIC\\PROGRAM\\Tutorial.exe", &id) == 0 && proc_done(id, &code) == 1 && code == 0);
+    /* CreateProcessA and the wait on its handle, as the shell does them */
+    sp = scratch(80);
+    memset(G + sp, 0, 80);
+    CHECK(API("kernel32.dll", "CreateProcessA", 0, cstr("C:\\WINDOWS\\Write.exe C:\\MAGIC\\PROGRAM\\ReadMe.txt"), 0, 0, 0, 0, 0, 0, 0, sp) == 1);
+    CHECK(RD32(sp) != 0 && API("kernel32.dll", "WaitForSingleObject", RD32(sp), 0xFFFFFFFFu) == 0);
+    CHECK(API("kernel32.dll", "WinExec", cstr("write C:\\MAGIC\\PROGRAM\\ReadMe.txt"), 1) == 33);
+    /* a debugging dump the game asks Write to open (shandalar.exe: "Write c:/spack.txt") is not a file here: no window, an error number */
+    CHECK(proc_start(NULL, "Write c:/spack.txt", &id) == 2);
+    CHECK(API("kernel32.dll", "WinExec", cstr("Write c:/sbuild2.txt"), 1) == 2);
+    CHECK(proc_start(NULL, "Write", &id) == 2);
+
+    /* the Tutorial program is "there" (an empty file, nothing on the disk) for the program's look for it; any other missing file is not */
+    fp = API("msvcrt.dll", "fopen", cstr("C:\\MAGIC\\PROGRAM\\Tutorial.exe"), cstr("rb"));
+    CHECK(fp != 0);
+    CHECK(API("msvcrt.dll", "fgetc", fp) == 0xFFFFFFFFu);                                    /* empty */
+    CHECK(API("msvcrt.dll", "fclose", fp) == 0);
+    CHECK(API("msvcrt.dll", "fopen", cstr("C:\\MAGIC\\PROGRAM\\Other.exe"), cstr("rb")) == 0);
+    CHECK(API("msvcrt.dll", "fopen", cstr("C:\\MAGIC\\PROGRAM\\Tutorial.exe"), cstr("wb")) != 0);       /* writing one makes a real file: the stand-in is for looking only */
+    snprintf(p, sizeof(p), "%s/overlay/Program/Tutorial.exe", tmp);
+    CHECK(access(p, F_OK) == 0);
+
+    /* GetDriveTypeA: every drive is a fixed disk, D: is a CD-ROM drive when (and only when) the game folder has the disc's AutoPlay movies */
+    CHECK(API("kernel32.dll", "GetDriveTypeA", cstr("D:\\")) == 3 && API("kernel32.dll", "GetDriveTypeA", cstr("C:\\")) == 3 && API("kernel32.dll", "GetDriveTypeA", 0) == 3);
+    snprintf(p, sizeof(p), "%s/game/AutoPlay", tmp);
+    plat_mkdir(p);
+    CHECK(API("kernel32.dll", "GetDriveTypeA", cstr("D:\\")) == 5 && API("kernel32.dll", "GetDriveTypeA", cstr("d:\\")) == 5);
+    CHECK(API("kernel32.dll", "GetDriveTypeA", cstr("C:\\")) == 3 && API("kernel32.dll", "GetDriveTypeA", cstr("E:\\")) == 3 && API("kernel32.dll", "GetDriveTypeA", 0) == 3);
+    msgbox_set_mode(0);
+    test_rmtree(tmp);
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 2 && !strcmp(argv[1], "-m"))
@@ -393,6 +471,7 @@ int main(int argc, char **argv)
     test_instances();
     test_child();
     test_arguments_the_guest_sees();
+    test_external_programs();
     {
         char tmp[500];
 

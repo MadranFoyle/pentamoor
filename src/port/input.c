@@ -223,6 +223,8 @@ int wm_inject_mouse(int kind, int x, int y)
     msg = dbl ? WM_LBUTTONDBLCLK : kind == IN_MOVE ? WM_MOUSEMOVE : kind == IN_DOWN ? WM_LBUTTONDOWN : kind == IN_UP ? WM_LBUTTONUP :
           kind == IN_RDOWN ? WM_RBUTTONDOWN : WM_RBUTTONUP;
     keys = (kind == IN_DOWN) ? 1 : 0;
+    if (kind == IN_DOWN || kind == IN_RDOWN)
+        wm_note_press(kind == IN_DOWN ? 1 : 2);                    /* VK_LBUTTON, VK_RBUTTON: GetAsyncKeyState's "pressed since the last call" */
     wm_keys[1] = (uint8_t)(kind == IN_DOWN || (kind == IN_MOVE && wm_keys[1]) ? 1 : kind == IN_UP ? 0 : wm_keys[1]);
     wm_abs_rect(tw, &x0, &y0, &x1, &y1);
     lx = x - x0 - tw->nc_l;
@@ -351,6 +353,7 @@ int wm_inject_key(uint32_t vk, uint32_t scancode, int down, int ch, int repeat)
                 if (down) {
                     if (vk < 256)
                         wm_keys[vk] = 1;
+                    wm_note_press(vk);
                     wm_edit_note_key(f->hwnd, vk, wm_keys[0x10] != 0, wm_keys[0x11] != 0 || wm_keys[0x5B] != 0 || wm_keys[0x5C] != 0);
                     wm_post(f->hwnd, WM_KEYDOWN, vk, 1 | sc | (repeat ? 0x40000000u : 0));
                     if (ch >= 0)
@@ -381,6 +384,7 @@ int wm_inject_key(uint32_t vk, uint32_t scancode, int down, int ch, int repeat)
     if (down) {
         if (vk < 256)
             wm_keys[vk] = 1;
+        wm_note_press(vk);
         wm_post(h, WM_KEYDOWN, vk, 1 | sc | (repeat ? 0x40000000u : 0));
         if (ch >= 0)
             wm_post(h, WM_CHAR, (uint32_t)ch, 1 | sc | (repeat ? 0x40000000u : 0));

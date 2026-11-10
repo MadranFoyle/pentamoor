@@ -81,6 +81,9 @@ SOTA_DISC = {
     # disc's, file for file (the installer adds what is missing and never replaces). The disc's DuelSounds (16 WAV) are not listed: the cabinet carries them and six more (22 WAV), and
     # the installed game plays the cabinet's (the disc's Manaball.wav is another recording of the same size).
     "cd_folders": [("Sound", "Sound", ".wav"), ("StatWin", "Statwin", ".avi")],
+    # the disc's movie folder, which the Magic Shell reads from the CD as <drive>:\AutoPlay\ (the Animation page of the World pages: INTRO.AVI; the Credits button: CREDIT.AVI; and
+    # WinSealedTournament.AVI, which the game plays when a sealed deck tournament is won): (folder on the disc, folder of the install's Magic folder, the kind of file). 49 MB.
+    "movie_folder": ("Autoplay", "AutoPlay", ".avi"),
 }
 #   the patch: a WinZip self-extractor (SOTAV215.EXE, "2.15, 19 November 1997"), six whole files that replace the 2.0 install's (a file name is found ignoring case: cards.dat is CARDS.DAT)
 SOTA_PATCH = {

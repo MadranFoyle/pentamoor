@@ -21,6 +21,7 @@
 #include "sched.h"
 #include "test_util.h"
 #include "msgbox.h"
+#include "textview.h"
 #include "wm.h"
 
 /* setenv/unsetenv for the tests, on Windows too (where _putenv_s with an empty value removes the variable) */
@@ -1338,6 +1339,29 @@ static void test_edit_box(void)
     API("DestroyWindow", m);
     API("DestroyWindow", e);
 
+    /* GetAsyncKeyState: the high bit is "down now", bit 0 "pressed since it was last asked" (a poll between two taps still sees the tap); the mouse buttons are keys 1 and 2 */
+    wm_clear_presses();
+    CHECK(API("GetAsyncKeyState", 0x2C) == 0);
+    wm_inject_key(0x2C, 0x37, 1, -1, 0);
+    wm_inject_key(0x2C, 0x37, 0, -1, 0);
+    CHECK(API("GetAsyncKeyState", 0x2C) == 1);                                                      /* let go again, but it was pressed */
+    CHECK(API("GetAsyncKeyState", 0x2C) == 0);                                                      /* once only */
+    wm_inject_key(0x2C, 0x37, 1, -1, 0);
+    CHECK(API("GetAsyncKeyState", 0x2C) == 0x8001u && API("GetKeyState", 0x2C) == 0x8000u);         /* still held: both bits; GetKeyState does not use up the press */
+    wm_inject_key(0x2C, 0x37, 0, -1, 0);
+    pump_to_dispatch();
+    wm_inject_mouse(IN_DOWN, 15, 300);
+    wm_inject_mouse(IN_UP, 15, 300);
+    CHECK((API("GetAsyncKeyState", 1) & 1) == 1 && API("GetAsyncKeyState", 1) == 0);
+    wm_inject_mouse(IN_RDOWN, 15, 300);
+    wm_inject_mouse(IN_RUP, 15, 300);
+    CHECK((API("GetAsyncKeyState", 2) & 1) == 1);
+    wm_inject_key(0x2C, 0x37, 1, -1, 0);
+    wm_inject_key(0x2C, 0x37, 0, -1, 0);
+    wm_clear_presses();                                                                             /* a movie starting forgets the click that started it */
+    CHECK(API("GetAsyncKeyState", 0x2C) == 0);
+    pump_to_dispatch();
+
     /* keys reach the focused box through the queue, with Control held (Ctrl+A) */
     e = create("EDIT", WS_CHILD | WS_VISIBLE, 10, 160, 200, 20, parent, 13);
     w = wm_window(e);
@@ -2354,6 +2378,112 @@ static int mb_run(uint32_t type, const char *caption, const char *text, const ch
     return (int)r;
 }
 
+/* ---- the text viewer (textview.c): what the Magic Shell's Read Me shows ---------------------------------------------------------------------------------------------------------------- */
+static int tv_mode, tv_done, tv_found, tv_ro, tv_focus, tv_top, tv_sel_end;
+static char tv_title[64], tv_clip[64];
+static const char *tv_text;
+
+static uint32_t tv_driver(const uint32_t *a)
+{
+    int waited = 0;
+    uint32_t hdlg;
+    Window *d, *ed, *close;
+
+    (void)a;
+    while (!wm_top_dialog() && waited++ < 2000)
+        sched_sleep(0.002);
+    sched_sleep(0.05);
+    hdlg = wm_top_dialog();
+    d = wm_window(hdlg);
+    ed = wm_dlg_item(hdlg, 100);
+    close = wm_dlg_item(hdlg, 2);
+    tv_found = d != NULL && ed != NULL && close != NULL;
+    if (tv_found) {
+        snprintf(tv_title, sizeof(tv_title), "%s", d->title ? d->title : "");
+        tv_ro = (ed->style & ES_READONLY) != 0 && (ed->style & ES_MULTILINE) != 0;
+        tv_focus = wm_get_focus() == ed->hwnd && ed->caret == 0 && ed->edit_top == 0;
+        wm_inject_key(0x22, 0x51, 1, -1, 0);                             /* Page Down: the text scrolls, the dialog stays */
+        wm_inject_key(0x22, 0x51, 0, -1, 0);
+        sched_sleep(0.05);
+        tv_top = ed->edit_top;
+        wm_inject_key(0x11, 0x1D, 1, -1, 0);                             /* Ctrl+A, Ctrl+C: the whole text goes to the clipboard */
+        wm_inject_key('A', 0x1E, 1, -1, 0);
+        wm_inject_key('A', 0x1E, 0, -1, 0);
+        wm_inject_key('C', 0x2E, 1, -1, 0);
+        wm_inject_key('C', 0x2E, 0, -1, 0);
+        wm_inject_key(0x11, 0x1D, 0, -1, 0);
+        sched_sleep(0.05);
+        tv_sel_end = esel_end(ed->hwnd);
+        {
+            char *c = front_clipboard_get();
+
+            snprintf(tv_clip, sizeof(tv_clip), "%.60s", c ? c : "");
+            free(c);
+        }
+        if (tv_mode == 0)
+            wh_click_window(close);
+        else if (tv_mode == 1) {
+            wm_inject_key(0x0D, 0x1C, 1, 0x0D, 0);
+            wm_inject_key(0x0D, 0x1C, 0, -1, 0);
+        } else if (tv_mode == 2) {
+            wm_inject_key(0x1B, 0x01, 1, 0x1B, 0);
+            wm_inject_key(0x1B, 0x01, 0, -1, 0);
+        } else
+            wm_post(hdlg, WM_CLOSE, 0, 0);
+    }
+    tv_done = 1;
+    return 0;
+}
+
+static void test_textview(void)
+{
+    TextViewLayout L;
+    static char big[16000];
+    char *t;
+    int k, cut, waits, i;
+
+    /* the layout fits the screen it is for, with the box over the button and both inside */
+    textview_layout(800, 600, &L);
+    CHECK(L.client_w <= 800 - 100 && L.client_h <= 600 - 100 && L.text_x + L.text_w <= L.client_w && L.text_y + L.text_h <= L.btn_y && L.btn_y + L.btn_h <= L.client_h);
+    textview_layout(320, 240, &L);
+    CHECK(L.client_w <= 320 && L.client_h <= 240 && L.text_w > 100 && L.text_h > 50 && L.btn_x >= 0 && L.btn_x + L.btn_w <= L.client_w);
+    textview_layout(1920, 1080, &L);
+    CHECK(L.client_w <= 700 && L.client_h <= 520);                                                  /* a big screen does not make an unreadably wide box */
+    /* a file's bytes as text: cut at the cap with a note, ending at a NUL */
+    t = textview_prepare("abc\r\ndef", 8, 100, &cut);
+    CHECK(t && !strcmp(t, "abc\r\ndef") && !cut);
+    free(t);
+    t = textview_prepare("abcdefghij", 10, 4, &cut);
+    CHECK(t && !strncmp(t, "abcd", 4) && cut && strstr(t, "not shown") != NULL);
+    free(t);
+    t = textview_prepare("ab\0cd", 5, 100, &cut);
+    CHECK(t && !strcmp(t, "ab") && !cut);
+    free(t);
+
+    /* the dialog: a read-only multi-line box with the text, focused at its start, a Close button; Page Down scrolls it, Ctrl+A and Ctrl+C copy it; Close, Enter, Esc and the close box end it */
+    big[0] = 0;
+    for (i = 0; i < 150; i++)
+        strcat(big, "A line of the read me file that is long enough to need wrapping in the box.\r\n");
+    tv_text = big;
+    for (k = 0; k < 4; k++) {
+        tv_mode = k;
+        tv_done = tv_found = 0;
+        tv_clip[0] = 0;
+        sched_spawn(port_host_function(tv_driver), 0, 0);
+        CHECK(textview_show(0, "ReadMe.txt", tv_text) == 1);
+        for (waits = 0; !tv_done && waits < 500; waits++)
+            sched_sleep(0.004);
+        CHECK(tv_done && tv_found && wm_dialog_count() == 0);
+        CHECK(!strcmp(tv_title, "ReadMe.txt") && tv_ro && tv_focus);
+        CHECK(tv_top > 3);                                                                          /* Page Down moved the view a page */
+        CHECK(tv_sel_end == (int)strlen(big) && !strncmp(tv_clip, "A line of the read me file", 26));
+    }
+    /* a run nobody watches does not wait for a window nobody can close (the log says so) */
+    msgbox_set_mode(MSGBOX_AUTO);
+    CHECK(textview_run(0, "ReadMe.txt", "text") == 0 && wm_dialog_count() == 0);
+    msgbox_set_mode(0);
+}
+
 static void test_msgbox(void)
 {
     MsgBoxSpec s;
@@ -3261,6 +3391,7 @@ int main(void)
     test_popup_menu();
     test_file_dialogs();
     test_winhelp();
+    test_textview();
     test_msgbox();
     test_yesno();
     test_auto_controls();

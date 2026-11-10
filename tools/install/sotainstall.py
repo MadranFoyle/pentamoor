@@ -275,6 +275,19 @@ def add_cd_files(disc, program, say):
         say(f"{src.lower()} from the disc: {len(entries)} files ({added} added, the rest already there)")
 
 
+def add_movie_files(disc, magic, say):
+    """The movies the Magic Shell plays from the CD (the disc's Autoplay folder: the opening animation, the credits, the sealed deck win), into <Magic>/AutoPlay: the runtime shows that folder
+    as the CD-ROM drive D: for them (docs/notes/sota-comparison.md, "Shell polish"). A file that is there is left alone. A disc with no such folder adds nothing."""
+    src, host, ext = builds.SOTA_DISC["movie_folder"]
+    entries = [e for e in disc.listdir(src) if not e.is_dir and e.name.lower().endswith(ext)]
+    added = 0
+    for e in entries:
+        if not os.path.exists(overlay.resolve(magic, f"{host}/{e.name}")):
+            overlay.place(magic, f"{host}/{e.name}", disc.read(e))
+            added += 1
+    say(f"{src.lower()} (the shell's movies) from the disc: {len(entries)} files ({added} added, the rest already there)")
+
+
 def apply_patch(patch, program, say):
     results = [overlay.place(program, name, data) for name, data in patch]
     c = count_results(results)
@@ -296,6 +309,7 @@ def make_folder(sota_dest, first_magic, disc, patch, force=False, say=say_nothin
         check_setup_cabinet(disc, cabinets[name], "Setup/" + name, say)
     program = program_dir(magic)
     add_cd_files(disc, program, say)
+    add_movie_files(disc, magic, say)
     apply_patch(patch, program, say)
     bad = problems(program)
     if bad:

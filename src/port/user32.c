@@ -1212,6 +1212,28 @@ static uint32_t WindowFromPoint(const uint32_t *a)                 /* WindowFrom
 }
 static uint32_t GetKeyState(const uint32_t *a) { return a[0] < 256 && wm_keys[a[0]] ? 0x8000 : 0; }
 
+/* GetAsyncKeyState: the high bit says the key is down now, and bit 0 that it was pressed since the last call for it: a loop that polls Esc or the mouse buttons now and then (the Magic Shell's
+ * movies stop on either) sees a tap that was over between two polls. */
+static uint8_t pressed_since[256];
+void wm_note_press(uint32_t vk)
+{
+    if (vk < 256)
+        pressed_since[vk] = 1;
+}
+
+void wm_clear_presses(void) { memset(pressed_since, 0, sizeof(pressed_since)); }
+
+static uint32_t GetAsyncKeyState(const uint32_t *a)
+{
+    uint32_t r = GetKeyState(a);
+
+    if (a[0] < 256 && pressed_since[a[0]]) {
+        pressed_since[a[0]] = 0;
+        r |= 1;
+    }
+    return r;
+}
+
 /* ---- the queue ------------------------------------------------------------------------------------------------------------------ */
 void wm_post(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp)
 {
@@ -1679,7 +1701,7 @@ const WinApi USER32_APIS[] = {
     {"user32.dll", "DestroyIcon", one}, {"user32.dll", "DestroyCursor", one}, {"user32.dll", "LoadAcceleratorsA", LoadAcceleratorsA},
     {"user32.dll", "TranslateAcceleratorA", zero}, {"user32.dll", "GetDoubleClickTime", GetDoubleClickTime},
     {"user32.dll", "GetCursorPos", GetCursorPos}, {"user32.dll", "SetCursorPos", SetCursorPos}, {"user32.dll", "WindowFromPoint", WindowFromPoint},
-    {"user32.dll", "GetKeyState", GetKeyState}, {"user32.dll", "GetAsyncKeyState", GetKeyState}, {"user32.dll", "SendMessageA", SendMessageA},
+    {"user32.dll", "GetKeyState", GetKeyState}, {"user32.dll", "GetAsyncKeyState", GetAsyncKeyState}, {"user32.dll", "SendMessageA", SendMessageA},
     {"user32.dll", "PostMessageA", PostMessageA}, {"user32.dll", "PostQuitMessage", PostQuitMessage}, {"user32.dll", "GetMessageTime", GetMessageTime},
     {"user32.dll", "TranslateMessage", zero}, {"user32.dll", "DispatchMessageA", DispatchMessageA}, {"user32.dll", "PeekMessageA", PeekMessageA},
     {"user32.dll", "GetMessageA", GetMessageA}, {"user32.dll", "SetTimer", SetTimer}, {"user32.dll", "KillTimer", KillTimer},

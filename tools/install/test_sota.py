@@ -389,12 +389,15 @@ def test_the_folder_is_the_first_game_with_the_cabinet_and_the_patch_over_it(wor
     assert low["program/duelsounds/shell_tooltime.wav"] == b"voice" * 20             # the cabinet's, not the disc's other recording
     assert low["program/sound/new.wav"] == b"a new sound" * 10                       # a CD-side file the first game lacked is added
     assert low["program/sound/locmus0.wav"] == b"music" * 50                         # and one it has is left alone
+    assert low["autoplay/credit.avi"] == b"credits" * 30 and low["autoplay/intro.avi"] == b"intro" * 30      # the disc's movie folder is the install's AutoPlay folder (the Magic folder's, not the Program's)
+    assert "program/autoplay/credit.avi" not in low
     assert low["readme.txt"] == b"2.0 readme at the top" and low["microprose.url"].startswith(b"[Internet")        # the cabinet's top-level files
     assert not any("ctl3d32" in k or "bbrd1" in k for k in low)                      # the original installer's own files are not installed
     names = [n.lower() for n in os.listdir(program)]
     assert names.count("cards.dat") == 1 and names.count("readme.txt") == 1 and names.count("deckdll.dll") == 1          # replaced, not doubled, whatever the spelling
     assert sorted(os.listdir(tmp_path / "inst_sota")) == ["Magic"]                   # nothing else is made
     text = "\n".join(lines)
+    assert "autoplay (the shell's movies) from the disc: 2 files (2 added" in text
     assert "Setup/data1.cab: " in text and "Setup/_sys1.cab: 2 files" in text and "2.15 patch: 6 files (6 replaced" in text and "all 15 files are the 2.15 ones" in text
     assert sotainstall.problems(program) == []
 

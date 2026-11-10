@@ -13,6 +13,7 @@
 
 #include "plat.h"
 #include "port.h"
+#include "process.h"
 
 #define P(a) ((char *)(G + (a)))
 #define IOEOF 0x10
@@ -56,9 +57,18 @@ static uint32_t fopen_(const uint32_t *a)
     int write = strpbrk(mode, "wa+") != NULL, binary = strchr(mode, 'b') != NULL;
     char host[1200];
     int exists = paths_host(path, !write ? 0 : (strchr(mode, 'w') && !strchr(mode, 'r')) ? 1 : 2, host, sizeof(host));
+    int stand_in = 0;
     File *f;
     uint32_t ptr;
 
+    /* The Magic Shell's Tutorial button looks for the Tutorial program (fopen of <install>\Tutorial.exe, then every CD drive) and, finding none, shows a message of its string table that has
+     * nothing to do with it (the text of whatever string it read last). Pentamoor cannot run the tutorial either way (process.h, PROC_EXT_TUTORIAL), but with the file "there" (empty, read only,
+     * nothing on the disk) the button goes on to start it, and that start says so. */
+    if (!write && !exists && proc_external_kind(path) == PROC_EXT_TUTORIAL) {
+        stand_in = 1;
+        exists = 1;
+        snprintf(host, sizeof(host), "%s", path);
+    }
     if (!write && !exists) {
         port_trace("fopen(%s, %s) -> not found", path, mode);
         return 0;
@@ -71,7 +81,11 @@ static uint32_t fopen_(const uint32_t *a)
         f->host = fopen(host, "wb");
     else if (strchr(mode, 'a'))
         f->host = fopen(host, "ab");
-    else {
+    else if (stand_in) {
+        f->data = malloc(1);
+        f->size = 0;
+        f->rawsize = 0;
+    } else {
         FILE *in = fopen(host, "rb");
         long len;
 

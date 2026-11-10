@@ -125,7 +125,26 @@ static uint32_t GetStartupInfoA(const uint32_t *a)
     return 0;
 }
 
-static uint32_t GetDriveTypeA(const uint32_t *a) { (void)a; return 3; }
+/* GetDriveTypeA(root): a fixed disk (3) for every drive, except drive D: when the game folder has an AutoPlay folder (the installer copies the disc's AutoPlay movies there: CREDIT.AVI, INTRO.AVI and
+ * WinSealedTournament.AVI): then D: is a CD-ROM drive (5), because the Magic Shell looks for those movies as D:\AutoPlay\<name> on the first CD-ROM drive it finds (CdTools.dll's IsCDDrive is
+ * "GetDriveTypeA is 5"), and every drive letter is the one game folder here. That is all D: is: nothing else of a disc is answered (the volume has no label, as before). The folder is looked at
+ * each time it is asked (which is seldom: a loop over the drive letters). */
+int movie_drive_present(void)
+{
+    char host[1200];
+    struct stat st;
+
+    return paths_host("D:\\AutoPlay", 0, host, sizeof(host)) && stat(host, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+uint32_t k32_drive_type(const char *root)
+{
+    if (root && (root[0] == 'D' || root[0] == 'd') && root[1] == ':' && movie_drive_present())
+        return 5;                                                   /* DRIVE_CDROM */
+    return 3;                                                       /* DRIVE_FIXED */
+}
+
+static uint32_t GetDriveTypeA(const uint32_t *a) { return k32_drive_type(a[0] ? P(a[0]) : NULL); }
 
 /* ---- critical sections: recursive locks, owned by guest threads ------------------------------------------------------------------- */
 typedef struct CS { uint32_t addr, owner; int count; } CS;
