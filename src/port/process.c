@@ -211,21 +211,13 @@ ProcExt proc_external(const char *application, const char *command_line, char *a
     return proc_external_kind(application && *application ? application : first);
 }
 
-/* A child that is already over: the program's wait for it (CreateProcessA, then WaitForSingleObject) ends at once. */
+/* A child that is already over: the program's wait for it (CreateProcessA, then WaitForSingleObject) ends at once. Its id is a negative number no process has, and it needs no slot of its own
+ * (proc_done knows it is over), so a shell that opens its Read Me a hundred times starts every real program as it did. */
 static void finished_child(long *id)
 {
-    static long next = 0x40000000L;
-    int i;
+    static long next = -1;
 
-    for (i = 0; i < MAX_CHILDREN && children[i].used; i++)
-        ;
-    *id = next++;
-    if (i < MAX_CHILDREN) {
-        children[i].id = *id;
-        children[i].used = 1;
-        children[i].done = 1;
-        children[i].code = 0;
-    }
+    *id = next--;
 }
 
 static const char *base_of(const char *path)
@@ -343,6 +335,10 @@ int proc_done(long id, int *exit_code)
 {
     int i, code = 0;
 
+    if (id < 0) {                                           /* an answer the runtime gave itself (a text window, a message), not a process: over at once, status 0 */
+        *exit_code = 0;
+        return 1;
+    }
     for (i = 0; i < MAX_CHILDREN; i++)
         if (children[i].used && children[i].id == id) {
             if (!children[i].done) {

@@ -432,6 +432,13 @@ static void test_external_programs(void)
     CHECK(API("kernel32.dll", "CreateProcessA", 0, cstr("C:\\WINDOWS\\Write.exe C:\\MAGIC\\PROGRAM\\ReadMe.txt"), 0, 0, 0, 0, 0, 0, 0, sp) == 1);
     CHECK(RD32(sp) != 0 && API("kernel32.dll", "WaitForSingleObject", RD32(sp), 0xFFFFFFFFu) == 0);
     CHECK(API("kernel32.dll", "WinExec", cstr("write C:\\MAGIC\\PROGRAM\\ReadMe.txt"), 1) == 33);
+    {
+        int n, ok = 1;
+
+        for (n = 0; n < 40; n++)                                                            /* a shell whose Read Me is opened again and again: no process slot is used up by it */
+            ok = ok && proc_start(NULL, "write C:\\MAGIC\\PROGRAM\\ReadMe.txt", &id) == 0 && proc_done(id, &code) == 1 && code == 0;
+        CHECK(ok);
+    }
     /* a debugging dump the game asks Write to open (shandalar.exe: "Write c:/spack.txt") is not a file here: no window, an error number */
     CHECK(proc_start(NULL, "Write c:/spack.txt", &id) == 2);
     CHECK(API("kernel32.dll", "WinExec", cstr("Write c:/sbuild2.txt"), 1) == 2);
