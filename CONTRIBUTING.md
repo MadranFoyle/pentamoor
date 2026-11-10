@@ -275,3 +275,4 @@ emulator of `tools/emu_spike` (`src/port/compare_screen.py`, which still starts 
 - [FILE_FORMATS.md](docs/FILE_FORMATS.md): `.SPR` and `.PIC`, checked against real files
 - [docs/notes/](docs/notes/): per-area findings
 - [notes/audit-2026-10.md](docs/notes/audit-2026-10.md): the October 2026 audit of the documents against the code: what was checked, and what is still open
+- [notes/rc2-audit.md](docs/notes/rc2-audit.md): what a stranger meets with the 0.1.0-rc2 macOS download, step by step, with the messages the installer gave and what was changed

@@ -73,7 +73,9 @@ the expansion (Magic: The Gathering "Spells of the Ancients", version 2.0, usual
 @steamdeck its World page starts the adventure.
 It takes a few minutes more than the first game alone. Everything is checked before anything is written; if a file is missing, in the wrong place or the wrong one (a cut-short patch, the
 expansion's disc given first) the installer says what it found and what it needs. The 2.15 game is a folder of its own (sources/installed_sota) with its own saves (port_overlay_sota), and
-the first game is not changed by it. ManaLink is not part of it, and the expansion's own shell (magic.exe, "sota shell") has no controller or touch navigation yet.
+the first game is not changed by it. port_overlay_sota also holds the licence value (registry.dat, below): if you delete that folder to start over, or point PORT_OVERLAY at another one, the
+game no longer finds it and the shell's Start match shows a black window; run the same installer command again to write it again. ManaLink is not part of it, and the expansion's own shell
+(magic.exe, "sota shell") has no controller or touch navigation yet.
 At the end the installer does what the original Spells of the Ancients installer did for an owner of the discs: it runs the original installer's own writer (a library from the expansion's cabinet
 on your machine, checked first by its SHA-256) to write the game's machine-bound licence value into port_overlay_sota/registry.dat, with the flag word the original used (and, by default, one flag more, below), bound to a
 random machine id made for this install only. It says so when it does it. Nothing of that is in this download, and the game and the launchers never write it. --no-licence-value skips it
