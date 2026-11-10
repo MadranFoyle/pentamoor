@@ -615,20 +615,25 @@ void wm_edit_wheel(Window *w, int clicks)
 }
 
 /* ---- focus and the caret ---------------------------------------------------------------------------------------------------------- */
-void wm_edit_focus(Window *w, int gained)
+void wm_edit_focus(Window *w, int how)
 {
     if (!wm_edit_is_edit(w))
         return;
-    if (gained) {
-        clamp(w);
-        w->sel_anchor = 0;                                   /* arriving by Tab selects everything (a click then puts the caret where it landed) */
-        w->caret = text_len(w);
-        touched(w);
-    } else {
+    if (how == EDIT_FOCUS_LOST) {
         w->edit_drag = 0;
         w->invalid = 1;
         wm_dirty = 1;
+        return;
     }
+    clamp(w);
+    if (how == EDIT_FOCUS_DIALOG) {                         /* the dialog manager moved it here (Tab, the dialog's first control): the whole text is selected */
+        w->sel_anchor = 0;
+        w->caret = text_len(w);
+    }
+    w->edit_t = port_now_ms();                              /* the caret shows from now */
+    w->invalid = 1;
+    wm_dirty = 1;
+    ui_edit_scroll_to_caret(w);
 }
 
 int wm_edit_caret_visible(const Window *w)
@@ -724,10 +729,10 @@ uint32_t wm_edit_message(Window *w, uint32_t msg, uint32_t wp, uint32_t lp)
     case WM_GETDLGCODE:
         return 0x80u | 0x8u | ((w->style & ES_MULTILINE) ? 0x1u | ((w->style & ES_WANTRETURN) ? 0x4u : 0) : 0);     /* DLGC_WANTCHARS | DLGC_HASSETSEL (| DLGC_WANTARROWS (| DLGC_WANTALLKEYS for Enter)) */
     case 0x7:                                                /* WM_SETFOCUS */
-        wm_edit_focus(w, 1);
+        wm_edit_focus(w, EDIT_FOCUS_SET);
         return 0;
     case 0x8:                                                /* WM_KILLFOCUS */
-        wm_edit_focus(w, 0);
+        wm_edit_focus(w, EDIT_FOCUS_LOST);
         return 0;
     case EM_LIMITTEXT:
         w->edit_limit = (int)wp;

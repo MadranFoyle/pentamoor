@@ -1104,6 +1104,14 @@ static int navy_pixels(Window *w)                                               
     return navy;
 }
 
+static uint32_t make_edit(uint32_t style, int x, int y, int w, int h, uint32_t parent, uint32_t id)           /* an edit box with no text (the window helper titles every window "t") */
+{
+    uint32_t e = create("EDIT", style, x, y, w, h, parent, id);
+
+    API("SetWindowTextA", e, cstr(""));
+    return e;
+}
+
 static void test_edit_box(void)
 {
     enum { VKL = 0x25, VKU = 0x26, VKR = 0x27, VKD = 0x28, VKHOME = 0x24, VKEND = 0x23, VKDEL = 0x2E, VKPGUP = 0x21 };
@@ -1113,7 +1121,7 @@ static void test_edit_box(void)
 
     register_class("EditParent", port_host_function(press_proc), 0, 0);
     parent = create("EditParent", WS_VISIBLE | WS_POPUP, 0, 0, 400, 300, 0, 0);
-    e = create("EDIT", WS_CHILD | WS_VISIBLE | 0x800000 | 0x80, 10, 10, 200, 20, parent, 7);          /* a one-line box with a border, ES_AUTOHSCROLL */
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x800000 | 0x80, 10, 10, 200, 20, parent, 7);          /* a one-line box with a border, ES_AUTOHSCROLL */
     w = wm_window(e);
     API("SetFocus", e);
     CHECK(API("GetFocus") == e && wm_get_focus() == e && wm_text_focus() == 1);                      /* the on-screen keyboard has a text field to type into */
@@ -1266,7 +1274,7 @@ static void test_edit_box(void)
     API("DestroyWindow", e);
 
     /* ES_NUMBER takes digits only, typed or pasted; ES_PASSWORD keeps its text off the clipboard */
-    e = create("EDIT", WS_CHILD | WS_VISIBLE | 0x2000, 10, 10, 60, 20, parent, 8);
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x2000, 10, 10, 60, 20, parent, 8);
     API("SetFocus", e);
     front_clipboard_set("a1b2c3");
     ekey(e, 'V', 0, 1);
@@ -1274,7 +1282,7 @@ static void test_edit_box(void)
     etype(e, "x9");
     CHECK(!strcmp(etext(e), "1239"));
     API("DestroyWindow", e);
-    e = create("EDIT", WS_CHILD | WS_VISIBLE | 0x20, 10, 10, 60, 20, parent, 9);
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x20, 10, 10, 60, 20, parent, 9);
     API("SetFocus", e);
     front_clipboard_set("untouched");
     etype(e, "secret");
@@ -1284,7 +1292,7 @@ static void test_edit_box(void)
     API("DestroyWindow", e);
 
     /* the mouse: a press puts the caret between the letters it is nearest to, a drag selects, Shift extends, a double click takes the word, a triple click all of it */
-    e = create("EDIT", WS_CHILD | WS_VISIBLE | 0x800000 | 0x80, 10, 100, 300, 20, parent, 10);
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x800000 | 0x80, 10, 100, 300, 20, parent, 10);
     w = wm_window(e);
     API("SetWindowTextA", e, cstr("alpha beta gamma"));
     wm_inject_mouse(IN_DOWN, 11, 110);                                                              /* the very left of the text */
@@ -1323,12 +1331,14 @@ static void test_edit_box(void)
     API("DestroyWindow", e);
 
     /* a press on a button takes the focus from the box (no caret, no keys for it any more); focus by the keyboard selects the text; the caret blinks from the last change */
-    e = create("EDIT", WS_CHILD | WS_VISIBLE | 0x800000, 10, 130, 200, 20, parent, 11);
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x800000, 10, 130, 200, 20, parent, 11);
     w = wm_window(e);
     m = create("BUTTON", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 250, 130, 60, 20, parent, 12);
     API("SetWindowTextA", e, cstr("tab text"));
     API("SetFocus", e);
-    CHECK(esel_start(e) == 0 && esel_end(e) == 8);                                                  /* focus by the keyboard: all selected */
+    CHECK(esel_start(e) == 0 && esel_end(e) == 0);                                                  /* SetFocus and a click leave the selection as it was ... */
+    wm_edit_focus(w, EDIT_FOCUS_DIALOG);
+    CHECK(esel_start(e) == 0 && esel_end(e) == 8);                                                  /* ... the dialog manager's Tab selects all of the text */
     w->edit_t = port_now_ms();
     CHECK(wm_edit_caret_visible(w) == 1);                                                           /* the blink starts with the caret shown ... */
     w->edit_t = port_now_ms() - 600;
@@ -1374,8 +1384,23 @@ static void test_edit_box(void)
     CHECK(API("GetAsyncKeyState", 0x2C) == 0);
     pump_to_dispatch();
 
+    /* the dialog manager's Tab: the focus goes to the next tab stop, and an edit box it arrives at has all its text selected */
+    e = make_edit( WS_CHILD | WS_VISIBLE | WS_TABSTOP, 10, 160, 80, 20, parent, 20);
+    m = make_edit( WS_CHILD | WS_VISIBLE | WS_TABSTOP, 100, 160, 80, 20, parent, 21);
+    API("SetWindowTextA", m, cstr("second box"));
+    API("SetFocus", e);
+    {
+        uint32_t key = scratch(28);
+
+        WR32(key, e); WR32(key + 4, WM_KEYDOWN); WR32(key + 8, 0x09); WR32(key + 12, 0);
+        CHECK(API("IsDialogMessageA", parent, key) == 1 && API("GetFocus") == m);
+        CHECK(esel_start(m) == 0 && esel_end(m) == 10);
+    }
+    API("DestroyWindow", m);
+    API("DestroyWindow", e);
+
     /* keys reach the focused box through the queue, with Control held (Ctrl+A) */
-    e = create("EDIT", WS_CHILD | WS_VISIBLE, 10, 160, 200, 20, parent, 13);
+    e = make_edit( WS_CHILD | WS_VISIBLE, 10, 160, 200, 20, parent, 13);
     w = wm_window(e);
     API("SetFocus", e);
     etype(e, "queued");
@@ -1398,7 +1423,7 @@ static void test_edit_box(void)
     API("DestroyWindow", e);
 
     /* a multi-line box: CR LF line breaks, Up and Down by visual lines, Home and End of a line, no Enter without ES_WANTRETURN, the caret never between CR and LF */
-    e = create("EDIT", WS_CHILD | WS_VISIBLE | 0x800000 | 0x4 | 0x40, 10, 190, 120, 60, parent, 14);       /* ES_MULTILINE | ES_AUTOVSCROLL: no ES_AUTOHSCROLL, so it wraps */
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x800000 | 0x4 | 0x40, 10, 190, 120, 60, parent, 14);       /* ES_MULTILINE | ES_AUTOVSCROLL: no ES_AUTOHSCROLL, so it wraps */
     w = wm_window(e);
     API("SetFocus", e);
     etype(e, "one\r\ntwo\nthree\rfour");
@@ -1433,16 +1458,26 @@ static void test_edit_box(void)
     API("DestroyWindow", e);
 
     /* ES_WANTRETURN: Enter is a new line (and IsDialogMessage leaves it to the box) */
-    e = create("EDIT", WS_CHILD | WS_VISIBLE | 0x4 | 0x1000, 10, 190, 120, 60, parent, 15);
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x4 | 0x1000, 10, 190, 120, 60, parent, 15);
     API("SetFocus", e);
     echar(e, 'a');
     echar(e, 13);
     echar(e, 'b');
     CHECK(!strcmp(etext(e), "a\r\nb"));
+    {
+        uint32_t key = scratch(28), plain;
+
+        WR32(key, e); WR32(key + 4, WM_KEYDOWN); WR32(key + 8, 0x0D); WR32(key + 12, 0);
+        CHECK(API("IsDialogMessageA", parent, key) == 0);                                           /* Enter in a box that wants it is the box's ... */
+        plain = make_edit( WS_CHILD | WS_VISIBLE | 0x4, 10, 190, 120, 60, parent, 19);
+        WR32(key, plain);
+        CHECK(API("IsDialogMessageA", parent, key) == 1);                                           /* ... and in one that does not, the dialog's (the default button) */
+        API("DestroyWindow", plain);
+    }
     API("DestroyWindow", e);
 
     /* wrapping and scrolling: long text wraps to the width into more lines than the box shows; the wheel, EM_LINESCROLL and the caret move the first line shown */
-    e = create("EDIT", WS_CHILD | WS_VISIBLE | 0x800000 | 0x4 | 0x40 | 0x200000, 10, 190, 90, 40, parent, 16);        /* with a scroll bar */
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x800000 | 0x4 | 0x40 | 0x200000, 10, 190, 90, 40, parent, 16);        /* with a scroll bar */
     w = wm_window(e);
     API("SetFocus", e);
     {
@@ -1485,7 +1520,7 @@ static void test_edit_box(void)
     API("DestroyWindow", e);
 
     /* the layout functions the mouse and the caret use give the same answers: an offset maps to a line, a line to its range, and the offset at an x on a line back */
-    e = create("EDIT", WS_CHILD | WS_VISIBLE | 0x4, 10, 190, 100, 80, parent, 17);
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x4, 10, 190, 100, 80, parent, 17);
     w = wm_window(e);
     API("SetWindowTextA", e, cstr("ab\r\ncd\r\n\r\nef"));
     {
@@ -1502,7 +1537,7 @@ static void test_edit_box(void)
     API("DestroyWindow", e);
 
     /* the file dialog's box (has_caret) keeps its own caret in `caret` and never has a selection but all of its text (has_caret 2): its unset `sel_anchor` is not one */
-    e = create("EDIT", WS_CHILD | WS_VISIBLE | 0x800000, 10, 200, 100, 20, parent, 18);
+    e = make_edit( WS_CHILD | WS_VISIBLE | 0x800000, 10, 200, 100, 20, parent, 18);
     w = wm_window(e);
     API("SetWindowTextA", e, cstr("name.dek"));
     w->has_caret = 1;

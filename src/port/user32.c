@@ -1068,7 +1068,8 @@ static uint32_t GetClassNameA(const uint32_t *a)
     return (uint32_t)n;
 }
 
-/* The keyboard focus moves: an edit box that loses it hides its selection and one that gains it selects its text (the box's own business, edit.c; the program is not sent a message). */
+/* The keyboard focus moves: an edit box that loses it hides its selection and one that gains it shows its caret (the box's own business, edit.c; the program is not sent a message). The dialog
+ * manager's Tab selects all of the text of the box it moves to (IsDialogMessageA). */
 static void focus_to(uint32_t hwnd)
 {
     uint32_t old = focus_hwnd;
@@ -1078,9 +1079,9 @@ static void focus_to(uint32_t hwnd)
     focus_hwnd = hwnd;
     wm_dirty = 1;
     if (old && wm_window(old) && wm_edit_is_edit(wm_window(old)))
-        wm_edit_focus(wm_window(old), 0);
+        wm_edit_focus(wm_window(old), EDIT_FOCUS_LOST);
     if (hwnd && wm_window(hwnd) && wm_edit_is_edit(wm_window(hwnd)))
-        wm_edit_focus(wm_window(hwnd), 1);
+        wm_edit_focus(wm_window(hwnd), EDIT_FOCUS_SET);
 }
 
 static uint32_t SetFocus(const uint32_t *a) { uint32_t old = focus_hwnd; focus_to(a[0]); return old; }

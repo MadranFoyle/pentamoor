@@ -150,7 +150,8 @@ uint32_t wm_edit_dragging(void);                                                
 void wm_edit_reset(Window *w);                                                    /* the text was set from outside (WM_SETTEXT, SetWindowText): the caret goes to the start, nothing is selected */
 void wm_edit_tick(void);                                                          /* from the host's serve loop: the caret's blink is a change of the picture */
 void wm_edit_wheel(Window *w, int clicks);                                        /* the mouse wheel over a multi-line box */
-void wm_edit_focus(Window *w, int gained);                                        /* the box gains the focus (all of a one-line box is selected, as Tab does in Windows) or loses it */
+enum { EDIT_FOCUS_LOST = 0, EDIT_FOCUS_SET = 1, EDIT_FOCUS_DIALOG = 2 };
+void wm_edit_focus(Window *w, int how);                                           /* the box loses the focus (it hides its selection), gains it from SetFocus or a click (the caret shows from now; the selection is as it was) or from the dialog manager (Tab: all of the text is selected, as Windows does) */
 uint32_t wm_edit_message(Window *w, uint32_t msg, uint32_t wp, uint32_t lp);      /* the EM_ messages, WM_CUT, WM_COPY, WM_PASTE, WM_CLEAR, WM_SETTEXT's effect on the caret ... */
 int wm_edit_caret_visible(const Window *w);                                        /* whether the caret is drawn now: the box has the focus (or the file dialog's has_caret) and the blink is in its on half */
 
