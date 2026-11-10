@@ -184,6 +184,24 @@ static void test_state(void)
     CHECK(API("RestoreDC", hdc, 1) == 1);
     CHECK(dc_of(hdc)->org[0] == 5 && dc_of(hdc)->textcolor == RGB(1, 2, 3));
     CHECK(API("RestoreDC", hdc, 1) == 0);                                  /* nothing left to restore */
+    CHECK(gdi_dc_copies() == 0);                                           /* every copy SaveDC made was given back (they were not: 192 bytes each, thousands a minute in a duel) */
+    {
+        int i;
+
+        for (i = 0; i < 1000; i++) {
+            API("SaveDC", hdc);
+            API("SaveDC", hdc);
+            API("SaveDC", hdc);
+            API("RestoreDC", hdc, (uint32_t)-1);                            /* the last one */
+            API("RestoreDC", hdc, 1);                                       /* the first, and the one after it with it */
+        }
+        CHECK(gdi_dc_copies() == 0);
+        API("SaveDC", hdc);
+        API("SaveDC", hdc);
+        CHECK(gdi_dc_copies() == 2);
+        API("RestoreDC", hdc, 1);
+        CHECK(gdi_dc_copies() == 0);
+    }
     /* an isotropic mapping: 100 logical units across 200 pixels scale by 2 */
     API("SetMapMode", hdc, 7);
     API("SetWindowExtEx", hdc, 100, 100, 0);

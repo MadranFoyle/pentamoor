@@ -13,6 +13,7 @@ int gdi_object_kind(uint32_t h);
 uint32_t gdi_object_a(uint32_t h);
 uint32_t gdi_object_b(uint32_t h);
 
+int gdi_dc_copies(void);                         /* SaveDC copies alive (a test counts them) */
 uint32_t gdi_color_query_dc(void);
 void gdi_color_query_result(uint32_t hdc, uint32_t brush, uint8_t fg[3], uint8_t bg[3], int *transparent, int *has_bg);
 uint32_t gdi_window_dc(uint32_t hwnd);           /* a device context drawing on the window's client area */

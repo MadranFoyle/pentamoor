@@ -201,6 +201,7 @@ static uint32_t CreateThread(const uint32_t *a)
     port_trace("CreateThread(start=0x%08x, arg=0x%08x) -> thread %u", a[2], a[3], sched_thread_id(t));
     if (a[5])
         WR32(a[5], sched_thread_id(t));
+    sched_thread_hold(t);                                          /* until CloseHandle: the handle can be asked for the exit code long after the thread has ended */
     return new_handle((Handle){H_THREAD, -1, t, a[2], a[3], NULL});
 }
 
@@ -228,6 +229,10 @@ static uint32_t CloseHandle(const uint32_t *a)
     if (h) {
         if (h->kind == H_FILE && h->fd >= 0)
             close(h->fd);
+        if (h->kind == H_THREAD) {
+            sched_thread_drop(h->thread);
+            h->thread = NULL;
+        }
         h->kind = 0;
     }
     return 1;
@@ -245,12 +250,17 @@ static uint32_t WaitForSingleObject(const uint32_t *a)
     if (h && h->kind == H_THREAD) {
         GThread *t = h->thread;                                /* not h itself after the wait: another thread may grow the handle table meanwhile */
 
+        int done;
+
         if (sched_thread_done(t))
             return 0;
         if (a[1] == 0)
             return 0x102;                                      /* WAIT_TIMEOUT */
+        sched_thread_hold(t);                                  /* another thread may close the handle while this one waits */
         sched_block(thread_done, t, a[1] == 0xFFFFFFFFu ? -1 : a[1] / 1000.0);
-        return sched_thread_done(t) ? 0 : 0x102;
+        done = sched_thread_done(t);
+        sched_thread_drop(t);
+        return done ? 0 : 0x102;
     }
     return 0;
 }
@@ -758,13 +768,18 @@ static void poll_timers(void)
     for (i = 0; i < nmmt; i++) {
         MmTimer *t = &mmt[i];
 
+        if (t->running && sched_thread_done(t->running)) {
+            sched_thread_drop(t->running);                         /* the last callback is over (a killed or one-shot timer's too): its record can go */
+            t->running = NULL;
+        }
         if (!t->used || t->next > now)
             continue;
-        if (t->running && !sched_thread_done(t->running))
+        if (t->running)
             continue;                                              /* the previous tick is still running: skip this one */
         {
             /* the callback takes (id, msg, user, dw1, dw2): spawn a thread that calls it */
             t->running = sched_spawn_timer(t->cb, t->id, t->user);
+            sched_thread_hold(t->running);
         }
         if (t->periodic)
             t->next = now + t->delay;

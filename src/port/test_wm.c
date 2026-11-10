@@ -528,6 +528,38 @@ static void test_thread_stacks(void)
     sched_sleep(0.01);
 }
 
+static uint32_t code_thread(const uint32_t *a)
+{
+    (void)a;
+    return 77;
+}
+
+/* Thread records: a multimedia timer starts a thread for each of its callbacks (twenty a second in a duel), and a finished thread's record used to stay in memory for ever (256 bytes each:
+ * a quarter of the resident memory the duels gained). A record is freed when its slot is reused, unless a handle or a timer still names it: then when it lets go. */
+static void test_thread_records(void)
+{
+    uint32_t short_fn = port_host_function(short_thread), code_fn = port_host_function(code_thread);
+    GThread *held = sched_spawn(code_fn, 0, 0);
+    int i, before = (int)shorts_run;
+
+    sched_thread_hold(held);                                        /* what CreateThread's handle does */
+    for (i = 0; i < 400; i++) {
+        sched_spawn(short_fn, 0, 0);
+        sched_sleep(0.0005);
+    }
+    for (i = 0; i < 100 && (int)shorts_run < before + 400; i++)
+        sched_sleep(0.005);
+    CHECK((int)shorts_run == before + 400);
+    CHECK(sched_thread_done(held) && sched_thread_exit_code(held) == 77);       /* its slot was reused long ago; the handle still has its exit code */
+    CHECK(sched_records_live() < 40);                                           /* 400 threads ran: their records did not stay (the held one did) */
+    sched_thread_drop(held);
+    for (i = 0; i < 20; i++) {
+        sched_spawn(short_fn, 0, 0);
+        sched_sleep(0.002);
+    }
+    CHECK(sched_records_live() < 40);
+}
+
 /* The library the host provides in place of MAGSND.DLL: found by name or ordinal, cdecl, answers through the pointer. */
 static void test_host_module(void)
 {
@@ -3723,6 +3755,7 @@ int main(void)
     test_timers();
     test_cross_thread_send();
     test_thread_stacks();
+    test_thread_records();
     test_host_module();
     test_message_range();
     test_window_from_point();

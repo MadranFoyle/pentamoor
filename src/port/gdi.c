@@ -19,6 +19,8 @@ static int nobjs, capobjs;
  * GetDC, SelectObject, GetCharABCWidths and ReleaseDC (Spells of the Ancients does it for every character it draws) would otherwise take a slot and a context for each. */
 static uint32_t *free_dcs;
 static int nfree_dcs, capfree_dcs;
+static int dc_copies_live;          /* the copies SaveDC has made and nothing has given back yet (the tests count them: they leaked) */
+int gdi_dc_copies(void) { return dc_copies_live; }
 
 uint32_t obj_new(int kind, void *p)
 {
@@ -78,6 +80,8 @@ void gdi_release_dc(uint32_t h)
         return;
     for (d = o->p; d; d = next) {
         next = d->saved;
+        if (d != o->p)
+            dc_copies_live--;
         free(d);
     }
     o->kind = 0;
@@ -1658,6 +1662,7 @@ static uint32_t SaveDC(const uint32_t *a)
     if (!dc)
         return 0;
     copy = malloc(sizeof(*copy));
+    dc_copies_live++;
     *copy = *dc;
     copy->saved = dc->saved;
     dc->saved = copy;
@@ -1681,15 +1686,19 @@ static uint32_t RestoreDC(const uint32_t *a)
         return 0;
     {
         int drop = depth - level, i;
-        DC *target = dc->saved;
+        DC *top = dc->saved, *target = top, *rest;
 
         for (i = 0; i < drop; i++)
             target = target->saved;
-        {
-            DC *rest = target->saved;
+        rest = target->saved;
+        *dc = *target;
+        dc->saved = rest;
+        while (top != rest) {                   /* the restored copy and the ones saved after it are gone (they were never freed: 192 bytes for every SaveDC, thousands a minute in a duel) */
+            DC *next = top->saved;
 
-            *dc = *target;
-            dc->saved = rest;
+            dc_copies_live--;
+            free(top);
+            top = next;
         }
     }
     return 1;
