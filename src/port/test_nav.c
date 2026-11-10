@@ -363,6 +363,94 @@ static void test_nearest(void)
     CHECK(nav_nearest(l.t, l.n, 100, 50, &hx, &hy) == 0);                               /* the edge is out (x1 is exclusive): 1 pixel from a */
 }
 
+/* Touch: a tap is moved onto the control it was meant for (nav_snap), and a press and its release go to the same place (nav_snap_track). The layout is the shell's Duel page at 800x600:
+ * the "Best of" edit box with its spin button's two arrows (12 x 14 each) at the right of it, a check box 14 tall, a combo box, Start match. */
+static void test_snap(void)
+{
+    List l = {{{0}}, 0};
+    int hx = -1, hy = -1, edit, up, down, ante, combo, start;
+    NavSnap s;
+    int ox, oy;
+
+    edit = add(&l, 299, 461, 34, 28, 1, "edit");
+    up = add(&l, 333, 461, 12, 14, 1, "up");
+    down = add(&l, 333, 475, 12, 14, 1, "down");
+    ante = add(&l, 237, 430, 56, 14, 1, "ante");
+    combo = add(&l, 305, 279, 430, 21, 1, "combo");
+    start = add(&l, 628, 497, 107, 28, 1, "start");
+    (void)edit; (void)combo; (void)start;
+    CHECK(nav_snap(l.t, 0, 5, 5, 10, &hx, &hy) == 0);                                       /* nothing to land on */
+    CHECK(nav_snap(l.t, l.n, 339, 468, 10, &hx, &hy) == 0);                                  /* on the up arrow already: where it is */
+    CHECK(nav_snap(l.t, l.n, 349, 466, 10, &hx, &hy) == 1 && hx == (333 + 344) / 2 && hy == (461 + 474) / 2);   /* 4 pixels right of the up arrow: its middle (small controls take the point to their middle) */
+    CHECK(nav_snap(l.t, l.n, 339, 492, 10, &hx, &hy) == 1 && hy == (475 + 488) / 2);       /* just under the down arrow */
+    CHECK(nav_snap(l.t, l.n, 339, 475, 10, &hx, &hy) == 0);                                  /* the boundary pixel: it is the down arrow's */
+    CHECK(nav_snap(l.t, l.n, 345, 475, 10, &hx, &hy) == 1);                                  /* the first pixel right of both (x1 is exclusive): the down arrow is nearer than the up arrow (a tie goes to the nearer middle) */
+    CHECK(nav_snap(l.t, l.n, 345, 481, 10, &hx, &hy) == 1 && hy == (475 + 488) / 2);
+    CHECK(nav_snap(l.t, l.n, 345, 468, 10, &hx, &hy) == 1 && hy == (461 + 474) / 2);
+    CHECK(nav_snap(l.t, l.n, 320, 470, 14, &hx, &hy) == 1 && hx == (333 + 344) / 2);        /* on the edit box (big), 13 pixels from the arrow: the small control wins */
+    CHECK(nav_snap(l.t, l.n, 320, 470, 10, &hx, &hy) == 0);                                  /* the arrow is out of reach: the edit box stays */
+    CHECK(nav_snap(l.t, l.n, 300, 462, 10, &hx, &hy) == 0);                                  /* well inside the edit box */
+    CHECK(nav_snap(l.t, l.n, 265, 436, 4, &hx, &hy) == 0);                                   /* inside the check box (small): it is there */
+    CHECK(nav_snap(l.t, l.n, 300, 437, 10, &hx, &hy) == 1 && hx == (237 + 292) / 2 && hy == (430 + 443) / 2);   /* beside the check box: its middle */
+    CHECK(nav_snap(l.t, l.n, 500, 400, 10, &hx, &hy) == 0);                                  /* nothing within reach */
+    /* a big control is only landed on from outside, to its nearest pixel (inside it) */
+    CHECK(nav_snap(l.t, l.n, 680, 490, 10, &hx, &hy) == 1 && hx == 680 && hy == 497);
+    CHECK(nav_snap(l.t, l.n, 680, 480, 10, &hx, &hy) == 0);                                  /* 17 pixels above: out of reach */
+    CHECK(nav_snap(l.t, l.n, 200, 480, 0, &hx, &hy) == 0);                                   /* a reach of nothing: only what is under the point */
+    /* a press and its release go to the same place, and a drag moves by the same offset */
+    memset(&s, 0, sizeof(s));
+    nav_snap_track(&s, 0, 349, 466, 1, 338, 467, &ox, &oy);                                  /* the hover before the tap: snapped */
+    CHECK(ox == 338 && oy == 467 && !s.active);
+    nav_snap_track(&s, 1, 349, 466, 1, 338, 467, &ox, &oy);                                  /* the press */
+    CHECK(ox == 338 && oy == 467 && s.active && s.dx == -11 && s.dy == 1);
+    nav_snap_track(&s, 0, 352, 470, 0, 0, 0, &ox, &oy);                                      /* a move while down: the offset, not a new snap */
+    CHECK(ox == 341 && oy == 471);
+    nav_snap_track(&s, -1, 349, 466, 0, 0, 0, &ox, &oy);                                     /* the release at the finger's own place: the pressed place */
+    CHECK(ox == 338 && oy == 467 && !s.active);
+    nav_snap_track(&s, 0, 100, 100, 0, 0, 0, &ox, &oy);                                      /* afterwards a move is as it is */
+    CHECK(ox == 100 && oy == 100);
+    nav_snap_track(&s, 1, 100, 100, 0, 0, 0, &ox, &oy);                                      /* a press that moved nowhere: no offset */
+    CHECK(ox == 100 && oy == 100 && s.dx == 0 && s.dy == 0);
+    nav_snap_track(&s, -1, 100, 100, 0, 0, 0, &ox, &oy);
+    (void)up; (void)down; (void)ante;
+}
+
+/* A form (NAVF_FORM): controls on a page, as the shell's Gauntlet page lays them out at 800x600. The check box "Ante" sits at the left of the column, under a combo box that starts to its right (no beam
+ * of its own: nothing above or below it overlaps it sideways except labels) and above and to the left of an edit box; the round buttons are in a column at the left, in another zone. With the rules of a
+ * duel the check box is a sink: nothing goes to it (the edit box's left goes to the round button level with it, which is in the beam). As a form the nearer cone neighbour of the same zone wins. */
+static void test_form(void)
+{
+    List l = {{{0}}, 0};
+    int hx = -1, hy = -1, ante, edit, combo, ball, opts, from;
+
+    ball = add(&l, 34, 362, 108, 108, 9, "ball");                        /* the Help ball: other zone, level with the edit box */
+    combo = add(&l, 305, 293, 430, 21, 1, "combo");
+    ante = add(&l, 237, 383, 54, 14, 1, "ante");
+    edit = add(&l, 299, 418, 34, 28, 1, "edit");
+    opts = add(&l, 616, 411, 112, 28, 1, "options");
+    (void)combo; (void)opts;
+    from = edit;
+    CHECK(go(&l, from, NAV_LEFT) == ball);                                /* a duel's rules: the beam first, whatever zone: the round button, and the check box stays out of reach */
+    {
+        int x, y;
+
+        nav_point(&l.t[from], &x, &y);
+        CHECK(nav_pick_ex(l.t, l.n, -1, x, y, NAV_LEFT, NAVF_FORM, &hx, &hy) == ante);       /* as a form: the check box is 52 pixels away up and left, the round button 227 pixels: the check box */
+        CHECK(nav_pick_ex(l.t, l.n, -1, x, y, NAV_LEFT, 0, &hx, &hy) == ball);
+        CHECK(nav_pick_ex(l.t, l.n, -1, x, y, NAV_RIGHT, NAVF_FORM, &hx, &hy) == go(&l, from, NAV_RIGHT));   /* nothing else changes where there is no cone neighbour */
+        nav_point(&l.t[ante], &x, &y);
+        CHECK(nav_pick_ex(l.t, l.n, -1, x, y, NAV_UP, NAVF_FORM, &hx, &hy) == nav_pick(l.t, l.n, -1, x, y, NAV_UP, &hx, &hy));
+        CHECK(nav_pick_ex(l.t, l.n, -1, x, y, NAV_LEFT, NAVF_FORM, &hx, &hy) == ball);          /* and the way out of the check box to the left is still the round button */
+    }
+    /* the beam of the same zone still comes first: a button level with the source in its own zone beats any cone neighbour, near as it is */
+    {
+        int near_cone = add(&l, 200, 395, 20, 20, 1, "near cone"), same_beam = add(&l, 100, 420, 60, 24, 1, "same beam"), x, y;
+
+        nav_point(&l.t[from], &x, &y);
+        CHECK(nav_pick_ex(l.t, l.n, -1, x, y, NAV_LEFT, NAVF_FORM, &hx, &hy) == same_beam && near_cone != same_beam);
+    }
+}
+
 int main(void)
 {
     test_nearest();
@@ -376,6 +464,8 @@ int main(void)
     test_scroll();
     test_find();
     test_wide_boxes();
+    test_snap();
+    test_form();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

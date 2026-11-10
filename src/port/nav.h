@@ -47,8 +47,27 @@ int nav_find(const NavTarget *t, int n, int x, int y);
 /* The target to go to from `cur` (an index, or -1: look under the pointer at x, y) in direction `dir`: its index, with the point to put the pointer at in *hx, *hy; NAV_NONE; or
  * NAV_SCROLL. With no current target the nearest one in the direction is chosen, and with none in that direction the nearest of all (so the pointer can always get back on the targets). */
 int nav_pick(const NavTarget *t, int n, int cur, int x, int y, int dir, int *hx, int *hy);
+/* nav_pick with flags. NAVF_FORM: for controls laid out on a page or in a dialog (an edit box under a check box that is out of its beam, with a column of buttons in its way): rule 3's second and third tiers
+ * are one, so a neighbour of the same zone in the cone and one of another zone in the beam compete on distance (rule 4), and a control that only the cone reaches is not left out. Duels keep the rules above. */
+#define NAVF_FORM 1
+int nav_pick_ex(const NavTarget *t, int n, int cur, int x, int y, int dir, int flags, int *hx, int *hy);
 /* The target nearest to the pointer (x, y), whatever the direction (0 when the pointer is in it; the nearest edge otherwise; a tie goes to the earlier), its pointer place in *hx, *hy; NAV_NONE
  * if there are no targets. For a screen the game draws itself, where the pointer is wherever the last click left it: the first press takes hold of what is nearest. */
 int nav_nearest(const NavTarget *t, int n, int x, int y, int *hx, int *hy);
+
+/*
+ * Touch (docs/notes/controller-screens.md, "Touch on the pages"): a finger is wider than the controls of the Magic Shell (a spin button's arrow is 12 x 14 pixels, a check box 14 pixels tall), so a tap
+ * is moved onto the control it was meant for. nav_snap: a point inside a small target (under NAV_SMALL pixels on its short side), or within `slop` pixels of one, goes to the nearest such target
+ * (a tie to the one whose middle is nearer, then the earlier); with none, a point inside any target stays, and one outside every target but within `slop` of a big one goes to the nearest
+ * point of it. Returns 1 and the place in *hx, *hy when the point moves, 0 when it stays (it is inside a target and no small one is near, or nothing is near).
+ */
+#define NAV_SMALL 24
+int nav_snap(const NavTarget *t, int n, int x, int y, int slop, int *hx, int *hy);
+
+/* One finger's way through nav_snap: the move that comes before a tap is snapped on its own (the hover); the press is snapped and the offset it was moved by is kept, and every event of the same touch
+ * (moves of a drag, the release) is moved by that offset, so a press and its release are the same place. ev: 0 a move, 1 a press (left or right), -1 a release. `snapped` says nav_snap moved the point
+ * (to sx, sy: asked for a move before the press, and for a press); the place the event goes to comes back in *ox, *oy. */
+typedef struct { int active, dx, dy; } NavSnap;
+void nav_snap_track(NavSnap *s, int ev, int x, int y, int snapped, int sx, int sy, int *ox, int *oy);
 
 #endif

@@ -228,6 +228,7 @@ static int step_index(const PadBind *b) { return b->dy < 0 ? 0 : b->dy > 0 ? 1 :
 
 void pad_set_nav(Pad *p, int on) { p->nav = on != 0; }
 void pad_set_card(Pad *p, int on) { p->card = on != 0; }
+void pad_set_cancel(Pad *p, int on) { p->cancel = on != 0; }
 
 void pad_freeze(Pad *p, int on, PadOut *out)
 {
@@ -303,7 +304,12 @@ void pad_button(Pad *p, int btn, int down, PadOut *out)
             left_set(p, 1, down, out);
             break;
         case PB_RCLICK:
-            right_set(p, down, out);
+            if (down && p->cancel)                                           /* a dialog with a Cancel button: B is Escape, which the dialog manager turns into that button */
+                key_down(p, btn, 27, 0x01, 27, 0, out);
+            else if (!down && p->key[btn].on)
+                key_up(p, btn, out);
+            else
+                right_set(p, down, out);
             break;
         case PB_DCLICK:
             if (down && !p->dbl.phase) {

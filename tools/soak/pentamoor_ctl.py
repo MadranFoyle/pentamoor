@@ -43,7 +43,7 @@ def ppm_region_hash(data, box=None):
 
 
 class Win:
-    __slots__ = ("h", "parent", "cls", "title", "x0", "y0", "x1", "y1", "z", "style", "tid", "visible")
+    __slots__ = ("h", "parent", "cls", "title", "x0", "y0", "x1", "y1", "z", "style", "tid", "visible", "enabled", "checked", "wid")
 
     def __init__(self, m):
         self.h = int(m["h"], 16)
@@ -55,6 +55,10 @@ class Win:
         self.style = int(m["style"], 16)
         self.tid = int(m["tid"])
         self.visible = " visible" in m["rest"]
+        self.enabled = " disabled" not in m["rest"]
+        self.checked = " checked" in m["rest"]                     # a check box or radio button that is on
+        mid = re.search(r" id=(\d+)", m["rest"])
+        self.wid = int(mid.group(1)) if mid else 0
 
     @property
     def empty(self):

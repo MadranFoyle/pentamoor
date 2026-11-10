@@ -363,6 +363,7 @@ static void pad_event(const SDL_Event *ev)
     out.n = 0;
     pad_set_nav(&pad, front_nav_ready());
     pad_set_card(&pad, front_view_ready());
+    pad_set_cancel(&pad, front_nav_cancel_ready());
     switch (ev->type) {
     case SDL_CONTROLLERAXISMOTION: {
         int axis = pad_axis_of(ev->caxis.axis);
@@ -459,6 +460,7 @@ static void pad_tick(void)
     out.n = 0;
     pad_set_nav(&pad, front_nav_ready());
     pad_set_card(&pad, front_view_ready());
+    pad_set_cancel(&pad, front_nav_cancel_ready());
     pad_step(&pad, dt, &out);
     pad_deliver(&out);
 }
@@ -1171,6 +1173,20 @@ static Touch touch;
 static int touch_on;
 static int in_background;                                   /* iOS: the app is not on the screen: nothing is drawn */
 
+/* How far from a control a finger may land and still mean it, in game pixels: TOUCH_SNAP_POINTS of the window (about 3.5 mm on an iPad), and the picture is drawn D.view.dst.w drawable pixels wide of
+ * D.ow, the window being D.ww points; never less than 8 or more than 40 of the game's pixels (nav.h, nav_snap). */
+#define TOUCH_SNAP_POINTS 22
+static int touch_slop(void)
+{
+    double pts_per_px;
+    int slop;
+
+    refresh_view();
+    pts_per_px = D.ow > 0 && SCREEN_W > 0 ? (double)D.ww * D.view.dst.w / D.ow / SCREEN_W : 1.0;
+    slop = pts_per_px > 0.1 ? (int)(TOUCH_SNAP_POINTS / pts_per_px + 0.5) : 16;
+    return slop < 8 ? 8 : slop > 40 ? 40 : slop;
+}
+
 static void touch_flush(void)
 {
     TouchAction a;
@@ -1182,11 +1198,11 @@ static void touch_flush(void)
         if (a.kind != TA_MOVE && padlog_on())
             padlog("touch: %s at (%d,%d)", a.kind == TA_LDOWN ? "left button down" : a.kind == TA_LUP ? "left button up" : a.kind == TA_RDOWN ? "right button down" : "right button up", a.x, a.y);
         switch (a.kind) {
-        case TA_MOVE:  front_push_mouse(IN_MOVE, a.x, a.y); break;
-        case TA_LDOWN: flush_alt(); front_push_mouse(IN_DOWN, a.x, a.y); break;
-        case TA_LUP:   front_push_mouse(IN_UP, a.x, a.y); break;
-        case TA_RDOWN: flush_alt(); front_push_mouse(IN_RDOWN, a.x, a.y); break;
-        case TA_RUP:   front_push_mouse(IN_RUP, a.x, a.y); break;
+        case TA_MOVE:  front_push_touch(IN_MOVE, a.x, a.y, touch_slop()); break;
+        case TA_LDOWN: flush_alt(); front_push_touch(IN_DOWN, a.x, a.y, touch_slop()); break;
+        case TA_LUP:   front_push_touch(IN_UP, a.x, a.y, touch_slop()); break;
+        case TA_RDOWN: flush_alt(); front_push_touch(IN_RDOWN, a.x, a.y, touch_slop()); break;
+        case TA_RUP:   front_push_touch(IN_RUP, a.x, a.y, touch_slop()); break;
         }
     }
 }

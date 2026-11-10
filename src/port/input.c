@@ -81,7 +81,9 @@ static uint32_t window_at(int x, int y)
             continue;
         if (!w->visible || !wm_is_hit_target(w) || w->hwnd == wm_desktop_hwnd())
             continue;
-        for (a = w; a->parent && wm_window(a->parent);) {      /* every ancestor must be visible */
+        for (a = w; a->parent && wm_window(a->parent);) {      /* every ancestor must be visible, up to a top-level popup: an owned window is shown whether or not its owner is (the Magic Shell hides its own window under the sealed deck's pack screen) */
+            if ((a->style & WS_POPUP) && !(a->style & WS_CHILD))
+                break;
             a = wm_window(a->parent);
             ok = ok && a->visible;
         }

@@ -139,7 +139,7 @@ The new game's name box is drawn and read by the game itself from key events (a 
 works as before (the name box has "Melody Whisp" in it to accept with X / Enter), and so does Steam's on-screen keyboard (Steam + X) when it sends key events. `steamdeck.md`, "Text", has what was added for the Deck: text
 that arrives with no key before it (`SDL_TEXTINPUT` from an input method or a keyboard that sends text) is typed as the key presses that produce it (the name box reads keys and ignores `WM_CHAR`), once per character, and on a
 Deck `SDL_StartTextInput` is called only while a text field has the focus: an edit control in the open dialog (the file dialogs' name box), or the new game's name box, which the game says by asking for keys in its
-name loop (a hook before `FUN_004080b2`, `textfocus.c`). The pad has no key for typing; A on the on-screen keyboard is Steam's.
+name loop (a hook before `FUN_004080b2`, `textfocus.c`). The pad has no key for typing; A on the on-screen keyboard is Steam's. The Magic Shell's pages (`controller-screens.md`, "The Magic Shell") have edit boxes of the window layer on an ordinary window: A on one gives it the focus, and the keyboard is wanted while it has it.
 
 ## Testing without a controller
 
@@ -152,7 +152,7 @@ does not look at it), so the code from the event on is the real one:
     pad press NAME                        down, then up
     pad remove                            a controller was unplugged
     pad pos                               where the cursor is, on stderr: "pad: X Y active=0|1 left=0|1"
-    pad nav                               what the D-pad would move between now: "nav: mode duel|deck|dialog|menu|combo|screen|none, N targets, pointer (X,Y) on I", then a line for each target
+    pad nav                               what the D-pad would move between now: "nav: mode duel|deck|dialog|menu|combo|screen|page|none, N targets, pointer (X,Y) on I", then a line for each target
     hit X Y                               (not a pad step) the window a click at X, Y reaches
 
 (Steps are handled in the order of the pipe, but the controller events they push are seen by the next turn of the window loop: ask `pad pos` a few milliseconds after the last one.)
@@ -164,6 +164,7 @@ does not look at it), so the code from the event on is the real one:
 - `python3 tools/soak/screen_nav_play.py [--res 1024x768] [--shots DIR]` plays a new game, a castle's gate, a village (food, a card bought), the world map, the clues, the wizard's stats and the deck builder with the D-pad and A, and checks each screen's targets against the game's own hover (`controller-screens.md`).
 - `python3 tools/soak/pad_realtime.py [--res 1024x768] [--env "K=V ..."]` plays a duel with the pad at a person's speed (a button down 120 to 150 ms, the next 450 ms later, a direction held 1.3 s, the stick to bring the pointer near) with `PORT_PAD_LOG` on and checks the input log: every D-pad press lands on a target, no arrow key goes to the duel, A on Done passes the phase, B's menu opens and closes, the D-pad's mode stays `duel`, the game's (Y/N) question is never reported, no message box.
 - `python3 tools/soak/pad_regression.py [--game 2.15|1.0|both] [--repeat N]` runs all of the above (and `sota_pad_play.py` for 2.15) with pinned seeds and prints one table: "A repeatable run", below.
+- `python3 tools/soak/sota_shell_pad_play.py [--only title,duel,tools,world,help,player,dialogs,touch]` walks the Magic Shell of 2.15 (`magic.exe`) with the D-pad, A, B and Back, then with fingers: `controller-screens.md`, "The Magic Shell".
 - `python3 tools/soak/nav_play.py [--res 1024x768]` plays a duel (mouse, until both sides have permanents) and then checks the D-pad in it: `controller-nav.md`, "Tested".
 - By hand with the same driver: the deck builder (`DECK.EXE`): a card dragged from the stock row into the deck with A held and the stick (Stats 0 -> 1 cards), RB paging the stock row, and the title screen, a village's food button
   (one A press, one purchase), the duel's hand list, a card's right-click menu (B) and a menu row chosen with A, the encounter dialogs' buttons.

@@ -14,6 +14,8 @@
 
 /* ---- called from the window thread (any thread) ---- */
 void front_push_mouse(int kind, int x, int y);                            /* kind: IN_MOVE, IN_DOWN, ... (wm.h); screen pixels */
+/* A finger's mouse action from touch.c: as front_push_mouse, and on the guest side the place is moved onto a control within `slop` pixels (navwm_snap), the press and its release by the same offset. */
+void front_push_touch(int kind, int x, int y, int slop);
 void front_push_key(uint32_t vk, uint32_t scancode, int down, int ch, int repeat);   /* ch: the character the key types, or -1 */
 void front_push_char(int ch);                                             /* a character with no key (WM_CHAR alone: Latin-1 text from an input method) */
 void front_push_call(uint32_t addr, const uint32_t *args, int n);          /* start a guest function on a new thread (a test and debugging aid) */
@@ -23,6 +25,7 @@ void front_push_quit(void);                                               /* the
  * popup menu), as of the last frame; the pad presses the arrow keys instead when there is not. */
 void front_push_nav(int dir, int x, int y);
 int front_nav_ready(void);
+int front_nav_cancel_ready(void);             /* a dialog is open that has a Cancel button: the pad's B is Escape (as of the last frame) */
 enum { NAVR_MOVE = 1, NAVR_SCROLL };
 int front_nav_result(unsigned *seen, int *kind, int *x, int *y, int *dir);       /* 1 if there is an answer newer than *seen */
 /* View card (docs/notes/controller.md): the game's own Full-size card window shows the card under (x, y) at once, instead of after the pointer has rested on it. Done on the guest side (navwm.c).
