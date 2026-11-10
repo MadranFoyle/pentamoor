@@ -2,7 +2,7 @@
 
 The Steam Deck (SteamOS 3: Arch-based, x86-64, a 1280x800 screen, a read-only root file system with no C compiler or `make`, Python 3 and SDL2 present, a built-in game controller, KDE in desktop mode and
 Gamescope in Game mode) is a release target of its own: `pentamoor-<version>-steamdeck.tar.gz`. **Only one real-Deck session has happened so far ([On a real Deck](#on-a-real-deck-tested)); most of what follows was not run on one.** What was run is listed under "Checked", what was not under
-"Not verified" (that list is what someone with a Deck has to go through). The files are in `tools/steamdeck/` and the C is `src/port/steamdeck.c`, `textin.c`, `textfocus.c` and `front_sdl.c`; the display rules it uses (scaling, full screen toggle, settings file) are `src/port/display.c`, see [display.md](display.md).
+"Not verified" (that list is what someone with a Deck has to go through). The files are in `tools/steamdeck/` (the window installer, for the first game and for Spells of the Ancients 2.15, the Steam shortcut writer, the controller layout) and the C is `src/port/steamdeck.c`, `textin.c`, `textfocus.c` and `front_sdl.c`; the display rules it uses (scaling, full screen toggle, settings file) are `src/port/display.c`, see [display.md](display.md).
 
 ## For a person with a Deck
 
@@ -11,15 +11,50 @@ Gamescope in Game mode) is a release target of its own: `pentamoor-<version>-ste
 2. Double-click **Install Pentamoor** in the unpacked folder. If it asks what to do with the file instead, right-click it > Properties > Permissions > tick "Is executable" (an archive made by Ark keeps the bit, so this should not be needed). A window asks for the disc
    image (your own `.iso` of the retail CD, version 1.0), then shows a progress bar for 2 to 15 minutes. It needs about 1.2 GB free while it works (about 0.9 GB stay: the game's files 270 MB, the three game modules
    70 MB, and the C compiler it downloads: SteamOS has none, so Zig, about 100 MB to download and 570 MB on disk with its cache, in `tools/local/`). Nothing outside the folder is changed (the root file system is read-only and is not touched).
-3. When it says it is installed, answer yes to "Add Pentamoor to Steam". If Steam is running it asks to close it (Steam writes its game list again when it quits, which would undo the change). This writes a shortcut
-   into Steam's list of non-Steam games, a menu entry (`~/.local/share/applications/pentamoor.desktop`) and, optionally, the controller layout below.
-4. Switch back to Gaming Mode (Steam starts again by itself): Pentamoor is in the Library, under All Games (and "Non-Steam"). Open its page, press the controller button (or the gear > Controller Settings)
+3. When it says it is installed, the window offers **Spells of the Ancients** (optional; [below](#spells-of-the-ancients-215-on-a-deck)): answer no to skip it, you can do it later with the **Install Spells of the Ancients** icon.
+4. Answer yes to "Add Pentamoor to Steam". If Steam is running it asks to close it (Steam writes its game list again when it quits, which would undo the change). This writes a shortcut
+   into Steam's list of non-Steam games, a menu entry (`~/.local/share/applications/pentamoor.desktop`) and, optionally, the controller layout below. When Spells of the Ancients is installed
+   it asks whether to add a second shortcut for it (its Magic Shell: [below](#spells-of-the-ancients-215-on-a-deck)).
+5. Switch back to Gaming Mode (Steam starts again by itself): Pentamoor is in the Library, under All Games (and "Non-Steam"). Open its page, press the controller button (or the gear > Controller Settings)
    and choose a layout (next section). Then play.
-5. The game starts full screen by itself. The mouse is the two trackpads and the touch screen; the controller is described in [controller.md](controller.md). Steam + X brings up Steam's on-screen keyboard (the new
+6. The game starts full screen by itself. The mouse is the two trackpads and the touch screen; the controller is described in [controller.md](controller.md). Steam + X brings up Steam's on-screen keyboard (the new
    game's name box also asks for it by itself, see "Text").
 
-Without the window installer: `./pentamoor-install "path/to/disc.iso"` in a terminal (Konsole), then `python3 tools/steamdeck/add-to-steam.py` (add `--desktop-entry --controller-template`; `--help`).
+Without the window installer: `./pentamoor-install "path/to/disc.iso"` in a terminal (Konsole), then `python3 tools/steamdeck/add-to-steam.py` (add `--desktop-entry --controller-template`; `--help`; with Spells of the Ancients
+installed `--sota` adds its shortcut too).
 `pentamoor` itself, started from a menu with no game installed in desktop mode, opens the window installer.
+
+## Spells of the Ancients 2.15 on a Deck
+
+The expansion at its last version is an optional second install over the first game (the installer, the files it needs and what it checks: the README's [Spells of the Ancients 2.15](../../README.md#spells-of-the-ancients-215-experimental) and
+[sota-licence.md](sota-licence.md)). On a Deck the window installer does it, in desktop mode, either at the end of the first game's install or later from the **Install Spells of the Ancients** icon at the top of the unpacked folder
+(`Install Spells of the Ancients.desktop`; it runs `tools/steamdeck/install-gui.sh --sota`; when the first game is not installed yet it installs that first and then asks about this).
+
+**The window.** One question says in plain words what it needs and what happens: two files besides the first game's disc, **both** needed: the disc image (`.iso`) of the expansion's CD, *Magic: The Gathering "Spells of the Ancients"*, version 2.0
+(usually named `MTG v2.00.iso`), and the 2.15 patch `SOTAV215.EXE` (1,207,571 bytes: the CD is version 2.0 and the patch brings it to 2.15; the whole file, a cut-short download is refused). The question also says that the installer checks both
+before it writes anything, that the install then sets the game's own "skip the disc check" flag so it does not ask for a disc later (the original installer did not set that flag; `--keep-cd-check` on the command line keeps the check), that it rebuilds the game's
+programs (so it takes about as long as the first install, and up to 1.2 GB of free space while it works; the expansion's files stay at about 310 MB, measured on a Mac), and that the same can be done later. Then two file pickers (the disc image, then the patch,
+each starting in the folder of the file before) and a silent check with the installer's own checks and words (`pentamoor-install --verify-only --sota DISC --patch FILE`, which writes nothing): a wrong file (the first game's disc given as the expansion's, a patch cut short, a different version of the patch)
+is shown in a dialog with the installer's message (for a cut-short patch: "...it was cut short (an incomplete download or copy). Get the patch again.") and the files can be chosen again. Only then the installer runs, with the same progress bar
+(`pentamoor-install --yes --clean --sota DISC --patch FILE`; with the first game installed it reads no first disc), and the last window says where it is, that the discs and the patch were checked before anything was written so the game does not ask
+for a disc when you play, and how to start it. A failed run shows the installer's own reason and says the first game is not changed.
+
+**The Steam shortcuts.** `add-to-steam.py --sota` (the window installer asks "Also add it to Steam?" when Spells of the Ancients is installed) adds a second non-Steam shortcut beside the first one, with the same safety: Steam must be closed (the window offers to
+close it), one dated backup of `shortcuts.vdf` is kept before the one write, a file that does not read back byte for byte is left alone and the manual steps are printed (they now say how to make the second shortcut by hand), and running it again changes nothing. It is the same
+launcher (`pentamoor`, the same Start In folder, the tag Pentamoor) with another name, **Pentamoor: Spells of the Ancients**, and the launch options `sota shell`, so Steam runs `pentamoor sota shell`: the expansion's Magic Shell, whose World page starts the adventure and
+which comes back when the adventure is left (one program at a time). A different name is a different app id, so each of the two has its own controller layout and own pictures in Steam. `--remove` takes both out, `--remove --sota` only this one. `--desktop-entry --sota` also writes
+`~/.local/share/applications/pentamoor-sota.desktop`. **Controller layout:** the one template (`controller_neptune_pentamoor.vdf`) is copied once; choose it, or Steam's "Gamepad with Mouse Trackpad", for each of the two shortcuts (Library > the shortcut > the controller button). **Artwork:** none is shipped
+(the game's pictures are yours); the script prints the names Steam looks for in `userdata/<user>/config/grid` (`<appid>p.png`, `<appid>.png`, `<appid>_hero.png`, `<appid>_logo.png`, the app id as an unsigned number): from the community's tools, **not checked** on a Steam client.
+
+**The screen.** All three programs of the 2.15 install (the shell `magic.exe`, the adventure `shandalar.exe`, FaceMaker) start with the program's own default of 1024x768 and the Deck's rules above, which fit it at 1x with bars of 128 and 16 pixels on 1280x800 (run with `PORT_STEAMDECK=1` on SDL's dummy driver each of them says "full screen" and a 1024x768 picture; that driver's display is itself 1024x768, so the fit into 1280x800 is the pure rule's, `test_steamdeck.c`, and the real X server run of the first game above, not a run of these programs). The shell lays its pages out for the screen it is given (seen by eye at 1024x768 and at 800x600, its design size: the same pages, the 1024 one larger and not blurred), so the
+default needs no size of its own and none is set (the launcher sets no `PORT_RES` for `sota`, tested). `PORT_RES=800x600` is the alternative to try: in the shortcut's Properties, Launch Options, `PORT_RES=800x600 %command% sota shell` (Steam puts the launcher where `%command%` is). 800x600 on 1280x800 is 1.33x, fractional (1067x800, `display_fit`), which is bigger and a little softer than 1x. Not compared on a Deck's screen. The saved display
+choices (`display.cfg`) are in `port_overlay_sota/`, apart from the first game's.
+
+**Typing.** The adventure's new-game name box asks for Steam's on-screen keyboard by itself, as the first game's does (checked with a Deck's settings on the dummy driver: `PORT_STEAMDECK=1 PORT_TEXT_LOG=1`, the log says `text input: on (a text field has the focus)` at the name box and `off` after).
+The Magic Shell's edit boxes (the Player page: screen name, real name, quote; they are ordinary edit windows, not a loop of the program) are covered since `wm_text_focus` (`user32.c`) says "text field" for an edit box that has the focus on a shown page, which depends on no address of any build: with a Deck's settings `textinput` says on after a click in the screen name box and off after
+another page is chosen. Steam + X works as before. Not tried on a Deck: whether the keyboard shows and where it sits over the shell's page.
+
+**What could not be checked without a Deck** is in "Not verified" (items 11 to 13).
 
 ## The controller layout
 
@@ -45,7 +80,8 @@ SDL's own pieces, which need nothing from us: Steam launches a non-Steam game wi
 SDL reads it when the controller subsystem starts, as for any SDL program (the front end does not touch it), and `SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` is set on a Deck
 (`front_sdl.c`: the pad keeps working while Steam's overlay, a notification or Gamescope itself has the focus).
 
-**Spells of the Ancients 2.15 on a Deck** (`./pentamoor sota`, from a terminal or a Steam shortcut to that command; the Deck's window installer and the shortcut writer are still the first game's): the pad works as above and on the same screens (the map, the villages and their shops, the deck editor, duels, dialogs and the game's menus: [controller-screens.md](controller-screens.md), "Spells of the Ancients 2.15"); the one new thing is FaceMaker, the portrait screen of a new game, which has no buttons for the D-pad (the left stick puts the cursor on the portrait and A clicks). Typing a name: the same Steam keyboard. Run headless with SDL's dummy drivers and controller steps only (`tools/soak/sota_pad_play.py`), not on a Deck.
+**The controller in Spells of the Ancients 2.15** (`./pentamoor sota`; the install, the shortcut for the Magic Shell and the screen are in [the section above](#spells-of-the-ancients-215-on-a-deck)): the layout is the same file for both shortcuts, and the pad works as above and on the same screens (the map, the villages and their shops, the deck editor, duels, dialogs and the game's menus: [controller-screens.md](controller-screens.md), "Spells of the Ancients 2.15"); the one new thing is FaceMaker, the portrait screen of a new game, which has no buttons for the D-pad (the left stick puts the cursor on the portrait and A clicks). Typing a name: the same Steam keyboard. Run headless with SDL's dummy drivers and controller steps only (`tools/soak/sota_pad_play.py`), not on a Deck. **The Magic Shell** (`magic.exe`, the second shortcut) is a window of pages and has no controller or touch navigation of its own in this version: with the
+"Gamepad with Mouse Trackpad" layout (or the shipped one, both trackpads as a mouse) and the touch screen it is played with the pointer, as in the first game's menus; the left stick still moves the pad's cursor and A and B click.
 
 ## What the program does on a Deck
 
@@ -79,6 +115,7 @@ What changed (`front_sdl.c`, `textin.c`, tests in `test_steamdeck.c` and `test_w
   and reads it in the loop of `Pic_Load_namepick` (0x47be64..0x47c07f), which pops its own key queue with FUN_004080b2 (0x4080b2) on every pass. A hook before that call (`textfocus.c`) notes it when the return
   address is inside that loop; `text_wanted_rule` counts it as the focus for 400 ms after the last note. `SDL_StartTextInput` / `SDL_StopTextInput` follow that (on a Deck): on at the name box, off on the map.
   `PORT_TEXT_LOG=1` prints each change, `textinput` in `PORT_CONTROL` the state.
+- **The Magic Shell's edit boxes** (Spells of the Ancients): an edit control with the focus on a shown page counts as a text field (`wm_text_focus`), with no game address (the shell has no name-box loop); checked with a Deck's settings and the real shell, below.
 - Other places the game takes typed text (a saved game's name, a deck's name through the file dialog, the Gauntlet or duel names) were not looked for one by one; the file dialogs are covered by `wm_text_focus`.
 
 ## When the pad does nothing in a duel: what to send
@@ -133,6 +170,11 @@ The log has no game data in it (window class names and titles, and positions on 
   each of the opponent's spells; A dismisses that, wherever the cursor is), the game's (Y/N) question is never reported, no message box is shown, SDL's text input is never switched on (no on-screen keyboard), the only mouse motion in the log is what the scripts sent (hiding
   and showing the pointer as the pad takes and gives back the cursor sent none, on X11). **No failure was found.** What this leaves: the cause is in what only a Deck has (below).
 
+- **Spells of the Ancients on the Deck's tools** (this Mac, arm64, and the unit tests; no Linux box, no Deck): the window installer's sequence for the first game and for the expansion (accepted, declined, cancelled at each picker, a file that is not there, a cut-short patch, the expansion's disc given as the first game's, the installer failing, no room, the
+  expansion installed already, the first game not installed yet, kdialog, zenity and the text path) against stand-ins for kdialog, qdbus, zenity and steam and a fake installer; the progress bar against a real log of the expansion's install (`REAL_SOTA_LOG`, made from the real discs); the shortcut writer for both shortcuts on fake Steam folders (byte for byte, backup, Steam running, an unreadable file,
+  `--remove`); the launcher's arguments for `sota shell`. For real, with the real discs: `pentamoor-install --verify-only` (0.2 s: it said yes to the real expansion disc and patch, it said "cut short ... Get the patch again" for a patch cut to 1,000,000 bytes and "is the original game's disc" for the first disc given as the expansion's) and the two-step install in a checkout
+  (`install.py DISC1 --modules --clean`, then `install.py --sota DISC2 --patch FILE --modules --clean` with no first disc: both finished, the first took 1 min 28 s, the second one re-lifted and recompiled all 41 files in 1 min 40 s, with the Mac's compiler on 8 cores, not Zig). The 2.15 shell, adventure and FaceMaker started with `PORT_STEAMDECK=1`: full screen, 1024x768, 1x; the new game's name box and the shell's Player page switched SDL text input on and off.
+
 ## On a real Deck (tested)
 
 One session, 2026-10-17 to 18, on the maintainer's own Deck. What was **not** the same as a user's setup: the game was not the release download and not the window installer. A pre-baked kit (the runtime and the game modules built beforehand on the maintainer's Mac, with the game data; local use only, never published) was sent over Wi-Fi by a script (ssh and rsync), and the Steam shortcut was written by `tools/steamdeck/add-to-steam.py` run over ssh with Steam closed, which replaced an older shortcut that pointed at a previous kit. The kit was built from `main` at 1c767cd, before the card-view binding and the Spells of the Ancients work.
@@ -164,3 +206,8 @@ Not recorded, so not known: whether it was Game mode or Desktop mode, which cont
 8. **Sound, music, movies** on the Deck (PipeWire through SDL's audio; the Indeo clips and the ending movie need `ffmpeg` on the PATH, which SteamOS may not have: they are skipped as on any system without it).
 9. **A game played through** on a Deck: battery, speed (the 60 ms frame was never run on the Deck's CPU), the Steam overlay, suspend and resume.
 10. **Disk**: the numbers above are one machine's. SteamOS's home is on the SSD (or a card): nothing in the install is slow, but 1.2 GB must be free.
+11. **The Spells of the Ancients part of the window installer on the Deck's KDE**: the look of its long first question (it is a page of text in a kdialog message box: whether it fits or scrolls), the second picker's `*.exe` filter, the same progress bar for the longer run, how long the rebuild of all modules takes with Zig on the Deck's CPU (1 min 40 s was
+    the Mac's compiler on 8 cores; the first game alone took 3 min 26 s with Zig on `runbox`), the free space it needs (1.2 GB is the first game's figure, the expansion's files are 310 MB), and the two `.desktop` icons for the new entry (same trust prompt question as for the others).
+12. **The second Steam shortcut**: that Steam keeps the launch options `sota shell` and appends them after the Exe, that the second entry gets its own app id, layout and artwork as expected (the picture names printed are the community tools' and unchecked), and above all that Game mode copes with the program handoff of the shell (the shell starts the adventure and ends,
+    the adventure starts the shell again when it is left: `process.c` starts a new program for each; Steam follows a game by its process tree, which should keep the Library's "playing" state, the overlay and the pad's focus, unverified) and that each new program comes up full screen again with no flicker that matters.
+13. **The screen and the keyboard in the Magic Shell**: how readable the shell's small text is at 1024x768 at 1x on the 7-inch screen (`PORT_RES=800x600` would be 1.33x), that the shell works with the trackpad and touch screen as a mouse (it has no pad navigation yet), that Steam's keyboard comes up over its Player page and where it sits.

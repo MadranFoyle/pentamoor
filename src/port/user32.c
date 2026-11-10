@@ -1513,15 +1513,25 @@ uint32_t wm_key_target(void)
     return w ? w->hwnd : wm_main_hwnd();
 }
 
-/* A text field to type into: the modal dialog that is open has an edit control that is shown and enabled (the file dialogs' name box). The game's own name box is not a window
- * (textfocus.c). */
+/* A text field to type into: the modal dialog that is open has an edit control that is shown and enabled (the file dialogs' name box); with no modal dialog open, an edit control that has
+ * the keyboard focus on an ordinary window or page (the Magic Shell's Player page of Spells of the Ancients: its screen name, real name and quote boxes), the one wm_key_target gives the
+ * keys to, with every window above it shown too (a page that was switched away from keeps its focus window but is not there). Neither depends on an address of a game. The first game's
+ * own name box is not a window (textfocus.c). */
 int wm_text_focus(void)
 {
     uint32_t d = wm_top_dialog();
+    Window *f;
     int i;
 
-    if (!d)
-        return 0;
+    if (!d) {
+        f = wm_window(focus_hwnd);
+        if (!f || f->proc || !f->visible || !f->enabled || !f->cname || strcasecmp(f->cname, "EDIT"))
+            return 0;
+        for (i = 0, f = wm_window(f->parent); f && i < 16; i++, f = wm_window(f->parent))
+            if (!f->visible)
+                return 0;
+        return 1;
+    }
     for (i = 0; i < nwindows; i++) {
         Window *w = windows[i];
 

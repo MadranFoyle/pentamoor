@@ -30,7 +30,7 @@ int fullscreen_wanted(const char *env, int deck);
  * window and not only of the Deck's. The Deck (1024x768 in 1280x800: 1.04x fractional, 1x whole) gets the whole scale, a 1080p television (1.41x) the fractional one. */
 double view_scale(int sw, int sh, int dw, int dh, int *integer, int *vw, int *vh);
 
-/* Text input (the Deck's on-screen keyboard follows SDL_StartTextInput): wanted while a text field has the focus, which is an edit control in the dialog that is open, or the game's
+/* Text input (the Deck's on-screen keyboard follows SDL_StartTextInput): wanted while a text field has the focus, which is an edit control in the dialog that is open or one with the focus on a page (the Magic Shell's), or the game's
  * own name box (which no window says: the game is asked, see textfocus.c, and answers by polling for keys, so it counts as the focus for NAME_HOLD_MS after the last poll).
  * now_ms, name_ms: the clock and the time of the last name-box poll (0: never). */
 #define NAME_HOLD_MS 400

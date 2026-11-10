@@ -1209,6 +1209,37 @@ def test_sota_install_in_the_terminal_path_without_dialogs(tmp_path):
     assert not os.path.exists(log)
 
 
+@pytestmark_gui
+def test_the_steam_shortcuts_launch_options_start_the_shell_and_the_default_screen_is_left_alone(tmp_path):
+    """What Steam runs for the second shortcut is `<folder>/pentamoor sota shell`: that starts magic.exe of the Spells of the Ancients folder in game_shell, with the saves of Spells of the Ancients,
+    and (display, docs/notes/steamdeck.md) it sets no screen size of its own: the program's 1024x768 default is what the Deck's full-screen rule fits at 1x. The shortcut with no options is the first game."""
+    root = tmp_path / "pentamoor folder"                                   # a space in the folder's name, as in a person's Games folder
+    root.mkdir()
+    shutil.copy(os.path.join(ROOT, "pentamoor"), root / "pentamoor")
+    ext = "dylib" if sys.platform == "darwin" else "so"
+    (root / "pentamoor-run").write_text('#!/bin/sh\nfor a in "$@"; do echo "arg $a"; done\necho "res=${PORT_RES-unset} overlay=${PORT_OVERLAY-unset}"\n')
+    (root / "pentamoor-run").chmod(0o755)
+    for name in ("game_shell", "game_shandalar", "game_magic"):
+        (root / f"{name}.{ext}").write_text("x")
+    for folder, files in (("installed_sota", ("magic.exe", "shandalar.exe")), ("installed", ("MAGIC.EXE",))):
+        (root / "sources" / folder / "Magic" / "Program").mkdir(parents=True)
+        for n in files:
+            (root / "sources" / folder / "Magic" / "Program" / n).write_text("x")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("PENTAMOOR_", "PORT_")) and k not in ("DISPLAY", "WAYLAND_DISPLAY")}
+    env["SteamDeck"] = "1"                                                 # what Steam sets for a game it starts on a Deck
+
+    def launch(*args):
+        r = subprocess.run(["sh", str(root / "pentamoor")] + list(args), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, timeout=60)
+        return r.returncode, r.stdout.splitlines()
+    code, out = launch(*shlex.split("sota shell"))                         # the launch options of the shortcut, as Steam appends them to the Exe
+    assert code == 0 and out[:2] == ["arg -m", "arg ./game_shell.%s" % ext] and out[2] == "arg sources/installed_sota/Magic/Program/magic.exe", out
+    assert out[-1] == "res=unset overlay=port_overlay_sota"
+    code, out = launch("sota")
+    assert out[1] == "arg ./game_shandalar.%s" % ext and out[-1] == "res=unset overlay=port_overlay_sota"
+    code, out = launch()
+    assert out[1] == "arg ./game_magic.%s" % ext and out[2] == "arg sources/installed/Magic/Program/MAGIC.EXE" and out[-1] == "res=unset overlay=unset"
+
+
 # ---- the files that are not code ---------------------------------------------------------------------------------------------------------------------------
 def parse_text_vdf(text):
     """A small parser for Valve's text VDF ('//' comments, quoted strings, braces): nested dicts, repeated keys become lists of pairs."""

@@ -34,9 +34,15 @@ Install and play
 @steamdeck   1. Double-click "Install Pentamoor" (the icon at the top of this folder). A window asks for your .iso file, shows the
 @steamdeck      progress (2 to 15 minutes, up to 1 GB of disk space), and then offers to add Pentamoor to Steam.
 @steamdeck      If the double click only asks what to do with the file, right-click it > Properties > Permissions > "Is executable".
-@steamdeck   2. Say yes to "Add Pentamoor to Steam" (Steam is closed for a moment if it is running), and switch back to Gaming Mode.
-@steamdeck   3. Pentamoor is in the Library (All Games). Press the controller button on its page and choose the "Pentamoor" layout
+@steamdeck   2. The window then offers Spells of the Ancients (optional, below): say no to skip it. If you have the disc image of the expansion's CD
+@steamdeck      (version 2.0, often MTG v2.00.iso) AND the 2.15 patch SOTAV215.EXE (the whole file), say yes and choose the two files in the two
+@steamdeck      file pickers. You can do this later with "Install Spells of the Ancients" (the icon at the top of this folder).
+@steamdeck   3. Say yes to "Add Pentamoor to Steam" (Steam is closed for a moment if it is running). When Spells of the Ancients is installed
+@steamdeck      it also offers a second shortcut, "Pentamoor: Spells of the Ancients", which starts the Magic Shell. Switch back to Gaming Mode.
+@steamdeck   4. Pentamoor is in the Library (All Games). Press the controller button on its page and choose the "Pentamoor" layout
 @steamdeck      (or Steam's own "Gamepad with Mouse Trackpad"): the game needs the Steam Deck to act as a game controller, not as a keyboard.
+@steamdeck      Do the same for the Spells of the Ancients entry. (The Magic Shell has no controller navigation yet: with the trackpads as a mouse,
+@steamdeck      or the touch screen, it works as a menu.)
 @steamdeck   The game starts full screen on a Steam Deck by itself (PORT_FULLSCREEN=0 turns that off). Steam + X brings up the on-screen keyboard
 @steamdeck   (it is meant to come up by itself when the game wants a name typed; that has not been tried on a real Deck yet).
 @steamdeck There is also a terminal way, the same on any Linux:
@@ -59,9 +65,12 @@ the expansion (Magic: The Gathering "Spells of the Ancients", version 2.0, usual
 @unix then run  ./pentamoor sota
 @windows     pentamoor-install.bat "path\to\MTG v1.0.iso" --sota "path\to\MTG v2.00.iso" --patch "path\to\SOTAV215.EXE"
 @windows then run  pentamoor.bat sota
+@steamdeck On a Steam Deck the window installer does this with file pickers (see "Install and play" above); in a terminal the command above works too.
+@steamdeck The Magic Shell, the expansion's menu of duels, gauntlets, sealed deck and tools, is what the second Steam shortcut starts (./pentamoor sota shell);
+@steamdeck its World page starts the adventure.
 It takes a few minutes more than the first game alone. Everything is checked before anything is written; if a file is missing, in the wrong place or the wrong one (a cut-short patch, the
 expansion's disc given first) the installer says what it found and what it needs. The 2.15 game is a folder of its own (sources/installed_sota) with its own saves (port_overlay_sota), and
-the first game is not changed by it. The expansion's own shell (magic.exe), ManaLink and controller navigation are not part of it.
+the first game is not changed by it. ManaLink is not part of it, and the expansion's own shell (magic.exe, "sota shell") has no controller or touch navigation yet.
 At the end the installer does what the original Spells of the Ancients installer did for an owner of the discs: it runs the original installer's own writer (a library from the expansion's cabinet
 on your machine, checked first by its SHA-256) to write the game's machine-bound licence value into port_overlay_sota/registry.dat, with the flag word the original used (and, by default, one flag more, below), bound to a
 random machine id made for this install only. It says so when it does it. Nothing of that is in this download, and the game and the launchers never write it. --no-licence-value skips it

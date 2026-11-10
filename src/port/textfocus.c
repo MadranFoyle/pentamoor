@@ -4,7 +4,8 @@
  * Pic_Load_namepick (0x47be64..0x47c07f), which asks for a key with 0x004080b2 (0x4080b2, a pop from the game's own key queue) on every pass until Enter. That call, made from inside
  * that loop, is the "a text field has the focus" signal: it is noted on the way in (a hook before the call, the function runs as usual), and front.c counts it for a short while after
  * the last one (steamdeck.h, NAME_HOLD_MS), so that the Steam Deck's on-screen keyboard can be asked for while the box is up and let go of when it is not. Nothing here changes what the
- * game does. */
+ * game does. The edit boxes of Spells of the Ancients' Magic Shell (its Player page) are windows with the focus on a page, not a loop of the program: wm_text_focus says it, with no
+ * address of any build. */
 #include <string.h>
 
 #include "front.h"

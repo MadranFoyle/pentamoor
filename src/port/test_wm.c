@@ -1034,9 +1034,27 @@ static void test_spin_and_edit(void)
     wm_inject_mouse(IN_DOWN, 56, 12);
     CHECK(drain_for(WM_COMMAND) == parent);                                                       /* EN_CHANGE of the buddy */
     /* typing: a click gives the edit box the focus and the keys go to it; ES_NUMBER takes digits only, Backspace takes one off, the limit holds */
+    CHECK(wm_text_focus() == 0);                                                                  /* the window has the focus, not the edit box: no text field yet */
     CHECK(wm_inject_mouse(IN_DOWN, 15, 15) == 1);
     wm_inject_mouse(IN_UP, 15, 15);
     CHECK(API("GetFocus") == edit && wm_key_target() == edit);
+    CHECK(wm_text_focus() == 1);                                                                  /* an edit box with the focus on an ordinary window (the shell's Player page): the on-screen keyboard is wanted */
+    API("ShowWindow", parent, 0);                                                                 /* its page switched away from: it keeps the focus window, but there is nothing to type into */
+    CHECK(wm_text_focus() == 0);
+    API("ShowWindow", parent, 1);                                                                 /* shown again, a top-level window takes the focus itself: the edit box is not the one with it until it asks */
+    CHECK(wm_text_focus() == 0);
+    API("SetFocus", edit);
+    CHECK(wm_text_focus() == 1 && API("GetFocus") == edit);
+    API("EnableWindow", edit, 0);
+    CHECK(wm_text_focus() == 0);
+    API("EnableWindow", edit, 1);
+    API("ShowWindow", edit, 0);
+    CHECK(wm_text_focus() == 0);
+    API("ShowWindow", edit, 1);
+    API("SetFocus", spin);                                                                        /* the focus moves to something that is not an edit box: no text field */
+    CHECK(wm_text_focus() == 0);
+    API("SetFocus", edit);
+    CHECK(wm_text_focus() == 1);
     wm_inject_key('7', 8, 1, '7', 0);
     wm_inject_key('7', 8, 0, -1, 0);
     pump_to_dispatch();
