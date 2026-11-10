@@ -286,6 +286,42 @@ def test_window_dump_line_has_enabled_checked_and_id():
     assert not off.enabled and not off.checked and off.wid == 12 and off.cls == "BUTTON*"
 
 
+def test_shell_pad_play_helpers():
+    """sota_shell_pad_play.py: the graph check and the list of what the window tree says the D-pad must reach (no game needed)."""
+    import pentamoor_ctl as pc
+    import sota_shell_pad_play as sp
+
+    ring = {(0, 0): {"right": (1, 0), "left": None}, (1, 0): {"right": (2, 0), "left": (0, 0)}, (2, 0): {"right": None, "left": (1, 0)}}
+    assert sp.strongly_connected(ring) == (True, [])                          # every target reaches every other, though the ends have no way past themselves
+    chain = {(0, 0): {"right": (1, 0)}, (1, 0): {"right": None}}              # nothing leads back to the first: not strongly connected
+    ok, short = sp.strongly_connected(chain)
+    assert not ok and short == [((1, 0), 1)]
+    both = {(0, 0): {"right": (1, 0)}, (1, 0): {"left": (0, 0)}}
+    assert sp.strongly_connected(both) == (True, [])
+    assert sp.strongly_connected({}) == (False, [])
+
+    def win(line):
+        return pc.Win(pc.WIN_RE.match(line))
+
+    wins = [
+        win("  win 0x10 parent 0x1 MAGICGAME_MagicShellClass 'Magic' (1,0)-(800,600) z=1 style=0x90040000 tid=1 visible"),
+        win("  win 0x11 parent 0x10 BUTTON 'Solo &Duel' (242,66)-(349,92) z=2 style=0x40000004 tid=1 visible id=1"),
+        win("  win 0x12 parent 0x10 BUTTON 'Hidden' (242,92)-(300,118) z=3 style=0x40000004 tid=1 id=2"),                       # not shown
+        win("  win 0x13 parent 0x10 #32770* '' (216,235)-(755,545) z=4 style=0x40000040 tid=1 visible noproc id=0"),
+        win("  win 0x14 parent 0x13 COMBOBOX* '' (305,279)-(735,429) z=5 style=0x50230103 tid=1 visible noproc id=3"),             # a combo box: its closed box only
+        win("  win 0x15 parent 0x13 BUTTON* 'Match parameters ' (216,402)-(389,525) z=6 style=0x50000007 tid=1 visible noproc id=4"),   # a group box
+        win("  win 0x16 parent 0x13 BUTTON* 'Ante' (237,430)-(293,444) z=7 style=0x50030023 tid=1 visible noproc id=5"),
+        win("  win 0x17 parent 0x13 BUTTON* 'Wizard' (431,499)-(620,513) z=8 style=0x50010009 tid=1 visible noproc id=6 disabled"),   # disabled
+        win("  win 0x18 parent 0x13 msctls_updown32* 'Spin1' (333,461)-(345,489) z=9 style=0x50000036 tid=1 visible noproc id=7"),
+        win("  win 0x19 parent 0x13 EDIT* '1' (299,461)-(333,489) z=10 style=0x50810000 tid=1 visible noproc id=8"),
+        win("  win 0x1a parent 0x13 STATIC* 'Best of:' (237,461)-(299,475) z=11 style=0x50020000 tid=1 visible noproc id=9"),
+    ]
+    tree = pc.Tree(wins)
+    got = sp.expected_from_tree(tree)
+    assert got == sorted([(242, 66, 349, 92), (305, 279, 735, 300), (237, 430, 293, 444), (333, 461, 345, 475), (333, 475, 345, 489), (299, 461, 333, 489)])
+    assert sp.clean("Show &cue cards") == "Show cue cards" and sp.clean("D\nO\nN\nE") == "D\nO\nN\nE"
+
+
 def test_ppm_region_hash_tells_pictures_and_regions_apart():
     from pentamoor_ctl import ppm_region_hash
     w, h = 4, 3

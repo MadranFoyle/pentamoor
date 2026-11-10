@@ -481,7 +481,7 @@ def combo_checks(sh, ts, nth=0, name="the combo box"):
         check(False, "%s is a target" % name)
         return
     c = combos[nth]
-    box = (c.x0 + 2, c.y0 + 2, min(c.x1 - 20, c.x0 + 150), c.y1 - 2)      # the left of the closed box: the pointer's arrow (a screenshot shows it) is drawn right of and under where the pointer is, which is the middle
+    box = (c.x0 + 2, c.y0 + 2, min((c.x0 + c.x1) // 2 - 4, c.x0 + 150), c.y1 - 2)      # the left of the closed box: the pointer's arrow (a screenshot shows it) is drawn right of and under where the pointer is, which is the middle
     press_target_at(sh, ts, c)
     h0 = sh.region(box)
     ok, mode, rows = sh.wait(lambda m, t: m == "combo" and len(t) >= 2, 5)
@@ -709,8 +709,7 @@ def step_player(sh, state):
             on = "text input: on" in sh.g.read_log(off)
             time.sleep(0.05)
         check(on, "A on the screen-name box: the keyboard is wanted (text input on)")
-        sh.g.key("x")
-        sh.g.key("y")
+        sh.g.cmd("text xy")                                          # typed characters (WM_CHAR), as a keyboard or the Deck's on-screen keyboard gives them
         end = time.time() + 3
         typed = False
         while time.time() < end and not typed:
@@ -826,10 +825,10 @@ def step_touch(a, seed, overlay):
             tap(c.x0 + 100, c.y0 + 8)
             ok, mode, rows = sh.wait(lambda m, t: m == "combo" and len(t) >= 2, 5)
             if ok:
-                h0 = sh.region((c.x0 + 2, c.y0 + 2, min(c.x1 - 20, c.x0 + 150), c.y1 - 2))
+                h0 = sh.region((c.x0 + 2, c.y0 + 2, min((c.x0 + c.x1) // 2 - 4, c.x0 + 150), c.y1 - 2))
                 tap(rows[3].x0 + 30, rows[3].y0 + 8)
                 ok, mode, _ = sh.wait(lambda m, t: m == "page", 5)
-                h1 = sh.changed((c.x0 + 2, c.y0 + 2, min(c.x1 - 20, c.x0 + 150), c.y1 - 2), h0)
+                h1 = sh.changed((c.x0 + 2, c.y0 + 2, min((c.x0 + c.x1) // 2 - 4, c.x0 + 150), c.y1 - 2), h0)
                 check(ok and h1 != h0, "a tap on a row takes it")
     finally:
         sh.stop()
@@ -872,6 +871,7 @@ def main():
                     state["ts"] = recover(sh, state.get("ts"))
         finally:
             sh.stop()
+        note("(the mouse put the pointer on a page's first target %d time(s) where a list or a dialog had just closed over it or a process had just started: nothing for a D-pad walk to start from)" % sh.mouse_puts)
         if "dialogs" in only:
             if overlay is None:
                 skipped += 1
