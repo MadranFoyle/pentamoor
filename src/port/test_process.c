@@ -48,7 +48,6 @@ static uint32_t CRT_SPAWN(uint32_t mode, const char *path, const char *arg0, con
 }
 
 /* ---- the child: this program started with `-m MODULE EXE ROOT`, as the runtime is ----------------------------------------------------------------------- */
-#ifndef _WIN32
 #define SHM_SIZE 4096
 static int child_main(int argc, char **argv)
 {
@@ -81,7 +80,6 @@ static int child_main(int argc, char **argv)
     }
     return ok ? 7 : 3;
 }
-#endif
 
 /* ---- reading a command line ------------------------------------------------------------------------------------------------------------------------ */
 static void test_first_word(void)
@@ -253,8 +251,7 @@ static void test_arguments_the_guest_sees(void)
     unsetenv("PORT_CMDLINE");
 }
 
-/* ---- starting a program for real, on a host that can (the "runtime" is this program: child_main) ---------------------------------------------------------------- */
-#ifndef _WIN32
+/* ---- starting a program for real (the "runtime" is this program: child_main). On Windows this is plat_win.c's CreateProcessA, its environment block and its quoting. ---------------- */
 static char base[600], root[700], over[700];
 
 static void put(const char *rel, const char *body)
@@ -364,7 +361,11 @@ static void test_control_pipe_of_the_child(void)
     named_page(&view, "PARENT");
     CHECK(proc_start(NULL, "C:\\Magic\\Program\\Child.exe /S", &id) == 0);
     CHECK(proc_wait(id) == 7);
+#ifdef _WIN32
+    CHECK(stat(want, &st) == 0);                                                                                               /* (no pipes here: the parent made the file the child's PORT_CONTROL names) */
+#else
     CHECK(stat(want, &st) == 0 && S_ISFIFO(st.st_mode));                                                                       /* the pipe the child reads was made by the parent */
+#endif
     unsetenv("PORT_CONTROL");
     unsetenv("TEST_EXPECT_CONTROL");
 }
@@ -377,14 +378,11 @@ static void test_winexec(void)
     named_page(&view, "PARENT");
     CHECK(API("kernel32.dll", "WinExec", cstr("C:\\Magic\\Program\\Child.exe /S"), 1) == 33);
 }
-#endif
 
 int main(int argc, char **argv)
 {
-#ifndef _WIN32
     if (argc > 2 && !strcmp(argv[1], "-m"))
         return child_main(argc, argv);
-#endif
     (void)argc;
     (void)argv;
     guest_init();
@@ -395,17 +393,18 @@ int main(int argc, char **argv)
     test_instances();
     test_child();
     test_arguments_the_guest_sees();
-#ifndef _WIN32
-    test_tmpdir(base, sizeof(base), "process_");
-    plat_mkdir(base);
-    test_start_and_wait();
-    test_control_pipe_of_the_child();
-    test_winexec();
-    usleep(300000);                                                                          /* the program WinExec started finishes by itself */
-    test_rmtree(base);
-#else
-    printf("(starting a process is not tested on Windows here)\n");
-#endif
+    {
+        char tmp[500];
+
+        test_tmpdir(tmp, sizeof(tmp), "process_");
+        snprintf(base, sizeof(base), "%s/two words", tmp);          /* a space in every path the child is started with: the command line is quoted for CreateProcessA on Windows */
+        plat_mkdir(base);
+        test_start_and_wait();
+        test_control_pipe_of_the_child();
+        test_winexec();
+        usleep(500000);                                                                      /* the program WinExec started finishes by itself */
+        test_rmtree(tmp);
+    }
     printf("test_process: %d checks, %d failed\n", checks, failures);
     return failures != 0;
 }

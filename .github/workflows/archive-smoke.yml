@@ -1,0 +1,69 @@
+# The release archives, tried on machines that did not build them. package.yml builds each archive and looks inside it on the builder (tools/release/check_archive.py); this downloads the
+# archive from the run as a user downloads it, onto a fresh runner of each system the archive is for (and of the neighbouring versions), unpacks it with that system's own tools into a
+# folder whose name has a space in it, and runs everything that needs no game file: tools/release/smoke_archive.py (what it does is at the top of that file, and in
+# docs/notes/ci.md, "Release archives"). Nothing here has the game's files. Called by ci.yml after the archives are built, and by release.yml before a release is published.
+name: Archive smoke test
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: ${{ matrix.os }} - ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows 11 / Server 2025 and Server 2022 (the nearest the hosted runners come to Windows 10): the zip, with its embedded Python, SDL2.dll and Zig
+          - { os: windows-latest, artifact: pentamoor-windows-x86_64 }
+          - { os: windows-2022, artifact: pentamoor-windows-x86_64 }
+          # the Linux archive was built on ubuntu-22.04 (the oldest glibc it claims): run on that and on the newest hosted Ubuntu; the Steam Deck's archive is the same runtime plus its scripts
+          - { os: ubuntu-22.04, artifact: pentamoor-linux-x86_64 }
+          - { os: ubuntu-latest, artifact: pentamoor-linux-x86_64 }
+          - { os: ubuntu-latest, artifact: pentamoor-steamdeck }
+          # the universal macOS archive was built on the arm64 runner: run its arm64 half there, and its x86-64 half on an Intel runner (macos-15-intel; macos-13 is gone)
+          - { os: macos-latest, artifact: pentamoor-macos-universal }
+          - { os: macos-15-intel, artifact: pentamoor-macos-universal }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4.3.0
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
+
+      - name: Runner
+        shell: bash
+        run: |
+          uname -a || true
+          head -2 /etc/os-release 2>/dev/null || sw_vers 2>/dev/null || cmd //c ver || true
+          ls -l dist
+          python3 --version || python --version
+
+      # Linux, before SDL2 is installed (a user's fresh system may not have it): the runtime cannot start, and ./pentamoor has to say why
+      - name: Linux without SDL2 (what a user sees)
+        if: runner.os == 'Linux'
+        run: python3 tools/release/smoke_archive.py dist/pentamoor-*.tar.gz --only no-sdl --work "$RUNNER_TEMP/smoke-nosdl"
+
+      - name: Install SDL2 (Linux; what README.txt tells a user to do)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsdl2-2.0-0
+
+      - name: Smoke test the archive (Unix)
+        if: runner.os != 'Windows'
+        run: python3 tools/release/smoke_archive.py dist/pentamoor-*.tar.gz --work "$RUNNER_TEMP/smoke"
+
+      - name: Smoke test the archive (Windows; the archive's own Python and Zig, a PATH of only Windows' folders)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $zip = (Get-ChildItem dist\pentamoor-*.zip).FullName
+          python tools/release/smoke_archive.py $zip --work "$env:RUNNER_TEMP\smoke"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

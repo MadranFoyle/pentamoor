@@ -20,8 +20,13 @@ jobs:
     with:
       version: ${{ github.ref_name }}          # package.yml takes the v off
 
-  publish:
+  # the archives just built, tried on fresh runners (archive-smoke.yml); nothing is published unless every one passes
+  smoke:
     needs: build
+    uses: ./.github/workflows/archive-smoke.yml
+
+  publish:
+    needs: [build, smoke]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
