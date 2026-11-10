@@ -46,7 +46,7 @@ So the rule `bit 0 of 0x6a4920 and nesting 1` is the whole reason, and what feed
   state that the runtime hands the game wrongly, and nothing found points to that; but it could not be compared with the original here (that needs the exact state in the Windows 98 oracle), so it stays open. A
   player in this state has to concede from the menu, which works.
 - Not a reason to change the port: nothing here is wrong in the runtime (all threads answer, the clicks arrive, Concede ends the duel).
-- Looked for again on macOS with `soak.py --endless` (both lives held at 9999, so the player is never at 0 life when the prompt opens; [memory.md](memory.md)): five duels of 36 minutes and 11 to 23 turns each, none sat on the prompt and none showed the AddCard assertion. That does not test the state (it needs the player at 0 life or less); it only shows that holding the lives up avoids it.
+- Looked for again on macOS with `soak.py --endless` (both lives held at 9999, so the player is never at 0 life when the prompt opens; [memory.md](memory.md)): five duels of 36 minutes and 11 to 30 turns each, none sat on the prompt and none showed the AddCard assertion. That does not test the state (it needs the player at 0 life or less); it only shows that holding the lives up avoids it.
 
 ## What was added to find it
 
