@@ -15,7 +15,7 @@ buttons shown) instead of sleeping, and every press waits for the program's own 
             radio buttons toggle with A, a combo box drops with A, the D-pad chooses (the first press goes to the choice shown), A takes it, B and Back leave it alone; Duel Options... (a modal
             dialog: its controls are targets, B and Back close it); the Sealed Deck's pack screen
   tools     Deck Builder (the deck library: its cards and buttons, Exit with A), Face Builder
-  world, help, player   the pages' controls; the Player page's edit boxes (A gives one the keyboard: the on-screen keyboard is wanted while the pointer is on it), its spin button and combo box
+  world, help, player   the pages' controls; the Player page's edit boxes (A gives one the keyboard: the on-screen keyboard is wanted while it has the focus), its spin button and combo box
   dialogs   Start match: the match-up screen, the coin toss, the ante dialog ("Start the duel" with A), the board (D-pad targets of the duel); needs the licence value in the overlay (--overlay-seed: an
             install's port_overlay_sota; the default is port_overlay_sota of this checkout if there is one), else the step is skipped
   touch     fingers (PORT_TOUCH=1: `tdown`, `tup`): a tap on a round button, a tap near a spin button's arrow, a check box and a combo box lands on it (the shell's controls are small), a long press
@@ -161,6 +161,18 @@ class Shell:
                 return v
             time.sleep(0.1)
         return v
+
+    def text_input(self):
+        """Whether SDL's text input (what brings up an on-screen keyboard) is on now: the control pipe's `textinput` step answers "text input: on|off managed=N" on stderr (PORT_TEXTINPUT=auto: on while a text field has the focus); None if it did not answer."""
+        off = self.g.log_size()
+        self.g.cmd("textinput")
+        end = time.time() + 3
+        while time.time() < end:
+            m = re.search(r"^  text input: (on|off) managed=", self.g.read_log(off), re.M)
+            if m:
+                return m[1] == "on"
+            time.sleep(0.03)
+        return None
 
     def kind_targets(self, ts, cls):
         """The targets that are windows of class `cls` (COMBOBOX, EDIT), found through the window tree: a combo box's closed box is as tall as an edit box, so the list cannot tell them apart."""
@@ -697,16 +709,15 @@ def step_player(sh, state):
     page_checks(sh, "Player", ts, "player")
     edits = sh.kind_targets(ts, "EDIT")
     check(len(edits) >= 4, "the Player page's edit boxes are targets (%d)" % len(edits))
-    spin_checks(sh, ts, nth=0)
-    # an edit box: A gives it the keyboard (text input on while the pointer is on it), the D-pad away lets it go
+    # an edit box: A gives it the keyboard (text input on while it has the focus), so first nothing has it
     name = next((t for t in edits if t.label == "<player>"), edits[0] if edits else None)
     if name:
-        off = sh.g.log_size()
+        check(sh.text_input() is False, "before it: no text field has the focus (text input off)")
         press_target_at(sh, ts, name)
         end = time.time() + 4
         on = False
         while time.time() < end and not on:
-            on = "text input: on" in sh.g.read_log(off)
+            on = sh.text_input() is True
             time.sleep(0.05)
         check(on, "A on the screen-name box: the keyboard is wanted (text input on)")
         sh.g.cmd("text xy")                                          # typed characters (WM_CHAR), as a keyboard or the Deck's on-screen keyboard gives them
@@ -717,14 +728,7 @@ def step_player(sh, state):
             typed = bool(w and w.title.endswith("xy"))
             time.sleep(0.1)
         check(typed, "the keys typed go into it ('<player>' + xy)")
-        off2 = sh.g.log_size()
-        p, what = sh.press("down")
-        end = time.time() + 3
-        gone = False
-        while time.time() < end and not gone:
-            gone = "text input: off" in sh.g.read_log(off2)
-            time.sleep(0.05)
-        check(what == "moved" and gone, "the D-pad to the next box: the keyboard is let go (text input off)")
+    spin_checks(sh, ts, nth=0)
     combo_checks(sh, ts, 0, "the Player page's combo box")
     state["ts"] = ts
 

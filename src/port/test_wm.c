@@ -3393,12 +3393,12 @@ static void test_navwm_page(void)
     wm_inject_mouse(IN_RDOWN, 330, 285);
     wm_inject_mouse(IN_RUP, 330, 285);
     CHECK(wm_combo_open() == 0 && navwm_mode() == NAVWM_PAGE);
-    /* an edit box: a click gives it the focus, and the keyboard is wanted while the pointer is on it */
+    /* an edit box: a click gives it the focus, and the keyboard is wanted while it has it */
     CHECK(wm_text_focus() == 0);
     click_at(310, 470);
     CHECK(wm_text_focus() == 1);
     wm_inject_mouse(IN_MOVE, 500, 300);
-    CHECK(wm_text_focus() == 0);
+    CHECK(wm_text_focus() == 1);                                                                      /* the box keeps the keyboard until another window takes the focus */
     /* touch: a tap near a small control is moved onto it: the arrows of the spin (12 x 14), the check box (14 tall); a point on a big control or on nothing near stays */
     CHECK(navwm_snap(347, 466, 10, &sx, &sy) == 1 && sx >= 333 && sx < 345 && sy >= 461 && sy < 475);          /* 2 pixels right of the up arrow */
     CHECK(navwm_snap(340, 492, 8, &sx, &sy) == 1 && sy >= 475 && sy < 489);                                  /* just under the down arrow */

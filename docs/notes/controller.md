@@ -139,7 +139,7 @@ The new game's name box is drawn and read by the game itself from key events (a 
 works as before (the name box has "Melody Whisp" in it to accept with X / Enter), and so does Steam's on-screen keyboard (Steam + X) when it sends key events. `steamdeck.md`, "Text", has what was added for the Deck: text
 that arrives with no key before it (`SDL_TEXTINPUT` from an input method or a keyboard that sends text) is typed as the key presses that produce it (the name box reads keys and ignores `WM_CHAR`), once per character, and on a
 Deck `SDL_StartTextInput` is called only while a text field has the focus: an edit control in the open dialog (the file dialogs' name box), or the new game's name box, which the game says by asking for keys in its
-name loop (a hook before `FUN_004080b2`, `textfocus.c`). The pad has no key for typing; A on the on-screen keyboard is Steam's. The Magic Shell's pages (`controller-screens.md`, "The Magic Shell") have edit boxes of the window layer on an ordinary window: A on one gives it the focus, and the keyboard is wanted while the pointer is on it (moving the pointer away lets it go).
+name loop (a hook before `FUN_004080b2`, `textfocus.c`). The pad has no key for typing; A on the on-screen keyboard is Steam's. The Magic Shell's pages (`controller-screens.md`, "The Magic Shell") have edit boxes of the window layer on an ordinary window: A on one gives it the focus, and the keyboard is wanted while it has it.
 
 ## Testing without a controller
 
