@@ -63,6 +63,29 @@ def die(msg):
     sys.exit(f"install: {msg}")
 
 
+def os_error_message(e):
+    """What to tell a person about an OSError that stopped the install: not a traceback, but what happened and what to do."""
+    import errno
+    where = f" ({e.filename})" if getattr(e, "filename", None) else ""
+    if e.errno == errno.ENOSPC:
+        return (f"the disk is full{where}. The install needs about 1 GB of free space while it works (about 500 MB when it is done; --clean frees about 100 MB more). "
+                "Free some space and run the same command again: the files already written are kept.")
+    if e.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+        return (f"cannot write{where}: {e.strerror.lower() if e.strerror else 'permission denied'}. Pentamoor installs into the folder it was unpacked in (it makes sources/ there and puts the "
+                f"game modules beside the launchers). Unpack it where you may write, for example in your home folder (not on a read-only disk or in a system folder), and run it from there.")
+    return f"{e.strerror or e}{where}"
+
+
+def check_writable(*paths):
+    """Die at the start, before a disc is read, if the folders the install writes into cannot be written: the first one that exists above each path is the one that has to allow it."""
+    for path in paths:
+        here = os.path.abspath(path)
+        while not os.path.exists(here) and os.path.dirname(here) != here:
+            here = os.path.dirname(here)
+        if not os.access(here, os.W_OK | os.X_OK):
+            die(os_error_message(PermissionError(13, "Permission denied", here)))
+
+
 # ---- where things are -------------------------------------------------------------------------------------------------------------------------------------
 class Layout:
     """A release (the runtime beside the launchers, no Makefile) or a source checkout (src/port/Makefile; the runtime and modules in src/port/build)."""
@@ -102,6 +125,7 @@ def ask_yes(question, default=True, assume=None):
     if assume is not None:
         return assume
     if not sys.stdin or not sys.stdin.isatty():
+        say(f"{question} -> no: there is no terminal to ask on (run it in a terminal window, or add --yes to answer yes)")
         return False
     try:
         reply = input(f"{question} [{'Y/n' if default else 'y/N'}] ").strip().lower()
@@ -255,6 +279,23 @@ def check_programs(dest):
 
 def game_installed(dest):
     return os.path.exists(os.path.join(dest, "Magic", "Program", "MAGIC.EXE"))
+
+
+EXTRACTED = ".pentamoor-extracted"           # written when the archive and the media are all out of the disc (an install that was stopped half way has MAGIC.EXE and not this)
+RETAIL_FILES = 967 + 31 + 68                 # what the retail disc puts in Magic/Program: data.z's files, the music and the movies; an install from before the marker is whole when it has them all
+
+
+def extraction_complete(dest):
+    """Is the first game's folder all there? MAGIC.EXE alone says nothing: it is one of the first files written, and an install stopped (Ctrl-C, a full disk, the power) leaves it behind."""
+    if os.path.exists(os.path.join(dest, "Magic", EXTRACTED)):
+        return True
+    program = os.path.join(dest, "Magic", "Program")
+    return sum(len(files) for _, _, files in os.walk(program)) >= RETAIL_FILES
+
+
+def mark_extracted(dest):
+    with open(os.path.join(dest, "Magic", EXTRACTED), "w") as f:
+        f.write("all the files of the disc's archive and its music and movies were written here\n")
 
 
 def sota_dest_for(dest):
@@ -481,7 +522,14 @@ def parser():
 
 
 def main(argv=None, default_build=False):
-    """default_build: what `pentamoor-install` passes, so it builds without --build."""
+    """default_build: what `pentamoor-install` passes, so it builds without --build. A full disk or a folder that cannot be written ends it with a message, not a traceback."""
+    try:
+        run(argv, default_build)
+    except OSError as e:
+        die(os_error_message(e))
+
+
+def run(argv=None, default_build=False):
     args = parser().parse_args(argv)
     layout = Layout()
     if args.check:
@@ -506,9 +554,13 @@ def main(argv=None, default_build=False):
     if want_sota and overlap:
         die(f"Spells of the Ancients 2.15 needs a folder of its own, not the first game's or one inside it or around it: --sota-dest {sota_dest} and --dest {dest} overlap. "
             "Leave --sota-dest out to put it beside the first game's folder.")
-    have_game = game_installed(dest)
+    have_game = game_installed(dest) and extraction_complete(dest)
     if args.verify_only and args.disc is None and not want_sota:
         die("--verify-only checks the discs and the patch it is given: give the original game's disc, or --sota and --patch (or all three).")
+    if game_installed(dest) and not have_game and args.disc is None and not args.verify_only:
+        say(f"the game folder {os.path.join(dest, 'Magic')} is only partly there (an earlier install was stopped); the disc is needed again to finish it.")
+    if not args.check and not args.verify_only and (args.disc is not None or not have_game):
+        check_writable(dest, *([sota_dest] if want_sota else []), layout.out_dir)
     # Everything the run will read is opened and checked before anything is written: a wrong disc, a disc in the wrong place, a cut-short patch stop it here, not after the first
     # game has been unpacked.
     disc = disc2 = patch = None
@@ -533,6 +585,7 @@ def main(argv=None, default_build=False):
             say(f"disc: {getattr(disc, 'label', '') or args.disc}")
             extract_archive(disc, dest, args.force)
             copy_media(disc, dest, args.force)
+            mark_extracted(dest)
         except (iso9660.IsoError, datax.DataZError) as e:
             die(str(e))
     first_ok = check_programs(dest)

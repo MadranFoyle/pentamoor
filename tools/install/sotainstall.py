@@ -79,11 +79,12 @@ def check_first_disc(disc, path):
     kind = disc_kind(disc)
     if kind == "first":
         return
-    if kind == "expansion":
+    if kind == "expansion" and builds.SOTA_DISC["tag_application"].lower() in read_tag(disc).get("application", "").lower():
         raise SotaError(f"{path} is the Spells of the Ancients disc (version {read_tag(disc).get('version', '2.0')}), not the original game's. The expansion is installed over the first game, "
                         f"so the installer needs the original game's disc (MTG v1.0, with Setup/data.z) first and this one after --sota, and the 2.15 patch:\n  {PATCH_HINT}")
-    raise SotaError(f"{path} does not look like the Magic: The Gathering disc (no Setup/data.z). The installer needs a disc image of the retail CD, version 1.0"
-                    + (f" (label {disc.label!r} was found)." if getattr(disc, "label", "") else "."))
+    label = getattr(disc, "label", "")
+    raise SotaError(f"{path} does not look like the Magic: The Gathering disc, version 1.0 (it has no Setup/data.z" + (f"; the disc's name is {label!r}" if label else "") + "). "
+                    "It may be the disc of another game or another version, or a copy that lost files. The installer needs a disc image of the retail CD of the original game, version 1.0 (usually MTG v1.0.iso).")
 
 
 def sha256_entry(disc, entry):
