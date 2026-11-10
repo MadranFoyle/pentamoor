@@ -41,16 +41,27 @@ uint32_t obj_new(int kind, void *p)
     return OBJ_BASE + 4u * (uint32_t)nobjs++;
 }
 
-/* For PORT_HEAP_LOG: how long the object table is and how many of its entries are live (a pen, a brush, a font ... a program has made and not deleted). */
-void gdi_object_stats(int *table, int *live)
+/* For PORT_HEAP_LOG: how long the object table is and how many of its entries are live (a pen, a brush, a font ... a program has made and not deleted), and the live ones by kind
+ * ("pen 3 brush 5 ..."; `kinds` is a buffer of `cap` bytes). */
+void gdi_object_stats(int *table, int *live, char *kinds, size_t cap)
 {
-    int i, n = 0;
+    static const char *const names[] = {"none", "pen", "brush", "font", "palette", "bitmap", "region", "dc", "cursor", "icon", "accel"};
+    int i, n = 0, by[16] = {0};
+    size_t at = 0;
 
     for (i = 0; i < nobjs; i++)
-        if (objs[i].kind)
+        if (objs[i].kind) {
             n++;
+            if (objs[i].kind < 16)
+                by[objs[i].kind]++;
+        }
     *table = nobjs;
     *live = n;
+    if (kinds && cap)
+        kinds[0] = 0;
+    for (i = 1; kinds && i < 11; i++)
+        if (by[i] && at < cap)
+            at += (size_t)snprintf(kinds + at, cap - at, "%s%s %d", at ? ", " : "", names[i], by[i]);
 }
 
 static Obj *slot(uint32_t h)
@@ -166,6 +177,14 @@ void obj_free(uint32_t h)
     o->kind = 0;
     o->p = NULL;
     slot_release(h);
+}
+
+/* Is this handle a device context of that window's client area? (No side effect: dc_of counts a use.) */
+int gdi_dc_is_window_dc(uint32_t h, uint32_t hwnd)
+{
+    const DC *d = obj_get(h, O_DC);
+
+    return d && !d->memory && d->hwnd == hwnd;
 }
 
 /* ReleaseDC and DeleteDC: the context goes (with the copies SaveDC made) and its handle can be given out again. A handle that is not a context, or has been released, is left alone. */
@@ -413,11 +432,11 @@ void surface_touched(const Surface *s, uint8_t *alpha) { memcpy(alpha, s->touche
  * the device context is see-through (Window.see_through): it drew nothing, so what its own painting leaves untouched shows what is behind it. */
 uint32_t gdi_send_erase(Window *w, uint32_t h)
 {
-    uint32_t r;
+    uint32_t r, made = 0;
     DC *d;
 
     if (!h)
-        h = gdi_window_dc(w->hwnd);
+        h = made = gdi_window_dc(w->hwnd);
     d = obj_get(h, O_DC);
     if (d)
         d->uses = 0;
@@ -427,6 +446,8 @@ uint32_t gdi_send_erase(Window *w, uint32_t h)
         w->see_through = 1;
         port_trace("window 0x%x (%s '%s') answered WM_ERASEBKGND without drawing: see-through", w->hwnd, w->cname, w->title);
     }
+    if (made && !(w->cls && (w->cls->style & 0x20)))
+        gdi_release_dc(made);                           /* the context made for this question goes with it (a window with CS_OWNDC keeps its, as ReleaseDC leaves it) */
     return r;
 }
 
@@ -1378,7 +1399,7 @@ void gdi_color_query_result(uint32_t hdc, uint32_t brush, uint8_t fg[3], uint8_t
         } else if (!b->pattern)
             *transparent = 1;                                 /* NULL_BRUSH: the control leaves what is behind it */
     }
-    obj_free(hdc);
+    gdi_release_dc(hdc);                                      /* (the context was made for this one question: it and its slot go, they used to stay for every control that was asked) */
 }
 
 static uint32_t CreateCompatibleDC(const uint32_t *a)

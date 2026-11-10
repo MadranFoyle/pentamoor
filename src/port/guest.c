@@ -100,8 +100,8 @@ static time_t heap_log_last;
 volatile int heap_report_request;       /* the control command `heap` (front_sdl.c) asks; the game's own thread answers at its next allocation, since it owns the block table */
 static void heap_report(FILE *out);
 
-/* The window's thread calls this in its loop: with PORT_HEAP_LOG the host's own memory is printed on the timer even when the game allocates nothing (a duel after its first minutes does not). It reads
- * nothing of the guest's block table, which belongs to the game's thread. */
+/* The scheduler calls this each time the baton is about to pass (kernel32.c, poll_timers): with PORT_HEAP_LOG the host's own memory and the object table are printed on the timer even when the game
+ * allocates nothing (a duel after its first minutes does not). Whoever holds the baton is the only thread that changes the object table, so it can be counted here. */
 void heap_log_tick(void)
 {
     static long every = -1;
@@ -121,9 +121,10 @@ void heap_log_tick(void)
     if (now - last >= every && plat_host_heap(&hb, &hn)) {
         last = now;
         int table = 0, live = 0;
+        char kinds[200];
 
-        gdi_object_stats(&table, &live);            /* (read from this thread while the game's runs: a debugging figure, not a guarantee) */
-        fprintf(stderr, "host: malloc %llu KiB in %llu blocks, gdi objects %d in a table of %d\n", hb >> 10, hn, live, table);
+        gdi_object_stats(&table, &live, kinds, sizeof(kinds));            /* (read from this thread while the game's runs: a debugging figure, not a guarantee) */
+        fprintf(stderr, "host: malloc %llu KiB in %llu blocks, gdi objects %d in a table of %d (%s)\n", hb >> 10, hn, live, table, kinds);
     }
 }
 

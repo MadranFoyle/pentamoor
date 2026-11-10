@@ -176,7 +176,7 @@ static void test_objects_are_given_back(void)
     uint32_t hdc = API("GetDC", win->hwnd), h, pen, brush, bmi, bits = scratch(4), hmem = API("CreateCompatibleDC", hdc), before;
     int table, live, table0, live0, i;
 
-    gdi_object_stats(&table0, &live0);
+    gdi_object_stats(&table0, &live0, NULL, 0);
     for (i = 0; i < 100000; i++) {
         pen = API("CreatePen", 0, 1, RGB(i & 255, 0, 0));
         brush = API("CreateSolidBrush", RGB(0, i & 255, 0));
@@ -185,7 +185,7 @@ static void test_objects_are_given_back(void)
         API("DeleteObject", pen);
         API("DeleteObject", brush);
     }
-    gdi_object_stats(&table, &live);
+    gdi_object_stats(&table, &live, NULL, 0);
     CHECK(live <= live0 + 4 && table <= table0 + 4);                        /* 200,000 objects made and deleted: the table did not grow (SelectObject made the stock pen and brush it answers) */
 
     /* the stock objects are not deleted */
@@ -215,6 +215,30 @@ static void test_objects_are_given_back(void)
         API("DeleteObject", dib);
     }
     CHECK(heap_used_bytes() < before + (9u << 20));                         /* 400 sections of 64 KiB (25 MiB) were made: no more than the waiting ones are left */
+}
+
+/* The contexts a window's paint makes go with EndPaint and ReleaseDC, and a cursor loaded twice is one handle: a duel's repaints made some thousand contexts and cursors a minute that stayed. */
+static void test_contexts_and_cursors_are_given_back(void)
+{
+    Window *win = window_with_surface(16, 16);
+    uint32_t ps = scratch(64), h;
+    int table0, live0, table, live, i;
+
+    API("BeginPaint", win->hwnd, ps);
+    API("EndPaint", win->hwnd, ps);
+    gdi_object_stats(&table0, &live0, NULL, 0);
+    for (i = 0; i < 2000; i++) {
+        API("BeginPaint", win->hwnd, ps);
+        API("EndPaint", win->hwnd, ps);
+        h = API("GetDC", win->hwnd);
+        API("ReleaseDC", win->hwnd, h);
+        gdi_send_erase(win, 0);
+    }
+    gdi_object_stats(&table, &live, NULL, 0);
+    CHECK(live <= live0 + 2 && table <= table0 + 4);
+    CHECK(API("LoadCursorA", 0, 32512) == API("LoadCursorA", 0, 32512));
+    CHECK(API("LoadCursorA", 0, 32512) != API("LoadCursorA", 0, 32513));
+    CHECK(API("LoadIconA", 0, 32512) != API("LoadCursorA", 0, 32512));
 }
 
 static void test_state(void)
@@ -504,7 +528,7 @@ static void test_sota_calls(void)
     CHECK(API("GetCharABCWidthsA", hdc, 5, 4, abc) == 0 && API("GetCharWidthA", hdc, 0, 0x10000, abc) == 0);     /* backwards, and more than a font has */
     CHECK(API("GetCharWidthA", hdc, 65, 66, abc) == 1 && API("GetCharABCWidthsA", hdc, 65, 66, abc) == 1);
 
-    /* the desktop's context is given back by ReleaseDC and its handle is the next one's; a window's own is kept (a window class with CS_OWNDC has one for good) */
+    /* the desktop's context is given back by ReleaseDC and its handle is the next one's; a window's own goes too, unless its class has CS_OWNDC (one for good) */
     h1 = API("GetDC", 0);
     API("ReleaseDC", 0, h1);
     h2 = API("GetDC", 0);
@@ -512,7 +536,20 @@ static void test_sota_calls(void)
     API("ReleaseDC", 0, h2);
     own = API("GetDC", win->hwnd);
     API("ReleaseDC", win->hwnd, own);
-    CHECK(API("GetPixel", own, 1, 1) != 0xFFFFFFFFu);                                    /* still a context for the window */
+    CHECK(API("GetPixel", own, 1, 1) == 0xFFFFFFFFu);                                    /* a window's context is given back too (it was kept: one for every repaint) */
+    {
+        uint32_t wc = scratch(40), nm = scratch(16);                                     /* ... except for a window class with CS_OWNDC, which has one for good */
+        Window *ow;
+
+        memcpy(G + nm, "owndc_test", 11);
+        WR32(wc, 0x20); WR32(wc + 4, 0); WR32(wc + 8, 0); WR32(wc + 12, 0); WR32(wc + 16, 0x400000); WR32(wc + 20, 0); WR32(wc + 24, 0); WR32(wc + 28, 0); WR32(wc + 32, 0); WR32(wc + 36, nm);
+        API("RegisterClassA", wc);
+        ow = wm_new_window("owndc_test", 0, 0, 0, 0, 0, 16, 16, "", 0, 0);
+        ow->visible = 1;
+        own = API("GetDC", ow->hwnd);
+        API("ReleaseDC", ow->hwnd, own);
+        CHECK(API("GetPixel", own, 1, 1) != 0xFFFFFFFFu);                                /* still a context for the window */
+    }
     API("ReleaseDC", 0, 0x12345678u);                                                    /* what is not a context is left alone */
 }
 
@@ -564,6 +601,7 @@ int main(void)
     test_box_resize_no_gaps();
     test_state();
     test_objects_are_given_back();
+    test_contexts_and_cursors_are_given_back();
     test_mono_bitmap_and_clip();
     test_palettes();
     test_palette_relative_tools();

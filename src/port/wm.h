@@ -72,6 +72,7 @@ typedef struct Window {
     uint32_t dlgproc, result;
     int ended, is_dialog;
     uint32_t odmem;
+    uint32_t od_hdc;             /* the device context the last WM_DRAWITEM of this owner-draw button carried (the next one gives it back first) */
     int nc_l, nc_t, nc_r, nc_b;  /* the non-client frame of a dialog (border, caption): the client area is inside it; x, y, w, h are the whole window */
     char dlg_face[40];           /* a dialog's font (DS_SETFONT), which its controls use */
     int dlg_pt;

@@ -218,13 +218,14 @@ class Game:
         return self.loaded()
 
     def diagnose_stall(self):
-        """What a process that does not start is doing: the stacks of all its threads (macOS `sample`, Linux /proc), written beside its log as stall.txt and returned (the first lines of it)."""
+        """What a process that does not start is doing: the stacks of all its threads (macOS `sample`, Linux /proc), written beside its log as stall.txt and returned. If the system will not say (`sample` is
+        refused or hangs; /proc is not there) the file holds what `ps` says, so that there is always one."""
         pid = self.pid
         path = os.path.join(self.workdir, "stall.txt")
         text = ""
         try:
             if sys.platform == "darwin":
-                subprocess.run(["sample", str(pid), "2", "-file", path], capture_output=True, timeout=30)
+                subprocess.run(["sample", str(pid), "2", "-file", path], capture_output=True, timeout=20)
                 text = open(path, errors="replace").read() if os.path.exists(path) else ""
             else:
                 lines = []
@@ -232,10 +233,15 @@ class Game:
                     base = "/proc/%d/task/%s/" % (pid, t)
                     lines.append("thread %s: state %s wchan %s" % (t, open(base + "stat").read().split(")")[-1].split()[0], open(base + "wchan").read().strip() or "-"))
                 text = "\n".join(lines) + "\n"
-                with open(path, "w") as f:
-                    f.write(text)
         except (OSError, subprocess.SubprocessError, ValueError):
             pass
+        if not text:
+            try:
+                text = "no thread stacks (the system would not give them); ps: " + subprocess.run(["ps", "-o", "pid,stat,etime,time,rss,command", "-p", str(pid)], capture_output=True, text=True, timeout=10).stdout + "\n"
+            except (OSError, subprocess.SubprocessError):
+                text = "no thread stacks, and ps did not answer\n"
+        with open(path, "w") as f:
+            f.write(text)
         return text
 
     def _stop_group(self, sig):

@@ -764,6 +764,7 @@ static void poll_timers(void)
     int i;
 
     maybe_shot();
+    heap_log_tick();                                              /* PORT_HEAP_LOG: on the thread that holds the baton, which is the one that may change what it counts */
 
     for (i = 0; i < nmmt; i++) {
         MmTimer *t = &mmt[i];

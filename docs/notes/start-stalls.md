@@ -17,8 +17,8 @@ starts after SDL, the window and the audio device are up, and on a loaded machin
 
 ## How it was found, and what it measured
 
-1. The harness `boot` told a process that never prints `loaded` from one that is slow, and wrote what it was doing: `Game.wait_loaded`, `Game.diagnose_stall` (macOS `sample`, Linux `/proc/PID/task/*`) in `tools/soak/pentamoor_ctl.py`. Of the first 8 whole runs (`--only newgame,save,back`, two at once, with
-   the 2.15 install built into a scratch folder) **one `back` start** was reported "no `loaded` line in 30 s, process gone": not alive, so not a stall. The crash report with the time of that start was the one above.
+1. The harness `boot` told a process that never prints `loaded` from one that is slow, and wrote what it was doing: `Game.wait_loaded`, `Game.diagnose_stall` (macOS `sample`, Linux `/proc/PID/task/*`) in `tools/soak/pentamoor_ctl.py`. Of the first 9 `back` starts (`--only newgame,save,back`, two runs at once, with
+   the 2.15 install built into a scratch folder) **one** was reported "no `loaded` line in 30 s, process gone": not alive, so not a stall. The crash report with the time of that start was the one above.
 2. `startloop.py` (a scratch driver, not in the repository: it starts the runtime N times, N at once, and says how many printed `loaded`) with a `poke` written to the pipe every 250 ms from a random phase, as the keeper does: **the old runtime died in 59 of 300 starts (20 %)**, with a poke every 10 ms in 99 of 100.
    Without the pokes: 0 of 800 starts (400 sequential and 400 eight at a time, 1.0's `MAGIC.EXE` and 2.15's `shandalar.exe`) failed, so nothing else was wrong with starting a process (SDL, the audio device, the instance file, the module's `dlopen` and the thread's start were all looked at, none of them stalls).
 
@@ -36,11 +36,16 @@ starts after SDL, the window and the audio device are up, and on a loaded machin
 | | starts | died or stalled |
 |---|---|---|
 | the pad regression, the old runtime and harness (controller.md) | about 90 | 9 (the `back` step's, 10 %) |
-| two scratch loops of `sota_pad_play.py --only newgame,save,back`, the old runtime | 10 whole runs, 10 `back` starts | 1 (crash report as above) |
+| two scratch loops of `sota_pad_play.py --only newgame,save,back`, two at a time, the old runtime, the new harness (which reports a process that did not start) | 9 `back` starts (8 whole runs, a ninth stopped after its `back` step) | 1 (crash report as above) |
 | `startloop.py`, the old runtime, a poke every 250 ms | 300, one at a time | 59 (20 %) |
-| the same, the new runtime, a poke every 250 ms | 600, one at a time | 0 |
-| the same, the new runtime, a poke every 100 ms, 8 at a time | 800 | 0 |
-| (final numbers: see the end of this note) | | |
+| the same, the final runtime (all of this branch's changes), a poke every 250 ms | 1,000, one at a time | 0 |
+| the same, the final runtime, a poke every 50 ms, 16 at a time (median start 0.65 s: the machine was loaded) | 1,500 | 0 |
+| 1.0's `MAGIC.EXE`, the final runtime, a poke every 100 ms, 4 at a time | 600 | 0 |
+| the old runtime, a poke every 50 ms, 16 at a time | 400 | 400 (all) |
+| 12 whole runs of `sota_pad_play.py --only newgame,save,back` (two at a time, the new harness) with the runtime that has the stall fix | 12 `back` starts, 36 starts of the three main processes | 0 (one run failed a position check of the Load step, the known "walk after a click", not a start) |
+| `pad_regression.py --game 2.15`, seed 8, the final runtime | one whole run, 184 checks | 0 failed |
+
+`startloop.py` is a scratch driver and is not in the repository; the check that is (`make check-run`) is the single deterministic case of it.
 
 ## Not done
 

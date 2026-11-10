@@ -76,6 +76,7 @@ void *obj_get(uint32_t h, int kind);
 int obj_kind(uint32_t h);
 void obj_free(uint32_t h);
 void gdi_release_dc(uint32_t h);                                    /* ReleaseDC, DeleteDC */
+int gdi_dc_is_window_dc(uint32_t h, uint32_t hwnd);                 /* a device context of that window's client area (no use counted) */
 DC *dc_of(uint32_t h);
 uint32_t dc_new(int memory, uint32_t hwnd);
 uint32_t stock_object(int which);

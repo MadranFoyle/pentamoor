@@ -1282,9 +1282,28 @@ static uint32_t ShowScrollBar(const uint32_t *a)
 static uint32_t cursor_now;
 static uint32_t SetCursor(const uint32_t *a) { uint32_t old = cursor_now; cursor_now = a[0]; return old; }
 static uint32_t GetCursor(const uint32_t *a) { (void)a; return cursor_now; }
-static uint32_t LoadCursorA(const uint32_t *a) { return gdi_new_object(GDI_CURSOR, a[1], 0); }
-static uint32_t LoadIconA(const uint32_t *a) { return gdi_new_object(GDI_ICON, a[1], 0); }
-static uint32_t LoadAcceleratorsA(const uint32_t *a) { return gdi_new_object(GDI_ACCEL, a[1], 0); }
+/* LoadCursor, LoadIcon and LoadAccelerators answer the same handle for the same resource, as Windows' do (a program that loads its cursor every time it moves the mouse made a new object, and kept
+ * it, each time: 500 objects a minute in a duel). */
+static uint32_t load_shared(int kind, uint32_t hinst, uint32_t name)
+{
+    static struct { int kind; uint32_t hinst, name, handle; } cache[128];
+    static int n;
+    int i;
+
+    for (i = 0; i < n; i++)
+        if (cache[i].kind == kind && cache[i].hinst == hinst && cache[i].name == name)
+            return cache[i].handle;
+    if (n == 128)
+        return gdi_new_object(kind, name, 0);                  /* (a program with more resources than that gets one for each call, as before) */
+    cache[n].kind = kind;
+    cache[n].hinst = hinst;
+    cache[n].name = name;
+    cache[n].handle = gdi_new_object(kind, name, 0);
+    return cache[n++].handle;
+}
+static uint32_t LoadCursorA(const uint32_t *a) { return load_shared(GDI_CURSOR, a[0], a[1]); }
+static uint32_t LoadIconA(const uint32_t *a) { return load_shared(GDI_ICON, a[0], a[1]); }
+static uint32_t LoadAcceleratorsA(const uint32_t *a) { return load_shared(GDI_ACCEL, a[0], a[1]); }
 static uint32_t GetDoubleClickTime(const uint32_t *a) { (void)a; return 500; }
 static uint32_t GetCursorPos(const uint32_t *a) { WR32(a[0], (uint32_t)wm_cursor_x); WR32(a[0] + 4, (uint32_t)wm_cursor_y); return 1; }
 static uint32_t SetCursorPos(const uint32_t *a) { wm_cursor_x = (int32_t)a[0]; wm_cursor_y = (int32_t)a[1]; return 1; }
@@ -1376,9 +1395,12 @@ static int owned(uint32_t hwnd)
 
 static uint32_t drawitem_struct(Window *win)
 {
-    uint32_t hdc = gdi_window_dc(win->hwnd);
+    uint32_t hdc;
     int cw, ch;
 
+    if (win->od_hdc && gdi_dc_is_window_dc(win->od_hdc, win->hwnd))     /* (still this window's context: a handle that went and came round again as another's is left alone) */
+        gdi_release_dc(win->od_hdc);                           /* the last item's context goes when the next one is asked for (it was never given back: one for every repaint of every owner-draw button) */
+    hdc = win->od_hdc = gdi_window_dc(win->hwnd);
     if (!win->odmem)
         win->odmem = heap_alloc(0x40);
     wm_client_size(win, &cw, &ch);
@@ -1698,10 +1720,25 @@ static uint32_t GetDesktopWindow(const uint32_t *a) { (void)a; return wm_desktop
 /* ReleaseDC(hwnd, hdc). The desktop's context (GetDC(NULL), which Spells of the Ancients opens, uses and releases for every character it measures) is let go. A window's own is kept as it
  * was: a window class with CS_OWNDC has one context for good (Windows hands the same one out at each GetDC, and a program may go on using it after ReleaseDC), and the first build never let
  * one go. */
+static int window_owns_dc(uint32_t hwnd)
+{
+    Window *w = wm_window(hwnd);
+
+    return w && w->cls && (w->cls->style & 0x20);              /* CS_OWNDC */
+}
+
 static uint32_t ReleaseDC(const uint32_t *a)
 {
-    if (!a[0] || !wm_window(a[0]) || a[0] == wm_desktop_hwnd())
+    if (!a[0] || !wm_window(a[0]) || a[0] == wm_desktop_hwnd() || !window_owns_dc(a[0]))
         gdi_release_dc(a[1]);
+    return 1;
+}
+
+/* EndPaint(hwnd, &ps): the context BeginPaint made goes, as ReleaseDC's does (it stayed for every WM_PAINT of every window: thousands in a duel). */
+static uint32_t EndPaint(const uint32_t *a)
+{
+    if (a[1] && !window_owns_dc(a[0]))
+        gdi_release_dc(RD32(a[1]));
     return 1;
 }
 
@@ -1796,7 +1833,7 @@ const WinApi USER32_APIS[] = {
     {"user32.dll", "TranslateMessage", zero}, {"user32.dll", "DispatchMessageA", DispatchMessageA}, {"user32.dll", "PeekMessageA", PeekMessageA},
     {"user32.dll", "GetMessageA", GetMessageA}, {"user32.dll", "SetTimer", SetTimer}, {"user32.dll", "KillTimer", KillTimer},
     {"user32.dll", "GetDC", GetDC}, {"user32.dll", "GetWindowDC", GetDC}, {"user32.dll", "ReleaseDC", ReleaseDC}, {"user32.dll", "BeginPaint", BeginPaint},
-    {"user32.dll", "EndPaint", one}, {0, 0, 0},
+    {"user32.dll", "EndPaint", EndPaint}, {0, 0, 0},
 };
 
 /* The next message for the calling thread, removed from its queue (the dialog loop's pump). */
