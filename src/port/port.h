@@ -25,6 +25,7 @@ static inline int port_env_on(const char *name)
 }
 
 extern uint8_t *G;
+int guest_ready(void);                  /* the guest's memory is reserved (G is set): until then nothing may read or write guest memory (the window's thread waits for it before it runs a control command) */
 
 /* A Win32 or C runtime function implemented in C: `a` holds its stack arguments (as many as its signature says). */
 typedef uint32_t (*WinApiFn)(const uint32_t *a);
@@ -87,6 +88,7 @@ void imports_report(void);
 uint32_t heap_alloc(uint32_t size);
 void heap_free(uint32_t addr);
 uint32_t heap_size(uint32_t addr);
+extern volatile int heap_report_request;   /* PORT_CONTROL `heap`: the game's thread prints the heap line at its next allocation (guest.c); PORT_HEAP_LOG=SECONDS prints it on a timer */
 
 extern __thread uint32_t port_sp;
 

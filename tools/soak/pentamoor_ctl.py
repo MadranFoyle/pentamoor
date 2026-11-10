@@ -198,6 +198,46 @@ class Game:
         self._ctl = os.open(self.ctl_path, os.O_RDWR | os.O_NONBLOCK)
         return self.proc.pid
 
+    def loaded(self):
+        """True once the runtime has printed its `loaded <program> at ...` line: the game's code is mapped and about to run. Before that line a start is still in the runtime's own set-up."""
+        try:
+            with open(self.log_path, "rb") as f:
+                return b"\nloaded " in b"\n" + f.read()
+        except OSError:
+            return False
+
+    def wait_loaded(self, timeout=30.0):
+        """Wait until loaded() or the process has gone or `timeout` s have passed; returns True for loaded. A False with the process alive is a start that stalled."""
+        end = time.time() + timeout
+        while time.time() < end:
+            if self.loaded():
+                return True
+            if not self.alive():
+                return False
+            time.sleep(0.05)
+        return self.loaded()
+
+    def diagnose_stall(self):
+        """What a process that does not start is doing: the stacks of all its threads (macOS `sample`, Linux /proc), written beside its log as stall.txt and returned (the first lines of it)."""
+        pid = self.pid
+        path = os.path.join(self.workdir, "stall.txt")
+        text = ""
+        try:
+            if sys.platform == "darwin":
+                subprocess.run(["sample", str(pid), "2", "-file", path], capture_output=True, timeout=30)
+                text = open(path, errors="replace").read() if os.path.exists(path) else ""
+            else:
+                lines = []
+                for t in sorted(os.listdir("/proc/%d/task" % pid)):
+                    base = "/proc/%d/task/%s/" % (pid, t)
+                    lines.append("thread %s: state %s wchan %s" % (t, open(base + "stat").read().split(")")[-1].split()[0], open(base + "wchan").read().strip() or "-"))
+                text = "\n".join(lines) + "\n"
+                with open(path, "w") as f:
+                    f.write(text)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
+        return text
+
     def _stop_group(self, sig):
         """Signal the group this game was started in (start_new_session: its own, which holds only this game and what it started)."""
         try:

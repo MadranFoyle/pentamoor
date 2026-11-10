@@ -291,12 +291,16 @@ check-build: runtime module-stub $(BUILD)/stub.exe
 	@echo "check-build: ok"
 
 # The window half of the front end started for real, on SDL's dummy drivers (no display, no sound device): SDL is initialised, the window, the renderer and the audio device are
-# made, the game runs on its thread (the window loop on this one), and the program, which is not there, ends it with an error. CI runs it.
+# made, the game runs on its thread (the window loop on this one), and the program, which is not there, ends it with an error. The second run has a control `poke` waiting in PORT_CONTROL while
+# the game's thread is slow to reserve the guest's memory (PORT_GUEST_DELAY_MS): the window's thread has to wait for it (docs/notes/start-stalls.md). CI runs it.
 check-run: runtime module-stub
 	@out=$$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy $(BUILD)/pentamoor-run$(EXE) -m $(BUILD)/game_stub.$(SOEXT) no-such-folder/Program/MAGIC.EXE 2>&1); status=$$?; \
 	  echo "$$out" | grep -q "cannot open no-such-folder/Program/MAGIC.EXE" && [ $$status -eq 2 ] || { echo "check-run: unexpected (exit $$status): $$out"; exit 1; }
 	@out=$$(PORT_PAD_LOG=stderr SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy $(BUILD)/pentamoor-run$(EXE) -m $(BUILD)/game_stub.$(SOEXT) no-such-folder/Program/MAGIC.EXE 2>&1); \
 	  echo "$$out" | grep -q "padlog: start: SDL .*video driver dummy" && echo "$$out" | grep -q "padlog: [0-9]* joystick(s) at start" || { echo "check-run: PORT_PAD_LOG wrote no start-up lines: $$out"; exit 1; }
+	@printf 'poke 0x725310 1 4\npeek 0x725310\n' > $(BUILD)/control.txt
+	@out=$$(PORT_CONTROL=$(BUILD)/control.txt PORT_GUEST_DELAY_MS=400 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy $(BUILD)/pentamoor-run$(EXE) -m $(BUILD)/game_stub.$(SOEXT) no-such-folder/Program/MAGIC.EXE 2>&1); status=$$?; \
+	  echo "$$out" | grep -q "cannot open no-such-folder/Program/MAGIC.EXE" && [ $$status -eq 2 ] || { echo "check-run: a poke that is in the control pipe at the start (the guest's memory reserved 400 ms late) killed the process or was not survived: exit $$status: $$out"; exit 1; }
 	@echo "check-run: ok"
 
 

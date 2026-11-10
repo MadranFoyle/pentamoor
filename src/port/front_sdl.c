@@ -922,6 +922,8 @@ static void run_step(const Step *s)
         port_trace_imports = !strcmp(s->arg, "on");
     } else if (!strcmp(s->cmd, "calls")) {        /* calls on|off: every call between lifted functions, with its caller, on stderr (a few seconds of it, for finding what the engine does) */
         port_trace_calls = !strcmp(s->arg, "on");
+    } else if (!strcmp(s->cmd, "heap")) {         /* the guest's heap: blocks in use and free, by size (guest.c heap_report), printed by the game's thread at its next allocation */
+        heap_report_request = 1;
     } else if (!strcmp(s->cmd, "threads")) {      /* the guest threads, what each is waiting for and called last, to stderr (a debugging aid for a hang) */
         sched_dump(stderr);
     } else if (!strcmp(s->cmd, "windows")) {      /* the window tree, to stderr (a debugging aid) */
@@ -1917,12 +1919,15 @@ int front_run(int (*game)(void *), void *arg)
             fflush(NULL);
             exit(0);
         }
-        while (next_step < nsteps && (SDL_GetTicks() - t_start) / 1000.0 >= steps[next_step].t) {
+        /* The script and the control pipe wait for the game's thread to have reserved the guest's memory (guest_init, a few milliseconds into its start, more on a loaded machine): a `poke` or a
+         * `peek` that came in before that wrote through a null pointer and the process died at the start with a segmentation fault and nothing in its log (docs/notes/start-stalls.md). What is
+         * sent meanwhile stays in the pipe (a script step stays in its list) and is read as soon as the guest exists. */
+        while (guest_ready() && next_step < nsteps && (SDL_GetTicks() - t_start) / 1000.0 >= steps[next_step].t) {
             if (front_take_frame(rgb, &seen))        /* a shot shows the newest frame */
                 D.upload = dirty = 1;
             run_step(&steps[next_step++]);
         }
-        if (control_fd >= 0) {
+        if (control_fd >= 0 && guest_ready()) {
             if (front_take_frame(rgb, &seen))
                 D.upload = dirty = 1;
             poll_control();
