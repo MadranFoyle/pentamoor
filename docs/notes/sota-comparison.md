@@ -814,7 +814,7 @@ Every page by eye: the title; Duel (Solo, Gauntlet, Sealed Deck, and the Duel Op
 
 The last edits after the 15-minute run: `SetFocus` and a click no longer select the text of an edit box (Windows' dialog manager does, with Tab; the 15-minute run still had the older "focus selects all"), the file dialog's name box no longer shows its text selected (a bug of the first version of `ui.c`'s new drawing, found by a test), a text window or message answered for a program's start uses no process slot, and the message-box log line.
 
-`make -C src/port test check-front check-module check-run check-program check-build` is green (test_wm 1,025 checks, test_process 110, test_movie 100 ...), `pytest` over the tool folders is green (418), `check_tree.py`, `check_links.py` and `test_docs.py` pass. 1.0 headless: `pad_play.py` (new game with the name box, the map, a duel and the card menus, two pinned seeds): 54 checks, none failed; `DECK.EXE`'s Deck Info rename above; the file dialogs and the message box are covered by `test_wm`'s existing checks, which pass.
+`make -C src/port test check-front check-module check-run check-program check-build` is green (test_wm 1,025 checks, test_process 110, test_movie 100 ...), `pytest` over the tool folders is green (448), `check_tree.py`, `check_links.py` and `test_docs.py` pass. 1.0 headless: `pad_play.py` (new game with the name box, the map, a duel and the card menus, two pinned seeds): 54 checks, none failed; `DECK.EXE`'s Deck Info rename above; the file dialogs and the message box are covered by `test_wm`'s existing checks, which pass.
 
 ### Not done, not run
 
