@@ -119,7 +119,7 @@ def run(cmd, cwd, env=None, timeout=1800, input_text=None):
 
 
 STEAMDECK_FILES = ["tools/steamdeck/install-gui.sh", "tools/steamdeck/install-run.sh", "tools/steamdeck/add-to-steam.py", "tools/steamdeck/progress.py",
-                   "tools/steamdeck/controller_neptune_pentamoor.vdf", "Install Pentamoor.desktop", "Add Pentamoor to Steam.desktop"]
+                   "tools/steamdeck/controller_neptune_pentamoor.vdf", "Install Pentamoor.desktop", "Install Spells of the Ancients.desktop", "Add Pentamoor to Steam.desktop"]
 
 
 def check_steamdeck(root, py, env):
@@ -131,10 +131,10 @@ def check_steamdeck(root, py, env):
             problems.append(f"the Steam Deck archive lacks {name}")
     if problems:
         return problems
-    for name in ("Install Pentamoor.desktop", "Add Pentamoor to Steam.desktop", "tools/steamdeck/install-gui.sh", "tools/steamdeck/add-to-steam.py"):
+    for name in ("Install Pentamoor.desktop", "Install Spells of the Ancients.desktop", "Add Pentamoor to Steam.desktop", "tools/steamdeck/install-gui.sh", "tools/steamdeck/add-to-steam.py"):
         if not os.access(os.path.join(root, name), os.X_OK):
             problems.append(f"{name} is not executable")
-    for name in ("Install Pentamoor.desktop", "Add Pentamoor to Steam.desktop"):
+    for name in ("Install Pentamoor.desktop", "Install Spells of the Ancients.desktop", "Add Pentamoor to Steam.desktop"):
         with open(os.path.join(root, name), encoding="utf-8") as f:
             text = f.read()
         if not text.startswith("[Desktop Entry]") or "install-gui.sh" not in text or "Terminal=false" not in text:
@@ -158,7 +158,7 @@ def check_steamdeck(root, py, env):
         code, out = run(a2s + ["--dry-run"], root, e)
         if code != 0 or "dry run" not in out:
             problems.append(f"add-to-steam.py --dry-run failed: {out.strip()}")
-        code, out = run(a2s + ["--desktop-entry", "--controller-template"], root, e)
+        code, out = run(a2s + ["--desktop-entry", "--controller-template", "--sota"], root, e)
         print(out.strip())
         if code == 3:
             print("(Steam is running on this machine: the shortcut writer's refusal is the right answer, but it cannot be tried here)")
@@ -168,9 +168,9 @@ def check_steamdeck(root, py, env):
             vdf_path = os.path.join(steam, "userdata", "4242", "config", "shortcuts.vdf")
             with open(vdf_path, "rb") as f:
                 data = f.read()
-            if not data.startswith(b"\x00shortcuts\x00") or not data.endswith(b"\x08\x08\x08\x08") or b"Pentamoor" not in data:
+            if not data.startswith(b"\x00shortcuts\x00") or not data.endswith(b"\x08\x08\x08\x08") or b"Pentamoor" not in data or b"Pentamoor: Spells of the Ancients" not in data:
                 problems.append("add-to-steam.py wrote a shortcuts.vdf that does not look right")
-            for rel in (os.path.join(home, ".local", "share", "applications", "pentamoor.desktop"), os.path.join(steam, "controller_base", "templates", "controller_neptune_pentamoor.vdf")):
+            for rel in (os.path.join(home, ".local", "share", "applications", "pentamoor.desktop"), os.path.join(home, ".local", "share", "applications", "pentamoor-sota.desktop"), os.path.join(steam, "controller_base", "templates", "controller_neptune_pentamoor.vdf")):
                 if not os.path.exists(rel):
                     problems.append(f"add-to-steam.py did not make {rel}")
             code, out = run(a2s, root, e)

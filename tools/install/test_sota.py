@@ -642,6 +642,32 @@ def test_a_cut_short_or_other_patch_stops_it_before_the_first_game_is_unpacked(w
     assert not inst.exists() and command.rec.calls == []
 
 
+def test_verify_only_makes_the_checks_of_an_install_and_writes_nothing(world, command, tmp_path):
+    """What the Steam Deck's window installer runs before it installs: the same checks, the same words, no folder made, nothing lifted or built."""
+    inst = tmp_path / "inst"
+    out = command(world.iso1, "--sota", world.iso2, "--patch", world.patch, "--dest", inst, "--verify-only")
+    assert "expansion disc:" in out and "patch: SOTAV215.EXE, 6 files, every CRC-32 and hash right" in out
+    assert "verified: the original game's disc, the expansion's disc and the patch, nothing was written (--verify-only)" in out
+    assert not inst.exists() and not (tmp_path / "inst_sota").exists() and command.rec.calls == []
+    # the two files only, for a first game that is installed already (the "Install Spells of the Ancients" case): no first disc is read
+    command(world.iso1, "--dest", inst)
+    command.rec.calls.clear()
+    out = command("--sota", world.iso2, "--patch", world.patch, "--dest", inst, "--verify-only")
+    assert "not reading the disc again" in out and "verified: the expansion's disc and the patch, nothing was written" in out
+    assert not (tmp_path / "inst_sota").exists() and command.rec.calls == []
+    # and what is wrong is said in the installer's own words, with status 1
+    data = world.patch_bytes
+    cut = tmp_path / "cut.exe"
+    cut.write_bytes(data[:data.find(b"PK\x01\x02") - 5])
+    text = refused(command, "--sota", world.iso2, "--patch", cut, "--dest", inst, "--verify-only")
+    assert "TRUNCATED" in text and "cut short" in text and "Get the patch again" in text
+    text = refused(command, "--sota", world.iso1, "--patch", world.patch, "--dest", inst, "--verify-only")
+    assert "is the original game's disc (version 1.0), not the Spells of the Ancients disc" in text
+    text = refused(command, "--dest", inst, "--verify-only")
+    assert "--verify-only checks the discs and the patch it is given" in text
+    assert not (tmp_path / "inst_sota").exists() and command.rec.calls == []
+
+
 def test_a_first_game_that_is_not_the_retail_disc_is_not_built_over(world, command, tmp_path, monkeypatch):
     import builds
     inst = tmp_path / "inst"

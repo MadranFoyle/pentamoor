@@ -35,7 +35,7 @@ TREES = {
 # controller layout (tools/steamdeck, without its tests and the two .desktop files), and the .desktop files at the top of the folder, where a double click finds them.
 STEAMDECK_TREE = "tools/steamdeck"
 STEAMDECK_EXCLUDE = ["test_*.py", "__pycache__", "*.pyc", "desktop"]
-STEAMDECK_DESKTOP = ["Install Pentamoor.desktop", "Add Pentamoor to Steam.desktop"]
+STEAMDECK_DESKTOP = ["Install Pentamoor.desktop", "Install Spells of the Ancients.desktop", "Add Pentamoor to Steam.desktop"]
 
 # Present in every release (the installer's --check looks for these).
 REQUIRED = (["tools/install/install.py", "tools/install/modbuild.py", "tools/install/liftrun.py", "tools/install/zigdl.py", "tools/install/manifest.py",

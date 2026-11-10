@@ -3,6 +3,7 @@
 // so the layout only has to hand the real buttons through; the two trackpads and the touch screen are the mouse, which the game uses as it always did.
 // UNVERIFIED: written from the format of Steam's own templates without a Steam client to load it in. If Steam does not list it, or the buttons do not do what
 // docs/notes/steamdeck.md says, use Steam's own "Gamepad with Mouse Trackpad" template instead (the steps are there).
+// It is one template for both Steam shortcuts that add-to-steam.py writes (Pentamoor, and with --sota Pentamoor: Spells of the Ancients, the Magic Shell): choose it for each of them.
 "controller_mappings"
 {
 	"version"		"3"

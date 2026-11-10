@@ -466,6 +466,7 @@ def parser():
     ap.add_argument("--no-licence-value", action="store_true", help="with --sota: do not write the licence value the original Spells of the Ancients installer wrote for an owner of the discs (the game then offers only its base pool of 409 cards)")
     ap.add_argument("--keep-cd-check", action="store_true", help="with --sota: leave out the flag the game itself defines as \"skip the disc check\", which the licence value carries by default because the discs were just verified, so this install asks for a disc where the original did (needs the licence value)")
     ap.add_argument("--no-cd", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--verify-only", action="store_true", help="only check the discs and the patch that are given (the same checks as an install, which the install makes before it writes anything) and say what is wrong; write nothing, build nothing")
     ap.add_argument("--build", action="store_true", help="then lift the programs to C and compile them (a source checkout: make builds the runtime and the game modules; a release: the modules)")
     ap.add_argument("--modules", action="store_true", help="a source checkout: build only the game modules, with this installer's own compiler step instead of make (what a release does)")
     ap.add_argument("--compiler", help="the C compiler to build the modules with, for example gcc or 'zig cc' (default: cc, gcc or clang if one works, else Zig downloaded into tools/local; also $PENTAMOOR_CC)")
@@ -506,6 +507,8 @@ def main(argv=None, default_build=False):
         die(f"Spells of the Ancients 2.15 needs a folder of its own, not the first game's or one inside it or around it: --sota-dest {sota_dest} and --dest {dest} overlap. "
             "Leave --sota-dest out to put it beside the first game's folder.")
     have_game = game_installed(dest)
+    if args.verify_only and args.disc is None and not want_sota:
+        die("--verify-only checks the discs and the patch it is given: give the original game's disc, or --sota and --patch (or all three).")
     # Everything the run will read is opened and checked before anything is written: a wrong disc, a disc in the wrong place, a cut-short patch stop it here, not after the first
     # game has been unpacked.
     disc = disc2 = patch = None
@@ -522,6 +525,9 @@ def main(argv=None, default_build=False):
             die(str(e))
     if want_sota:
         disc2, patch = open_sota_sources(args)
+    if args.verify_only:
+        say("verified: " + ("the original game's disc, " if disc is not None else "") + ("the expansion's disc and the patch, " if want_sota else "") + "nothing was written (--verify-only)")
+        return
     if disc is not None:
         try:
             say(f"disc: {getattr(disc, 'label', '') or args.disc}")

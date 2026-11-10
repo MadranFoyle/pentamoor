@@ -131,7 +131,7 @@ enum { IN_MOVE, IN_DOWN, IN_UP, IN_RDOWN, IN_RUP, IN_WHEEL };      /* IN_WHEEL: 
 int wm_inject_mouse(int kind, int x, int y);
 int wm_inject_key(uint32_t vk, uint32_t scancode, int down, int ch, int repeat);
 int wm_inject_char(int ch);                      /* WM_CHAR alone, to the open dialog or the window that has the keys */
-int wm_text_focus(void);                         /* an edit control of the open modal dialog is there to be typed into (the on-screen keyboard may show) */
+int wm_text_focus(void);                         /* an edit control of the open modal dialog, or (no dialog open) one with the keyboard focus on a page, is there to be typed into (the on-screen keyboard may show) */
 extern int wm_cursor_x, wm_cursor_y;
 extern uint8_t wm_keys[256];
 

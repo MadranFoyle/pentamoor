@@ -425,13 +425,13 @@ def test_release_archive_layout_steamdeck(tmp_path):
     assert out.endswith("pentamoor-9.9.9-steamdeck.tar.gz")
     with tarfile.open(out) as t:
         names = {m.name[len(top) + 1:]: m for m in t.getmembers()}
-    for need in ("pentamoor-run", "pentamoor", "pentamoor-install", "Install Pentamoor.desktop", "Add Pentamoor to Steam.desktop", "tools/steamdeck/install-gui.sh",
+    for need in ("pentamoor-run", "pentamoor", "pentamoor-install", "Install Pentamoor.desktop", "Install Spells of the Ancients.desktop", "Add Pentamoor to Steam.desktop", "tools/steamdeck/install-gui.sh",
                  "tools/steamdeck/install-run.sh", "tools/steamdeck/add-to-steam.py", "tools/steamdeck/progress.py", "tools/steamdeck/controller_neptune_pentamoor.vdf",
                  "tools/install/install.py", "tools/pydeps/pefile/__init__.py", "README.txt", "SHA256SUMS"):
         assert need in names, need
     assert not any(n.endswith(".bat") for n in names) and not any("test_" in n for n in names)
     assert not any(n.startswith("tools/steamdeck/desktop") for n in names)                     # the .desktop files are at the top, not twice
-    for n in ("Install Pentamoor.desktop", "Add Pentamoor to Steam.desktop", "tools/steamdeck/install-gui.sh", "tools/steamdeck/add-to-steam.py", "pentamoor-run"):
+    for n in ("Install Pentamoor.desktop", "Install Spells of the Ancients.desktop", "Add Pentamoor to Steam.desktop", "tools/steamdeck/install-gui.sh", "tools/steamdeck/add-to-steam.py", "pentamoor-run"):
         assert names[n].mode & 0o111, n + " is not executable"
     root = check_archive.extract(out, str(tmp_path / "x"))
     files = check_archive.all_files(root)
