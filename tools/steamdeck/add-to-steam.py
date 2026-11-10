@@ -5,12 +5,17 @@ add-to-steam.py - put Pentamoor in Steam as a non-Steam game, so it shows in the
     python3 tools/steamdeck/add-to-steam.py                  # add the shortcut (Steam must not be running)
     python3 tools/steamdeck/add-to-steam.py --desktop-entry   # also: a Pentamoor entry in the application menu (Steam's "Add a Non-Steam Game" list shows it too)
     python3 tools/steamdeck/add-to-steam.py --controller-template   # also: copy the Steam Input layout into Steam's templates folder
-    python3 tools/steamdeck/add-to-steam.py --remove          # take the shortcut out again
+    python3 tools/steamdeck/add-to-steam.py --sota            # also a second shortcut: Spells of the Ancients 2.15 (the Magic Shell, `pentamoor sota shell`)
+    python3 tools/steamdeck/add-to-steam.py --remove          # take the shortcuts out again (with --sota: only the Spells of the Ancients one)
     python3 tools/steamdeck/add-to-steam.py --check-steam     # only say whether Steam is running (exit status 3 if it is)
 
 What it does: Steam keeps the non-Steam games of each user in <steam>/userdata/<user id>/config/shortcuts.vdf, a binary file in Valve's "binary VDF" format
 (a list of typed key/value pairs: 0x00 starts a nested list, 0x01 is a string, 0x02 a 32-bit number, 0x08 ends a list). This adds one entry for the `pentamoor`
 launcher (Exe, StartDir, an app id Steam is happy with, the tag "Pentamoor") after a copy of the file is kept next to it. Nothing else in Steam is touched.
+With --sota a second entry is added for the same launcher: its name is "Pentamoor: Spells of the Ancients" and its launch options are "sota shell", which makes the launcher start the
+expansion's Magic Shell (the shell's World page starts the adventure and returns to the shell when it is left). The two entries have different names, hence different app ids; each is added
+once (running this again says it is already there) and the checks and the backup are the same for both. The pictures Steam shows for a shortcut are looked for in its "grid" folder under the app id; none are
+shipped (the game's pictures are the owner's), and the names a picture of your own would have are printed.
 
 Steam writes shortcuts.vdf again when it quits, from what it has in memory, so a change made while Steam runs is lost; this refuses to run while Steam is running (--force
 writes anyway). Steam has to be started again to see the new game (on a Deck, Game mode starts it: switching to desktop mode and back does it).
@@ -31,6 +36,8 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 APP_NAME = "Pentamoor"
 TAG = "Pentamoor"
 TEMPLATE = "controller_neptune_pentamoor.vdf"
+SOTA_NAME = "Pentamoor: Spells of the Ancients"
+SOTA_OPTIONS = "sota shell"                       # what `pentamoor` is given: the expansion's Magic Shell (pentamoor sota shandalar or plain `sota` is the adventure itself)
 
 # ---- binary VDF -------------------------------------------------------------------------------------------------------------------------------------------
 T_DICT, T_STR, T_INT, T_FLOAT, T_PTR, T_WSTR, T_COLOR, T_UINT64, T_END, T_INT64 = 0, 1, 2, 3, 4, 5, 6, 7, 8, 10
@@ -176,20 +183,24 @@ def shortcuts_list(root):
     return None
 
 
-def is_ours(entry, exe_path=None):
-    """A shortcut that is Pentamoor's: named so, with a launcher called pentamoor (or this exact Exe)."""
-    name = _find(entry, "AppName")
+def is_ours(entry, exe_path=None, name=None):
+    """A shortcut that is Pentamoor's: named so, with a launcher called pentamoor (or this exact Exe). With `name`, only the shortcut of that name (the first game's and Spells of the
+    Ancients' share the launcher, and differ in their names)."""
+    app = _find(entry, "AppName")
     exe = _find(entry, "Exe")
-    if name is None or exe is None:
+    if app is None or exe is None:
         return False
+    app_s = app.decode("utf-8", "replace")
     exe_s = exe.decode("utf-8", "replace").strip('"')
+    if name is not None and app_s != name:
+        return False
     if exe_path is not None and exe_s == exe_path:
         return True
-    return name.decode("utf-8", "replace") == APP_NAME and os.path.basename(exe_s) in ("pentamoor", "pentamoor.sh")
+    return app_s in (APP_NAME, SOTA_NAME) and os.path.basename(exe_s) in ("pentamoor", "pentamoor.sh")
 
 
-def add_shortcut(data, exe_path, start_dir, launch_options=""):
-    """The file's bytes with Pentamoor added. data: the existing file's bytes (empty or None for a new file). Returns (new bytes, 'added' or 'present').
+def add_shortcut(data, exe_path, start_dir, launch_options="", name=APP_NAME):
+    """The file's bytes with Pentamoor (or, with `name`, Pentamoor's other shortcut) added. data: the existing file's bytes (empty or None for a new file). Returns (new bytes, 'added' or 'present').
     Raises VdfError for a file that cannot be read back byte for byte (it is not rewritten)."""
     if data:
         root = parse(data)
@@ -203,23 +214,23 @@ def add_shortcut(data, exe_path, start_dir, launch_options=""):
         root = [(b"shortcuts", T_DICT, [])]
         lst = root[0][2]
     for k, t, v in lst:
-        if t == T_DICT and is_ours(v, exe_path):
+        if t == T_DICT and is_ours(v, exe_path, name):
             return data, "present"
     numbers = [int(k) for k, t, v in lst if k.isdigit()]
     key = str(max(numbers) + 1 if numbers else 0).encode()
-    lst.append((key, T_DICT, make_entry(exe_path, start_dir, launch_options)))
+    lst.append((key, T_DICT, make_entry(exe_path, start_dir, launch_options, name=name)))
     return dump(root), "added"
 
 
-def remove_shortcuts(data, exe_path=None):
-    """The file's bytes without Pentamoor's shortcuts, and how many were taken out. The others keep their numbers' order (Steam renumbers on its next write)."""
+def remove_shortcuts(data, exe_path=None, name=None):
+    """The file's bytes without Pentamoor's shortcuts (with `name`: only the one of that name), and how many were taken out. The others keep their numbers' order (Steam renumbers on its next write)."""
     root = parse(data)
     if dump(root) != data:
         raise VdfError("the file does not read back byte for byte")
     lst = shortcuts_list(root)
     if lst is None:
         return data, 0
-    keep = [(k, t, v) for k, t, v in lst if not (t == T_DICT and is_ours(v, exe_path))]
+    keep = [(k, t, v) for k, t, v in lst if not (t == T_DICT and is_ours(v, exe_path, name))]
     n = len(lst) - len(keep)
     lst[:] = keep
     return (dump(root), n) if n else (data, 0)
@@ -278,21 +289,34 @@ def steam_running(pid_file=None, proc="/proc"):
     return False
 
 
+def expected_appid(exe_path, name):
+    """The app id the shortcut written for this launcher and name has (what make_entry puts in it)."""
+    return shortcut_appid(quote(exe_path), name)
+
+
+def artwork_names(appid):
+    """The file names Steam looks for in <steam>/userdata/<user>/config/grid for a non-Steam shortcut's pictures, as the community's tools (SteamGridDB, Steam ROM Manager) use them: the app id as an
+    unsigned number, then p.png (the tall capsule), .png (the wide one), _hero.png, _logo.png. From memory of those tools, not checked against a Steam client; none of the pictures is shipped."""
+    return [f"{appid}p.png", f"{appid}.png", f"{appid}_hero.png", f"{appid}_logo.png"]
+
+
 # ---- the other two things ---------------------------------------------------------------------------------------------------------------------------------
-def desktop_entry_text(exe_path, start_dir):
+def desktop_entry_text(exe_path, start_dir, name=APP_NAME, args="", comment="Magic: The Gathering (Shandalar), a native port"):
     def esc(s):
         return '"' + s.replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`").replace("$", "\\$") + '"'
-    return ("[Desktop Entry]\nType=Application\nName=Pentamoor\nComment=Magic: The Gathering (Shandalar), a native port\n"
-            f"Exec={esc(exe_path)}\nPath={start_dir}\nTerminal=false\nCategories=Game;\nIcon=applications-games\nStartupNotify=false\n")
+    return ("[Desktop Entry]\nType=Application\nName=" + name + "\nComment=" + comment + "\n"
+            f"Exec={esc(exe_path)}{' ' + args if args else ''}\nPath={start_dir}\nTerminal=false\nCategories=Game;\nIcon=applications-games\nStartupNotify=false\n")
 
 
-def write_desktop_entry(exe_path, start_dir, home=None):
+def write_desktop_entry(exe_path, start_dir, home=None, sota=False):
+    """~/.local/share/applications/pentamoor.desktop, or with sota the other one (pentamoor-sota.desktop: the Magic Shell of Spells of the Ancients)."""
     home = home or os.path.expanduser("~")
     apps = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share"), "applications")
     os.makedirs(apps, exist_ok=True)
-    path = os.path.join(apps, "pentamoor.desktop")
+    path = os.path.join(apps, "pentamoor-sota.desktop" if sota else "pentamoor.desktop")
     with open(path, "w") as f:
-        f.write(desktop_entry_text(exe_path, start_dir))
+        f.write(desktop_entry_text(exe_path, start_dir, SOTA_NAME, SOTA_OPTIONS, "Magic: The Gathering, Spells of the Ancients 2.15: the Magic Shell") if sota
+                else desktop_entry_text(exe_path, start_dir))
     os.chmod(path, 0o755)
     return path
 
@@ -313,18 +337,23 @@ MANUAL = """To do it by hand instead:
   4. Right-click Pentamoor in the Library > Properties: set "Start In" to  {start}
   5. Right-click Pentamoor > Properties > Controller (or the controller button in Game mode): choose the Gamepad layout (docs/notes/steamdeck.md).
 """
+MANUAL_SOTA = """  For Spells of the Ancients 2.15 add the same file a second time, then in its Properties: name it  {name}  and set its Launch Options to  {options}
+  (the Magic Shell; its World page starts the adventure), "Start In" as above, and choose the Gamepad layout for it too.
+"""
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Add Pentamoor to Steam as a non-Steam game (the top of this file says how).")
     ap.add_argument("--exe", default=os.path.join(ROOT, "pentamoor"), help="the launcher to add (default: pentamoor beside tools/)")
-    ap.add_argument("--launch-options", default="", help="Steam's launch options for the shortcut (default: none)")
+    ap.add_argument("--launch-options", default="", help="Steam's launch options for the first game's shortcut (default: none)")
+    ap.add_argument("--sota", action="store_true", help="also (with --remove: only) the shortcut for Spells of the Ancients 2.15: the same launcher, named \"%s\", launch options \"%s\" (its Magic Shell)" % (SOTA_NAME, SOTA_OPTIONS))
+    ap.add_argument("--sota-launch-options", default=SOTA_OPTIONS, help="Steam's launch options for the Spells of the Ancients shortcut (default: %(default)s)")
     ap.add_argument("--steam-dir", help="Steam's folder (default: ~/.steam/steam, ~/.local/share/Steam, the Flatpak's)")
     ap.add_argument("--user", help="the Steam user's number (a folder of userdata); default: the one used last")
     ap.add_argument("--force", action="store_true", help="write even while Steam is running (Steam then undoes it when it quits, unless it is restarted first)")
     ap.add_argument("--dry-run", action="store_true", help="say what would be done, change nothing")
-    ap.add_argument("--remove", action="store_true", help="take Pentamoor's shortcut out of Steam instead")
-    ap.add_argument("--desktop-entry", action="store_true", help="also write ~/.local/share/applications/pentamoor.desktop (the application menu, and Steam's own Add a Non-Steam Game list)")
+    ap.add_argument("--remove", action="store_true", help="take Pentamoor's shortcuts out of Steam instead (with --sota: only the Spells of the Ancients one)")
+    ap.add_argument("--desktop-entry", action="store_true", help="also write ~/.local/share/applications/pentamoor.desktop (the application menu, and Steam's own Add a Non-Steam Game list); with --sota also pentamoor-sota.desktop")
     ap.add_argument("--controller-template", action="store_true", help="also copy the Steam Input layout into Steam's controller_base/templates (see docs/notes/steamdeck.md)")
     ap.add_argument("--check-steam", action="store_true", help="only report whether Steam is running; exit status 3 if it is")
     args = ap.parse_args(argv)
@@ -336,7 +365,7 @@ def main(argv=None):
 
     exe = os.path.abspath(args.exe)
     start = os.path.dirname(exe)
-    manual = MANUAL.format(exe=exe, start=start)
+    manual = MANUAL.format(exe=exe, start=start) + (MANUAL_SOTA.format(name=SOTA_NAME, options=args.sota_launch_options) if args.sota else "")
     if not args.remove and not os.path.exists(exe):
         print(f"add-to-steam: {exe} is not there (run this from an unpacked Pentamoor folder, or give --exe).", file=sys.stderr)
         return 1
@@ -366,17 +395,22 @@ def main(argv=None):
     if os.path.exists(path):
         with open(path, "rb") as f:
             data = f.read()
+    # what to add: the first game's shortcut and, with --sota, the second one
+    wanted = [] if args.remove else [(APP_NAME, args.launch_options)] + ([(SOTA_NAME, args.sota_launch_options)] if args.sota else [])
+    new = data
+    said = []
     try:
         if args.remove:
-            new, n = remove_shortcuts(data, exe) if data else (data, 0)
-            what = f"removed {n} shortcut(s)" if n else "no Pentamoor shortcut was there"
-        else:
-            new, status = add_shortcut(data, exe, start, args.launch_options)
-            what = "Pentamoor is in " + path if status == "added" else "Pentamoor is already in " + path
+            new, n = remove_shortcuts(data, exe, SOTA_NAME if args.sota else None) if data else (data, 0)
+            said.append(f"removed {n} shortcut(s)" if n else ("no Spells of the Ancients shortcut was there" if args.sota else "no Pentamoor shortcut was there"))
+        for name, options in wanted:
+            new, status = add_shortcut(new, exe, start, options, name)
+            said.append(f"{name} is in {path}" if status == "added" else f"{name} is already in {path}")
     except VdfError as e:
         print(f"add-to-steam: {path}: {e}; not touching it.", file=sys.stderr)
         print(manual)
         return 1
+    what = "; ".join(said)
     if args.dry_run:
         print(f"dry run: {what} (user {uid}); {len(data)} -> {len(new)} bytes")
     elif new != data:
@@ -396,8 +430,14 @@ def main(argv=None):
             print("Start Steam again to see it (on a Steam Deck: switch to Gaming Mode). It is in the Library under All Games, tagged Pentamoor.")
     else:
         print(what)
+    if not args.remove and not args.dry_run:
+        grid = os.path.join(udir, "config", "grid")
+        for name, _options in wanted:
+            print(f"pictures of your own for {name} (none are shipped): in {grid}, named " + ", ".join(artwork_names(expected_appid(exe, name))))
     if args.desktop_entry and not args.remove and not args.dry_run:
         print("menu entry: " + write_desktop_entry(exe, start))
+        if args.sota:
+            print("menu entry: " + write_desktop_entry(exe, start, sota=True))
     if args.controller_template and not args.remove and not args.dry_run:
         try:
             print("controller layout: " + install_template(steam_root) + "\n  Steam > Controller settings > Browse Configs > Templates: 'Pentamoor' (docs/notes/steamdeck.md says what is and is not verified)")

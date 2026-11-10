@@ -12,7 +12,7 @@ The archive pentamoor-<version>-<platform>.zip (Windows) or .tar.gz (platform: w
     pentamoor-run[.exe]            the runtime (no game-derived code in it)
     pentamoor, pentamoor-install   the launchers (Windows: pentamoor.bat, pentamoor-install.bat)
     SDL2.dll, python/              Windows: the SDL2 library and the embeddable Python that runs the installer (--lib, --embed-python)
-    tools/steamdeck, Install Pentamoor.desktop, Add Pentamoor to Steam.desktop     the "steamdeck" archive only: the installer with windows, the Steam shortcut, the controller layout
+    tools/steamdeck, Install Pentamoor.desktop, Install Spells of the Ancients.desktop, Add Pentamoor to Steam.desktop     the "steamdeck" archive only: the installer with windows, the Steam shortcut, the controller layout
     tools/install, tools/lift      the installer and the lifter (Python; it finds the game's functions in the game's own code), tools/pydeps: pefile and capstone for this platform
     tools/local/ziglang            Windows: the Zig compiler, so the game modules can be built on a machine with none (--bundle-zig)
     src/native, src/port           the headers and the glue files a game module is compiled with, and the stub module of --self-test
