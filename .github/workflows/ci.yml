@@ -105,6 +105,13 @@ jobs:
     with:
       version: 0.0.0-ci.${{ github.run_number }}
 
+  # The archives from the run above, downloaded onto fresh runners (Windows 2025 and 2022, Ubuntu 22.04 and the latest, macOS arm64 and Intel), unpacked as a user does and tried with no game file:
+  # checksums, the archive's own Python and compiler, the runtime with a stub module and a made-up program, the installer on made-up discs, the launchers (archive-smoke.yml).
+  smoke:
+    name: archive smoke test
+    needs: package
+    uses: ./.github/workflows/archive-smoke.yml
+
   # The runtime on Windows: MSYS2's MinGW-w64 (gcc, winpthreads, SDL2 from pacman). The same Makefile, the same unit tests; nothing is run on the game's own files
   # (there are none here), but the stub game module is built as a DLL and loaded by the .exe, and its lifted-style functions run in the unit tests.
   windows:
