@@ -1,6 +1,6 @@
 # Continuous integration
 
-`.github/workflows/ci.yml` runs on every push and pull request. It needs none of the game's files, so it runs the same on a fork. It has three job definitions, which make six jobs in a run: `test` (a matrix of `ubuntu-latest` and `macos-latest`: two jobs), `package` (the release archives: three jobs, below) and `windows`; the badge in the README is for the whole workflow. *(The list of steps was rewritten in the documentation audit of 2026-10; the older one had missed several.)*
+`.github/workflows/ci.yml` runs on every push and pull request. It needs none of the game's files, so it runs the same on a fork. It has four job definitions, which make thirteen jobs in a run: `test` (a matrix of `ubuntu-latest` and `macos-latest`: two jobs), `package` (the release archives: three jobs, below), `smoke` (those archives tried on fresh runners: seven jobs, see "The archives on fresh runners") and `windows`; the badge in the README is for the whole workflow. *(The list of steps was rewritten in the documentation audit of 2026-10; the older one had missed several.)*
 The `test` job's steps:
 
 1. SDL2 (`libsdl2-dev` / `brew install sdl2`), Python 3 with `pefile capstone pytest` (pip cached, list in `.github/requirements-ci.txt`).
@@ -29,7 +29,7 @@ The `windows` job runs on `windows-latest` in an MSYS2 MINGW64 shell (`msys2/set
 It runs `make -C src/port test` (the same unit tests as the other systems plus `test_module`, which loads the stub game module as a DLL and runs lifted-style functions in it),
 `check-front`, `all` (the runtime as `pentamoor-run.exe` with no generated sources), `check-module`, `check-run`, `check-program` (a PE made on the spot by `stubgame/mkpe.c` runs through the loader, the imports and the file layer, with the stub module's lifted-style entry point; it is in no build profile, so it runs with `PORT_UNKNOWN_BUILD=1`), `check-build` (and without the switch the runtime refuses it, exit status 3, and refuses a file that is not the one the module was made from), and lists the DLLs the `.exe` and the module import
 (`objdump -p`; with the winpthreads linked statically it is Windows' own and `SDL2.dll`). The installer's Python tests run there too, with a native Windows Python (`actions/setup-python`, `python -m pytest tools/install`: the compiler choice, the module build commands, Zig's download, the archive layout; the shell launcher's test skips). The lifter's, `tools/release`'s, `tools/ios`' and `tools/steamdeck`'s tests are not run there.
-`check-run`, `check-program` and `check-build` also run in the Linux and macOS jobs.
+`check-run`, `check-program` and `check-build` also run in the Linux and macOS jobs. `test_process` starts a program for real on Windows too (the test program stands in for the runtime and is started with `CreateProcessA` from `plat_win.c`, in a folder with a space in its name): that is what found that a second child started after a first had ended got the first one's id (below).
 
 The logs of a run are shown only to someone signed in to GitHub. The Windows steps go through `.github/ci-run.sh`, which copies the error lines of a failing step (and, with
 `CI_NOTICE=1`, the tail of every step) into annotations, which the API gives to anyone: `gh api repos/OWNER/REPO/check-runs/JOB_ID/annotations`. Handy when iterating from a machine
@@ -61,12 +61,12 @@ calls it before `publish`, which `needs` it) downloads each archive of the run w
 
 | Runner | Archive | Why this runner |
 |---|---|---|
-| `windows-latest` (Windows Server 2025) | windows-x86_64 | |
+| `windows-latest` (Windows Server 2025, 10.0.26100) | windows-x86_64 | |
 | `windows-2022` | windows-x86_64 | the nearest the hosted runners come to Windows 10 |
 | `ubuntu-22.04` | linux-x86_64 | the glibc the runtime was built against |
-| `ubuntu-latest` (24.04) | linux-x86_64, and steamdeck | a newer system |
+| `ubuntu-latest` (Ubuntu 26.04 since the label moved in October 2026; 24.04 before) | linux-x86_64, and steamdeck | a newer system |
 | `macos-latest` (macOS 26, arm64) | macos-universal | the arm64 half |
-| `macos-15-intel` | macos-universal | the **x86-64 half**, run natively for the first time. (`macos-13`, the old Intel label, is retired; `macos-26-intel` exists as well and `macos-14` is deprecated. GitHub offers no Windows 10, no Linux arm64 archive is built, and no Intel runner older than macOS 15.) |
+| `macos-15-intel` | macos-universal | the **x86-64 half**, run natively for the first time. (`macos-13`, the old Intel label, is retired; `macos-26-intel` exists as well and `macos-14` is deprecated. GitHub offers no Windows 10 and no Intel runner older than macOS 15; there are arm64 Linux and Windows runners too, but no archive is built for them.) |
 
 Each job unpacks the archive with the system's `tar` (Windows: `tar.exe` for the `.zip`) into `.../Alice Smith/Downloads/` (a space in the path, as a user's folder may have), then `smoke_archive.py` prints one line per thing it tries,
 `[smoke] ok   <what>` or `[smoke] FAIL <what>: <why>` (a failure is also an annotation, and the lines go to the job summary), and the exit status is 1 if any failed. What it tries:
@@ -85,13 +85,22 @@ Each job unpacks the archive with the system's `tar` (Windows: `tar.exe` for the
   (`smoke_inside.py install`): the table of known builds holds the made-up files' hashes instead of the retail disc's, and the lifter's step is skipped (the made-up programs are not PE files; the "lifted C" it compiles is the stub module's own, three times). Everything else is the installer's:
   reading the ISO, unpacking, copying the media, the check of the programs, the compiler choice, compiling and linking `game_magic`, `game_deck` and `game_duel`, loading each in the runtime; run again, it must say the game is installed.
 * **launchers**: `./pentamoor` / `pentamoor.bat` with no game installed and no terminal print the documented message and exit 1 (also `sota`); on Windows through `cmd.exe`, and again in a folder named `Program Files (x86)\Pentamoor Smoke` (only the files the launcher needs are copied there);
-  after the made-up install the launcher starts the runtime, which refuses the made-up `MAGIC.EXE` (exit 3). On a Linux runner without SDL2 (the job runs before SDL2 is installed, as a new user's system may be) the runtime's failure is the loader's line and `./pentamoor` says how to install SDL2; the job then installs `libsdl2-2.0-0`, as `README.txt` says.
+  (on Windows a NUL standard input counts as a terminal, so the installer asks for the disc, reads the end of input and says "cancelled" rather than "no disc image given"; both are accepted) after the made-up install the launcher starts the runtime, which refuses the made-up `MAGIC.EXE` (exit 3). On a Linux runner without SDL2 (the job runs before SDL2 is installed, as a new user's system may be) the runtime's failure is the loader's line and `./pentamoor` says how to install SDL2; the job then installs `libsdl2-2.0-0`, as `README.txt` says.
 * **steamdeck**: `check_archive.check_steamdeck` on the Steam Deck archive.
 
 What this still does not cover: the game (every check above is the stub module and a made-up disc); the lifter on a real PE (only on hand-assembled functions); the Zig download; the real disc's fingerprint; a process-spawn round trip *through the runtime binary*
 (the runtime starts another program only for a program the active build's profile names, and the stub is an unknown build, so it cannot; `src/port/test_process.c` does the round trip with the test program standing in for the runtime, and runs on Windows too since this smoke test was added); a real
 display and sound device (SDL's dummy drivers); Windows 10 itself, an Apple-silicon Mac without Rosetta running the x86-64 half, and Linux distributions other than Ubuntu; code signing and Gatekeeper/SmartScreen.
 
+
+### What the smoke test found
+
+* **Windows: a second program started by a program of the game was taken for the first** (`src/port/plat_win.c`). A child's id was its slot in a table of 64 handles plus one, so the second child started after the first had ended got id 1 again, `process.c` found its record of the first (already done, with the first's exit code) and
+  answered "ended, exit code 7" at once, without waiting and without reading back the named memory the child leaves. On POSIX the id is the process id, which is not reused. Only Spells of the Ancients starts programs (Shandalar starting FaceMaker twice in a session would have hit it). Found when `test_process`
+  was made to run on Windows; the ids now count up.
+* The first run of the smoke test on every system also showed what the earlier checks could not: the Linux runtime starts on Ubuntu 22.04 and the newest Ubuntu, and a Linux runner without SDL2 gets the loader's line from the runtime and the documented message from `./pentamoor` (the runners have no libsdl2 until the job installs it);
+  the x86-64 half of the macOS binary runs on an Intel Mac (macOS 15) and loads a module built there; the Windows archive unpacks with `tar.exe` (19,700 files; the longest path is 108 characters inside the archive, 177 in a typical Downloads folder), its embedded Python runs the installer with a PATH of only Windows' folders, the bundled Zig builds and
+  links the stub module, `SDL2.dll` loads, and `pentamoor.bat` and `pentamoor-install.bat` work from a folder named `Program Files (x86)`.
 
 ## Badge
 

@@ -387,10 +387,10 @@ def main():
             s.guarded("compiler", s.compiler_checks)
             s.guarded("runtime", s.runtime_checks)
             s.guarded("launcher", s.launcher_checks_empty)
+            s.guarded("steamdeck", s.steamdeck_checks)                   # (before the installer: its window installer says "already installed" afterwards)
             s.guarded("installer", smoke_install.installer_phase, s)
             if os.path.exists(os.path.join(s.root, "game_magic." + s.module_ext)):
                 s.guarded("launcher", s.launcher_checks_installed)
-            s.guarded("steamdeck", s.steamdeck_checks)
     failed = [r for r in s.results if not r[1]]
     print(f"\n[smoke] {len(s.results) - len(failed)} of {len(s.results)} checks passed in {time.time() - t0:.0f} s")
     for name, ok, detail in failed:
