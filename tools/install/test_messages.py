@@ -224,7 +224,7 @@ def release_folder(tmp_path):
     import install
     root = tmp_path / "rel"
     (root / "tools").mkdir(parents=True)
-    (root / "pentamoor-run").write_bytes(b"\xcf\xfa\xed\xfe")
+    (root / ("pentamoor-run" + install.EXE)).write_bytes(b"\xcf\xfa\xed\xfe")             # (pentamoor-run.exe on Windows, where this test runs with the platform faked)
     return install.Layout(str(root))
 
 
