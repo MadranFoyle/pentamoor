@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "iosboot.h"
+#include "nav.h"
 #include "touch.h"
 
 static int failures, checks;
@@ -293,6 +294,63 @@ static void test_boot(void)
     CHECK(strlen(text) < sizeof(text) - 1);
 }
 
+/* Fingers on the small controls of a page (the Magic Shell's spin buttons are 12 x 14 pixels): what touch.c makes of a gesture goes through nav_snap_track as front.c does it, so a tap near an
+ * arrow lands on the arrow with the press and the release in one place, and a long press (right click) is moved the same way. The "page" has the arrows of one spin button, an edit box beside them
+ * and a check box; the reach is 14 pixels. */
+static const char *snapped(Touch *t, NavSnap *s, const NavTarget *tg, int ntg)
+{
+    static char buf[256];
+    TouchAction a;
+    size_t n = 0;
+
+    buf[0] = 0;
+    while (touch_next(t, &a)) {
+        int ev = a.kind == TA_LDOWN || a.kind == TA_RDOWN ? 1 : a.kind == TA_LUP || a.kind == TA_RUP ? -1 : 0, sx = 0, sy = 0, sn = 0, x, y;
+        const char c = a.kind == TA_MOVE ? 'M' : a.kind == TA_LDOWN ? 'D' : a.kind == TA_LUP ? 'U' : a.kind == TA_RDOWN ? 'r' : 'R';
+
+        if (ev == 1 || (ev == 0 && !s->active))
+            sn = nav_snap(tg, ntg, a.x, a.y, 14, &sx, &sy);
+        nav_snap_track(s, ev, a.x, a.y, sn, sx, sy, &x, &y);
+        n += (size_t)snprintf(buf + n, sizeof(buf) - n, "%s%c%d,%d", n ? " " : "", c, x, y);
+    }
+    return buf;
+}
+
+static void test_snap_on_controls(void)
+{
+    NavTarget tg[4];
+    Touch t;
+    NavSnap s;
+
+    memset(tg, 0, sizeof(tg));
+    tg[0].x0 = 299; tg[0].y0 = 461; tg[0].x1 = 333; tg[0].y1 = 489;      /* the edit box */
+    tg[1].x0 = 333; tg[1].y0 = 461; tg[1].x1 = 345; tg[1].y1 = 475;      /* the spin's up arrow */
+    tg[2].x0 = 333; tg[2].y0 = 475; tg[2].x1 = 345; tg[2].y1 = 489;      /* its down arrow */
+    tg[3].x0 = 237; tg[3].y0 = 430; tg[3].x1 = 293; tg[3].y1 = 444;      /* the check box */
+    memset(&s, 0, sizeof(s));
+    touch_init(&t);
+    touch_down(&t, 1, 353, 468, 1000);                                   /* a finger 8 pixels right of the up arrow */
+    CHECK(!strcmp(snapped(&t, &s, tg, 4), "M338,467"));                  /* the hover is on the arrow */
+    touch_up(&t, 1, 354, 469, 1100);
+    CHECK(!strcmp(snapped(&t, &s, tg, 4), "M338,467 D338,467 U338,467"));   /* a tap: the click is on the arrow, and the lift (a pixel away) is the press's place */
+    touch_down(&t, 1, 340, 492, 5000);                                   /* under the down arrow */
+    snapped(&t, &s, tg, 4);
+    touch_tick(&t, 5000 + TOUCH_LONG_MS);
+    CHECK(!strcmp(snapped(&t, &s, tg, 4), "r338,481 R338,481"));        /* a long press is a right click on the arrow's middle */
+    touch_up(&t, 1, 340, 492, 5700);
+    CHECK(!strcmp(snapped(&t, &s, tg, 4), ""));
+    touch_down(&t, 1, 500, 300, 8000);                                   /* nowhere near anything: as it is */
+    snapped(&t, &s, tg, 4);
+    touch_up(&t, 1, 500, 300, 8050);
+    CHECK(!strcmp(snapped(&t, &s, tg, 4), "M500,300 D500,300 U500,300"));
+    touch_down(&t, 1, 340, 492, 9000);                                   /* a drag starting near an arrow: the press is on the arrow, the moves keep the offset */
+    snapped(&t, &s, tg, 4);
+    touch_move(&t, 1, 340, 520, 9050);
+    CHECK(!strcmp(snapped(&t, &s, tg, 4), "D338,481 M338,509"));
+    touch_up(&t, 1, 340, 520, 9100);
+    CHECK(!strcmp(snapped(&t, &s, tg, 4), "M338,509 U338,509"));
+}
+
 int main(void)
 {
     test_tap();
@@ -301,6 +359,7 @@ int main(void)
     test_two_finger_tap();
     test_hold_press();
     test_odd_orders();
+    test_snap_on_controls();
     test_boot();
     printf("test_touch: %d checks, %d failed\n", checks, failures);
     return failures != 0;

@@ -12,12 +12,21 @@
 #include "wm.h"
 
 /* what is navigated now: the first that applies */
-enum { NAVWM_NONE, NAVWM_MENU, NAVWM_COMBO, NAVWM_DIALOG, NAVWM_DUEL, NAVWM_DECK, NAVWM_SCREEN };
+enum { NAVWM_NONE, NAVWM_MENU, NAVWM_COMBO, NAVWM_DIALOG, NAVWM_DUEL, NAVWM_DECK, NAVWM_SCREEN, NAVWM_PAGE };
 
 /* Cheap and always safe to ask: a popup menu is open, a combo box's list is down, a dialog is open, a duel is on the screen (its window, MAGICGAME_MainClass, is shown), the deck builder is (MAGICDECK_MainClass), or a screen the game
  * draws itself is on that has buttons or choices to move between (screens.c: the title menus, the village, the encounter box ...). */
 int navwm_mode(void);
 const char *navwm_mode_name(int mode);            /* "none", "menu", "combo", "dialog", "duel", "deck", "screen" (the log and `nav` print it) */
+/* "page": the program's main window has standard controls shown on it (no modal dialog, duel or deck builder): the Magic Shell of Spells of the Ancients (docs/notes/controller-screens.md). Its targets are
+ * the controls, the two halves of each spin button, and the rectangles the program tests a click against (wm_hotspots). */
+/* Once a frame, on the guest side: do what a mode needs before the first press (a page asks its window once where its own buttons are). */
+void navwm_tick(void);
+/* Touch: where a tap near a control should land. In a page, a dialog or a list that is down, a point on a small control (a spin button's arrow, a check box, a list row: under NAV_SMALL pixels on its short
+ * side) or within `slop` pixels of one, or of any control when it is on none, goes to that control: *sx, *sy is where to put it, and the return is 1; 0 when the point stays where it is. */
+int navwm_snap(int x, int y, int slop, int *sx, int *sy);
+/* The D-pad's B in a dialog: 1 when it would close the dialog (it has an enabled Cancel button, id 2, and does not read Escape itself): the pad then sends Escape for B. */
+int navwm_cancel_ready(void);
 /* The targets of the current mode, sorted top to bottom and left to right; returns how many (0 in NAVWM_NONE). *cur: the one under (x, y), or -1. */
 int navwm_collect(NavTarget *out, int max, int x, int y, int *cur);
 /* The D-pad pressed with the pointer at (x, y): nav_pick over navwm_collect. Returns the index of the target chosen (its pointer place in *tx, *ty), NAV_NONE or NAV_SCROLL. */

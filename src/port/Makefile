@@ -219,9 +219,9 @@ $(BUILD)/test_regstore$(EXE): test_regstore.c regstore.c regstore.h test_util.h 
 	$(CC) $(CFLAGS) $(WINFLAGS) -iquote . -o $@ test_regstore.c regstore.c $(PLAT) $(PTHREAD_LIBS) $(WINLIBS)
 
 # Fingers as a mouse, and the iOS app's start-up decisions: pure (touch.c, iosboot.c).
-$(BUILD)/test_touch$(EXE): test_touch.c touch.c touch.h iosboot.c iosboot.h
+$(BUILD)/test_touch$(EXE): test_touch.c touch.c touch.h iosboot.c iosboot.h nav.c nav.h
 	mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) $(WINFLAGS) -iquote . -o $@ test_touch.c touch.c iosboot.c $(WINLIBS)
+	$(CC) $(CFLAGS) $(WINFLAGS) -iquote . -o $@ test_touch.c touch.c iosboot.c nav.c $(WINLIBS)
 
 # The Windows and C runtime calls Spells of the Ancients adds (winsys.c, crt.c, filedlg.c), and the process model (process.c) run against the test program itself as the "runtime".
 $(BUILD)/test_win32$(EXE): test_win32.c $(TEST_DEPS)

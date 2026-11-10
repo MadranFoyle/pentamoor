@@ -819,8 +819,24 @@ static uint32_t putwide(uint32_t at, const char *s) { do { at = put16(at, (uint8
 
 static int keydlg;      /* 1: the dialog under test has no OK or Cancel but a push button: Enter reaches it as a character. 2: nothing at all that could take Enter (the "You won!" screen): the dialog gets IDOK as a command, Space is the character that closes it */
 
+static int cancel_seen = -1;
+
 static uint32_t dlgproc(const uint32_t *a)
 {
+    if (keydlg == 3) {                             /* a dialog with an OK and a Cancel button: the pad's B is Escape there (navwm_cancel_ready), and Escape is the Cancel button */
+        if (a[1] == WM_INITDIALOG) {
+            cancel_seen = navwm_cancel_ready();
+            wm_inject_key(0x1B, 0x01, 1, 0x1B, 0);
+            return 1;
+        }
+        if (a[1] == WM_COMMAND) {
+            note("COMMAND(%u) ", a[2]);
+            if (a[2] == 2)
+                API("EndDialog", a[0], 9);
+            return 1;
+        }
+        return 0;
+    }
     if (keydlg) {
         if (a[1] == WM_INITDIALOG) {
             wm_inject_key(0x0D, 0x1C, 1, 0x0D, 0);
@@ -868,6 +884,7 @@ static uint32_t dlgproc(const uint32_t *a)
                 found += nt[i].id == ok->hwnd && nt[i].kind == NAVK_BUTTON && nt[i].x0 == ox0 && nt[i].y0 == oy0 && nt[i].x1 == ox1 && nt[i].y1 == oy1;
             CHECK(found == 1);
         }
+        CHECK(navwm_cancel_ready() == 0);          /* its control 2 is a list box, not a Cancel button */
         wm_press_dialog_button(1);
         return 1;
     }
@@ -1905,6 +1922,28 @@ static void test_dialog(void)
     r = API("DialogBoxParamA", 0x400000, 103, 0, port_host_function(dlgproc), 0);
     keydlg = 0;
     CHECK(r == 7 && strstr(log_, "COMMAND(1) ") != NULL && strstr(log_, "CHAR(13)") == NULL && strstr(log_, "CHAR(32)") != NULL);
+
+    /* a dialog with an OK and a Cancel button: the pad's B is Escape while it is open (navwm_cancel_ready); Escape is the Cancel button's command */
+    t = scratch(160); o = t;
+    o = put32(o, 0x80C80000u); o = put32(o, 0); o = put16(o, 2);
+    o = put16(o, 5); o = put16(o, 5); o = put16(o, 100); o = put16(o, 80);
+    o = put16(o, 0); o = put16(o, 0); o = putwide(o, "Ask");
+    o = (o + 3) & ~3u;
+    o = put32(o, WS_CHILD | WS_VISIBLE | WS_TABSTOP); o = put32(o, 0);
+    o = put16(o, 10); o = put16(o, 20); o = put16(o, 30); o = put16(o, 12); o = put16(o, 1);
+    o = put16(o, 0xFFFF); o = put16(o, 0x0080); o = putwide(o, "OK"); o = put16(o, 0);
+    o = (o + 3) & ~3u;
+    o = put32(o, WS_CHILD | WS_VISIBLE | WS_TABSTOP); o = put32(o, 0);
+    o = put16(o, 50); o = put16(o, 20); o = put16(o, 30); o = put16(o, 12); o = put16(o, 2);
+    o = put16(o, 0xFFFF); o = put16(o, 0x0080); o = putwide(o, "Cancel"); o = put16(o, 0);
+    dlg_template = t;
+    dlg_size = o - t;
+    keydlg = 3;
+    cancel_seen = -1;
+    log_clear();
+    r = API("DialogBoxParamA", 0x400000, 104, 0, port_host_function(dlgproc), 0);
+    keydlg = 0;
+    CHECK(r == 9 && cancel_seen == 1 && strstr(log_, "COMMAND(2) ") != NULL && navwm_cancel_ready() == 0);
 }
 
 
@@ -3129,6 +3168,171 @@ static void test_navwm_deck(void)
     screen_w = sw; screen_h = sh;
 }
 
+/* The D-pad's targets on a page of an ordinary window (navwm.c, mode "page"): the Magic Shell of Spells of the Ancients is one window with standard controls on it and five round buttons it draws and
+ * tests itself. Laid out as the shell's Duel page at 800x600, with the window layer's own copy of what the shell asks (PtInRect, in its handler of the left button). */
+static int shell_probes;                                       /* the presses the "shell" handled */
+static uint32_t site_sp;                                       /* a guest stack to put "where in the program asked" on */
+
+static void ask(uint32_t site, int l, int t, int r, int b, int x, int y)
+{
+    uint32_t rc = scratch(16);
+
+    WR32(rc, (uint32_t)l); WR32(rc + 4, (uint32_t)t); WR32(rc + 8, (uint32_t)r); WR32(rc + 12, (uint32_t)b);
+    WR32(site_sp, site);
+    port_sp = site_sp;
+    API("PtInRect", rc, (uint32_t)x, (uint32_t)y);
+}
+
+static uint32_t shellproc(const uint32_t *a)
+{
+    if (a[1] == WM_LBUTTONDOWN) {
+        static const int ball[5][4] = {{67, 44, 175, 152}, {33, 146, 141, 254}, {23, 252, 131, 360}, {35, 362, 143, 470}, {72, 465, 180, 573}};
+        int x = (int16_t)(a[3] & 0xFFFF), y = (int16_t)(a[3] >> 16), k;
+
+        shell_probes++;
+        for (k = 0; k < 5; k++)                                /* the five balls: one place asks about each */
+            ask(0x48a726, ball[k][0], ball[k][1], ball[k][2], ball[k][3], x, y);
+        for (k = 0; k < 5; k++)
+            if (x >= ball[k][0] && x < ball[k][2] && y >= ball[k][1] && y < ball[k][3])
+                return 0;                                      /* a press on a ball is answered there */
+        ask(0x48a857, 721, 3, 742, 23, x, y);                  /* what a press that hit no ball goes on to ask: the window's own caption buttons and a hidden region, each from a place of its own */
+        ask(0x48a893, 745, 3, 767, 23, x, y);
+        ask(0x48a918, 236, 385, 653, 437, x, y);
+        ask(0x48a918, 100, 385, 200, 437, x - 1, y);             /* not the press's point: never taken */
+    }
+    return a[1] == WM_NCCREATE;
+}
+
+static void pump_all(void)
+{
+    uint32_t m = scratch(28);
+    int i;
+
+    for (i = 0; i < 200 && API("PeekMessageA", m, 0, 0, 0, 1); i++)
+        API("DispatchMessageA", m);
+}
+
+static void test_navwm_page(void)
+{
+    uint32_t top, solo, gaunt, hidden_btn, combo, ante, group, radio, radio_off, spin, edit, start, label;
+    NavTarget nt[NAV_MAXTARGETS];
+    int sw = screen_w, sh = screen_h, n, cur, i, found, tx = 0, ty = 0, sx = 0, sy = 0;
+    Window *root;
+
+    screen_w = 800; screen_h = 600;
+    site_sp = scratch(16);
+    for (i = wm_window_count() - 1; i >= 0; i--) {                                                  /* the main window is the first top-level one that is shown: windows of the tests before go */
+        Window *w = wm_window_at_index(i);
+
+        if (w && w->visible && !(w->style & WS_CHILD) && w->proc)
+            API("DestroyWindow", w->hwnd);
+    }
+    CHECK(wm_main_hwnd() == 0);
+    register_class("ShellClass", port_host_function(shellproc), 0, 0);
+    top = create("ShellClass", WS_VISIBLE | WS_POPUP, 0, 0, 800, 600, 0, 0);
+    root = wm_window(top);
+        /* the title page: the page buttons exist and are hidden, nothing else is shown */
+    solo = create("BUTTON", WS_CHILD | 0xB, 242, 66, 107, 26, top, 100);
+    gaunt = create("BUTTON", WS_CHILD | 0xB, 242, 92, 100, 26, top, 101);
+    API("SetWindowLongA", solo, (uint32_t)-4, port_host_function(ignorepaint));              /* the shell subclasses its owner-draw buttons */
+    API("SetWindowLongA", gaunt, (uint32_t)-4, port_host_function(ignorepaint));
+    CHECK(navwm_mode() == NAVWM_NONE && navwm_collect(nt, NAV_MAXTARGETS, 0, 0, &cur) == 0);           /* nothing is known to be there: the D-pad stays the arrow keys */
+    navwm_tick();                                                                                 /* a frame passes: the window is asked where its own buttons are, once */
+    CHECK(root->spot_probed == 1 && shell_probes == 0);
+    pump_all();
+    CHECK(shell_probes == 1 && root->nspot == 8);                                                  /* the five balls, the two caption buttons and the region: all asked about, from three places' worth */
+    navwm_tick();
+    pump_all();
+    CHECK(shell_probes == 1);                                                                     /* once */
+    CHECK(navwm_mode() == NAVWM_PAGE);
+    n = navwm_collect(nt, NAV_MAXTARGETS, 0, 0, &cur);
+    CHECK(n == 5 && cur == -1);                                                                    /* the place that asked about the most: the five balls, not the odd ones */
+    for (i = 0; i < n; i++)
+        CHECK(nt[i].kind == NAVK_BUTTON && nt[i].id == 0 && nt[i].x1 - nt[i].x0 == 108 && nt[i].y1 - nt[i].y0 == 108);
+    CHECK(nt[0].x0 == 67 + 1 - 1 + 0 && nt[0].y0 == 44);                                          /* the window's client origin is its corner: the rectangles as the shell gave them */
+    /* the pointer on the middle of the screen: left goes to the nearest ball of the beam (the World ball level with it), the rest are reached one after the other */
+    CHECK(navwm_pick(400, 300, NAV_LEFT, &tx, &ty) >= 0 && tx >= 23 && tx < 131 && ty >= 252 && ty < 360);
+    CHECK(navwm_pick(tx, ty, NAV_DOWN, &tx, &ty) >= 0 && ty >= 362 && ty < 470);                  /* down the left column: Help, then Player, then nothing */
+    CHECK(navwm_pick(tx, ty, NAV_DOWN, &tx, &ty) >= 0 && ty >= 465 && navwm_pick(tx, ty, NAV_DOWN, &tx, &ty) == NAV_NONE);
+    /* a click in the middle of a ball is a press the shell sees at that point */
+    shell_probes = 0;
+    wm_inject_mouse(IN_MOVE, 87, 98);
+    wm_inject_mouse(IN_DOWN, 87, 98);
+    wm_inject_mouse(IN_UP, 87, 98);
+    pump_all();
+    CHECK(shell_probes == 1);
+
+    /* the Duel page: standard controls on the window (the real ones are in a child dialog; here they are children of the window itself) */
+    API("ShowWindow", solo, 1);
+    API("ShowWindow", gaunt, 1);
+    hidden_btn = create("BUTTON", WS_CHILD | 0xB, 242, 118, 100, 26, top, 102);                       /* hidden: a button of another page */
+    label = create("STATIC", WS_CHILD | WS_VISIBLE, 216, 235, 70, 16, top, 110);
+    combo = create("COMBOBOX", WS_CHILD | WS_VISIBLE | 3, 305, 279, 430, 150, top, 111);          /* CBS_DROPDOWNLIST, the list's height: 150 */
+    group = create("BUTTON", WS_CHILD | WS_VISIBLE | 7, 216, 402, 173, 123, top, 112);
+    ante = create("BUTTON", WS_CHILD | WS_VISIBLE | 3, 237, 430, 56, 14, top, 113);               /* a check box */
+    radio = create("BUTTON", WS_CHILD | WS_VISIBLE | 9, 431, 430, 189, 14, top, 114);
+    radio_off = create("BUTTON", WS_CHILD | WS_VISIBLE | 9, 431, 453, 189, 14, top, 115);
+    edit = create("EDIT", WS_CHILD | WS_VISIBLE | 0x2000, 299, 461, 34, 28, top, 116);
+    spin = create("msctls_updown32", WS_CHILD | WS_VISIBLE | 0x36, 333, 461, 12, 28, top, 117);
+    start = create("BUTTON", WS_CHILD | WS_VISIBLE | 0xB, 628, 497, 107, 28, top, 118);
+    API("EnableWindow", radio_off, 0);
+    API("SetWindowLongA", start, (uint32_t)-4, port_host_function(ignorepaint));
+    CHECK(wm_window(hidden_btn)->visible == 0);
+    n = navwm_collect(nt, NAV_MAXTARGETS, 0, 0, &cur);
+    /* 5 balls, 2 page buttons, the combo's closed box, the check box, one radio (the other is disabled), the edit box, the spin's two halves, Start: 14; no group box, no label, no hidden button */
+    CHECK(navwm_mode() == NAVWM_PAGE && n == 14);
+    CHECK(nav_index(nt, n, group, 0) < 0 && nav_index(nt, n, label, 0) < 0 && nav_index(nt, n, hidden_btn, 0) < 0 && nav_index(nt, n, radio_off, 0) < 0);
+    i = nav_index(nt, n, combo, 0);
+    CHECK(i >= 0 && nt[i].kind == NAVK_FIELD && nt[i].y1 - nt[i].y0 == COMBO_CLOSED_H);            /* the closed box, not the list's height */
+    CHECK(nav_index(nt, n, ante, 0) >= 0 && nav_index(nt, n, radio, 0) >= 0 && nav_index(nt, n, edit, 0) >= 0 && nt[nav_index(nt, n, edit, 0)].kind == NAVK_FIELD);
+    CHECK(nav_index(nt, n, start, 0) >= 0 && nt[nav_index(nt, n, start, 0)].kind == NAVK_BUTTON && nav_index(nt, n, solo, 0) >= 0 && nav_index(nt, n, gaunt, 0) >= 0);
+    i = nav_index(nt, n, spin, 0);
+    found = nav_index(nt, n, spin, 1);
+    CHECK(i >= 0 && found >= 0 && nt[i].x0 == 333 && nt[i].x1 == 345 && nt[i].y0 == 461 && nt[i].y1 == 475 && nt[found].y0 == 475 && nt[found].y1 == 489);     /* the arrows: the upper half and the lower half */
+    CHECK(!strcmp(nt[i].label, "spin up") && !strcmp(nt[found].label, "spin down"));
+    /* down from the edit box's right: the up arrow, then the down arrow, then on to Start; and the arrows count */
+    {
+        int ex = (nt[nav_index(nt, n, edit, 0)].x0 + nt[nav_index(nt, n, edit, 0)].x1) / 2, ey = (nt[nav_index(nt, n, edit, 0)].y0 + nt[nav_index(nt, n, edit, 0)].y1) / 2;
+
+        CHECK(navwm_pick(ex, ey, NAV_RIGHT, &tx, &ty) >= 0 && tx >= 333 && tx < 345 && ty >= 461 && ty < 475);
+        CHECK(navwm_pick(tx, ty, NAV_DOWN, &tx, &ty) >= 0 && ty >= 475 && ty < 489 && tx >= 333 && tx < 345);
+    }
+    API("SendMessageA", spin, 0x465, 0, (1u << 16) | 5u);
+    API("SendMessageA", spin, 0x467, 0, 2);
+    wm_inject_mouse(IN_MOVE, 339, 468);
+    wm_inject_mouse(IN_DOWN, 339, 468);
+    wm_inject_mouse(IN_UP, 339, 468);
+    CHECK(API("SendMessageA", spin, 0x468, 0, 0) == 3);                                           /* a click in the middle of the up target counts up */
+    wm_inject_mouse(IN_DOWN, 339, 482);
+    wm_inject_mouse(IN_UP, 339, 482);
+    CHECK(API("SendMessageA", spin, 0x468, 0, 0) == 2);                                           /* the down target counts down */
+    /* a click in the middle of the combo's target puts its list down: the rows are the targets of the next mode, and B (a right click) closes it */
+    API("SendMessageA", combo, 0x143, 0, cstr("one"));
+    API("SendMessageA", combo, 0x143, 0, cstr("two"));
+    i = nav_index(nt, n, combo, 0);
+    click_at((nt[i].x0 + nt[i].x1) / 2, (nt[i].y0 + nt[i].y1) / 2);
+    CHECK(wm_combo_open() == (int)combo && navwm_mode() == NAVWM_COMBO && navwm_collect(nt, NAV_MAXTARGETS, 0, 0, &cur) == 2);
+    wm_inject_mouse(IN_RDOWN, 330, 285);
+    wm_inject_mouse(IN_RUP, 330, 285);
+    CHECK(wm_combo_open() == 0 && navwm_mode() == NAVWM_PAGE);
+    /* an edit box: a click gives it the focus, and the keyboard is wanted while the pointer is on it */
+    CHECK(wm_text_focus() == 0);
+    click_at(310, 470);
+    CHECK(wm_text_focus() == 1);
+    wm_inject_mouse(IN_MOVE, 500, 300);
+    CHECK(wm_text_focus() == 0);
+    /* touch: a tap near a small control is moved onto it: the arrows of the spin (12 x 14), the check box (14 tall); a point on a big control or on nothing near stays */
+    CHECK(navwm_snap(347, 466, 10, &sx, &sy) == 1 && sx >= 333 && sx < 345 && sy >= 461 && sy < 475);          /* 2 pixels right of the up arrow */
+    CHECK(navwm_snap(340, 492, 8, &sx, &sy) == 1 && sy >= 475 && sy < 489);                                  /* just under the down arrow */
+    CHECK(navwm_snap(339, 468, 10, &sx, &sy) == 0);                                                       /* on the arrow already */
+    CHECK(navwm_snap(320, 470, 14, &sx, &sy) == 1 && sx >= 333 && sy >= 461 && sy < 475);                  /* on the edit box (a big control), 13 pixels from the arrow: the small control wins */
+    CHECK(navwm_snap(320, 470, 10, &sx, &sy) == 0);                                                       /* too far for the arrow with a small reach: the edit box has it */
+    CHECK(navwm_snap(250, 380, 10, &sx, &sy) == 0);                                                       /* nothing near */
+    API("DestroyWindow", top);
+    CHECK(navwm_mode() == NAVWM_NONE);
+    screen_w = sw; screen_h = sh;
+}
+
 /* the screens the game draws itself (screens.c): what it keeps in memory, read as the game's own tests read it */
 
 static int game_clue_row(int mx, int my, int sw, int sh, int count)
@@ -3469,6 +3673,7 @@ int main(void)
     test_auto_controls();
     test_navwm_duel();
     test_navwm_deck();
+    test_navwm_page();
     test_screens();
     test_screens_sota();
     printf("%d checks, %d failed\n", checks, failures);

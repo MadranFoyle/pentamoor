@@ -810,6 +810,43 @@ static void test_draw(void)
     free(buf);
 }
 
+/* B in a dialog that has a Cancel button is Escape (the dialog manager turns it into that button); everywhere else it is the right click it always was. The press decides: a B that went down as a
+ * key lets go as that key, whatever the dialog does meanwhile, and the other way round. */
+static void test_cancel(void)
+{
+    Pad p;
+    PadOut out;
+    const PadAct *a;
+
+    pad_init(&p, 1024, 768);
+    out.n = 0;
+    pad_button(&p, PAD_B, 1, &out);                                          /* no dialog: the right button */
+    CHECK(out.n == 1 && out.act[0].type == PA_RDOWN);
+    pad_button(&p, PAD_B, 0, &out);
+    CHECK(out.n == 2 && out.act[1].type == PA_RUP);
+    pad_set_cancel(&p, 1);
+    out.n = 0;
+    pad_button(&p, PAD_B, 1, &out);                                          /* a dialog with a Cancel: Escape goes down, no mouse button */
+    CHECK(out.n == 1 && out.act[0].type == PA_KEYDOWN && out.act[0].vk == 27 && out.act[0].sc == 0x01 && out.act[0].ch == 27 && count(&out, PA_RDOWN) == 0);
+    pad_set_cancel(&p, 0);                                                   /* the dialog closed before B came up: the key still comes up (not a stray right button up) */
+    pad_button(&p, PAD_B, 0, &out);
+    CHECK(out.n == 2 && out.act[1].type == PA_KEYUP && out.act[1].vk == 27 && count(&out, PA_RUP) == 0);
+    run(&p, 1000, 10, &out);
+    CHECK(count(&out, PA_KEYDOWN) == 1);                                     /* no repeat: Escape closes a dialog once */
+    out.n = 0;
+    pad_button(&p, PAD_B, 1, &out);                                          /* the flag went off: a right click again, and its release */
+    pad_set_cancel(&p, 1);
+    pad_button(&p, PAD_B, 0, &out);
+    CHECK(out.n == 2 && out.act[0].type == PA_RDOWN && out.act[1].type == PA_RUP);
+    a = first(&out, PA_KEYDOWN);
+    CHECK(a == NULL);
+    /* Back is still Escape, and the D-pad and A are not touched by the flag */
+    out.n = 0;
+    pad_button(&p, PAD_A, 1, &out);
+    CHECK(count(&out, PA_LDOWN) == 1);
+    pad_button(&p, PAD_A, 0, &out);
+}
+
 int main(void)
 {
     test_stick();
@@ -821,6 +858,7 @@ int main(void)
     test_freeze();
     test_back_guard();
     test_nav();
+    test_cancel();
     test_triggers_and_arrows();
     test_walk();
     test_takeover();

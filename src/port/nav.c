@@ -135,3 +135,66 @@ int nav_nearest(const NavTarget *t, int n, int x, int y, int *hx, int *hy)
     nav_point(&t[best], hx, hy);
     return best;
 }
+
+/* the distance of a point from a box (0 inside): the nearest pixel of the box, in the metric of the larger axis, and where that pixel is */
+static long box_dist(const NavTarget *t, int x, int y, int *px, int *py)
+{
+    int qx = x < t->x0 ? t->x0 : x >= t->x1 ? t->x1 - 1 : x, qy = y < t->y0 ? t->y0 : y >= t->y1 ? t->y1 - 1 : y;
+    long dx = qx - x, dy = qy - y;
+
+    *px = qx;
+    *py = qy;
+    return dx * dx + dy * dy;
+}
+
+int nav_snap(const NavTarget *t, int n, int x, int y, int slop, int *hx, int *hy)
+{
+    int i, best = -1, big = -1, px, py;
+    long best_d = 0, best_c = 0, big_d = 0, lim = (long)slop * slop;
+
+    for (i = 0; i < n; i++) {
+        long d = box_dist(&t[i], x, y, &px, &py);
+        int small = t[i].x1 - t[i].x0 < NAV_SMALL || t[i].y1 - t[i].y0 < NAV_SMALL;
+
+        if (small) {
+            long dx = 2L * x - cx2(&t[i]), dy = 2L * y - cy2(&t[i]), c = dx * dx + dy * dy;
+
+            if (d <= lim && (best < 0 || d < best_d || (d == best_d && c < best_c))) {
+                best = i;
+                best_d = d;
+                best_c = c;
+            }
+        } else if (d <= lim && (big < 0 || d < big_d)) {
+            big = i;
+            big_d = d;
+        }
+    }
+    if (best >= 0) {
+        if (best_d == 0)
+            return 0;                                           /* already on it */
+        nav_point(&t[best], hx, hy);
+        return 1;
+    }
+    if (big < 0 || big_d == 0)
+        return 0;                                               /* on a big target, or none is near */
+    box_dist(&t[big], x, y, hx, hy);
+    return 1;
+}
+
+void nav_snap_track(NavSnap *s, int ev, int x, int y, int snapped, int sx, int sy, int *ox, int *oy)
+{
+    if (ev == 1) {                                              /* a press: the offset of this touch */
+        s->active = 1;
+        s->dx = snapped ? sx - x : 0;
+        s->dy = snapped ? sy - y : 0;
+    }
+    if (s->active) {
+        *ox = x + s->dx;
+        *oy = y + s->dy;
+    } else {
+        *ox = snapped ? sx : x;
+        *oy = snapped ? sy : y;
+    }
+    if (ev == -1)
+        s->active = 0;
+}

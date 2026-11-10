@@ -51,6 +51,7 @@ typedef struct {
     struct { int phase, t; } dbl;  /* a double click in progress (PB_DCLICK): phase 0 none, 1 first press held, 2 between, 3 second press held; t the ms in this phase */
     int nav;                      /* the game has things to move between now (a duel, a dialog, a menu): the D-pad moves the pointer between them (PB_NAV) instead of pressing its arrow key */
     int frozen;                   /* the enlarged card is shown (pad_freeze): the pad sends the game nothing: no button, no key, no move */
+    int cancel;                   /* a dialog with a Cancel button is open (front_nav_cancel_ready): B is Escape (the dialog's Cancel) there, not a right click */
     int card;                     /* the pointer is on a card of a duel (front_view_ready): PB_VIEW shows it in the game's Full-size card window; else it is its key */
     struct { int on, nav, next; } dp[4];                                                      /* PB_NAV controls held: whether the press was a move (else its key is down), and the next repeat */
     struct { int holding, t; } back;  /* the Back button pressed where a tap would leave the game (pad_set_back_guard): waiting out the hold; t the ms so far */
@@ -84,6 +85,7 @@ void pad_set_nav(Pad *p, int on);
 /* Whether a card of a duel is under the pointer (front_view_ready, as of the last frame). A press of the view button (PB_VIEW: LB) uses the answer of the moment it is made: with a card it is PA_VIEW (the game's own
  * Full-size card window shows that card at once, docs/notes/controller.md); without one it is Page Up, which scrolls the lists. */
 void pad_set_card(Pad *p, int on);
+void pad_set_cancel(Pad *p, int on);              /* B is Escape while a dialog with a Cancel button is open: a right click means nothing to a dialog (called with front_nav_cancel_ready, before every event) */
 /* The enlarged card is on the screen (or not): while it is, the pad is silent. What it held is let go as if it had been unplugged (the game sees the releases, nothing else), then a button pressed,
  * a trigger, a stick pushed and the time passing do nothing; the sticks' positions are not followed either, so the cursor stays where it was. The window half uses any button of the pad to close
  * the picture (it sees the controller's events first); the pad itself never hears of that press. */

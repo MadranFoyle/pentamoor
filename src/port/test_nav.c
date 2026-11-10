@@ -363,6 +363,58 @@ static void test_nearest(void)
     CHECK(nav_nearest(l.t, l.n, 100, 50, &hx, &hy) == 0);                               /* the edge is out (x1 is exclusive): 1 pixel from a */
 }
 
+/* Touch: a tap is moved onto the control it was meant for (nav_snap), and a press and its release go to the same place (nav_snap_track). The layout is the shell's Duel page at 800x600:
+ * the "Best of" edit box with its spin button's two arrows (12 x 14 each) at the right of it, a check box 14 tall, a combo box, Start match. */
+static void test_snap(void)
+{
+    List l = {{{0}}, 0};
+    int hx = -1, hy = -1, edit, up, down, ante, combo, start;
+    NavSnap s;
+    int ox, oy;
+
+    edit = add(&l, 299, 461, 34, 28, 1, "edit");
+    up = add(&l, 333, 461, 12, 14, 1, "up");
+    down = add(&l, 333, 475, 12, 14, 1, "down");
+    ante = add(&l, 237, 430, 56, 14, 1, "ante");
+    combo = add(&l, 305, 279, 430, 21, 1, "combo");
+    start = add(&l, 628, 497, 107, 28, 1, "start");
+    (void)edit; (void)combo; (void)start;
+    CHECK(nav_snap(l.t, 0, 5, 5, 10, &hx, &hy) == 0);                                       /* nothing to land on */
+    CHECK(nav_snap(l.t, l.n, 339, 468, 10, &hx, &hy) == 0);                                  /* on the up arrow already: where it is */
+    CHECK(nav_snap(l.t, l.n, 349, 466, 10, &hx, &hy) == 1 && hx == (333 + 344) / 2 && hy == (461 + 474) / 2);   /* 4 pixels right of the up arrow: its middle (small controls take the point to their middle) */
+    CHECK(nav_snap(l.t, l.n, 339, 492, 10, &hx, &hy) == 1 && hy == (475 + 488) / 2);       /* just under the down arrow */
+    CHECK(nav_snap(l.t, l.n, 339, 475, 10, &hx, &hy) == 0);                                  /* the boundary pixel: it is the down arrow's */
+    CHECK(nav_snap(l.t, l.n, 345, 475, 10, &hx, &hy) == 1);                                  /* the first pixel right of both (x1 is exclusive): the down arrow is nearer than the up arrow (a tie goes to the nearer middle) */
+    CHECK(nav_snap(l.t, l.n, 345, 481, 10, &hx, &hy) == 1 && hy == (475 + 488) / 2);
+    CHECK(nav_snap(l.t, l.n, 345, 468, 10, &hx, &hy) == 1 && hy == (461 + 474) / 2);
+    CHECK(nav_snap(l.t, l.n, 320, 470, 14, &hx, &hy) == 1 && hx == (333 + 344) / 2);        /* on the edit box (big), 13 pixels from the arrow: the small control wins */
+    CHECK(nav_snap(l.t, l.n, 320, 470, 10, &hx, &hy) == 0);                                  /* the arrow is out of reach: the edit box stays */
+    CHECK(nav_snap(l.t, l.n, 300, 462, 10, &hx, &hy) == 0);                                  /* well inside the edit box */
+    CHECK(nav_snap(l.t, l.n, 265, 436, 4, &hx, &hy) == 0);                                   /* inside the check box (small): it is there */
+    CHECK(nav_snap(l.t, l.n, 300, 437, 10, &hx, &hy) == 1 && hx == (237 + 292) / 2 && hy == (430 + 443) / 2);   /* beside the check box: its middle */
+    CHECK(nav_snap(l.t, l.n, 500, 400, 10, &hx, &hy) == 0);                                  /* nothing within reach */
+    /* a big control is only landed on from outside, to its nearest pixel (inside it) */
+    CHECK(nav_snap(l.t, l.n, 680, 490, 10, &hx, &hy) == 1 && hx == 680 && hy == 497);
+    CHECK(nav_snap(l.t, l.n, 680, 480, 10, &hx, &hy) == 0);                                  /* 17 pixels above: out of reach */
+    CHECK(nav_snap(l.t, l.n, 200, 480, 0, &hx, &hy) == 0);                                   /* a reach of nothing: only what is under the point */
+    /* a press and its release go to the same place, and a drag moves by the same offset */
+    memset(&s, 0, sizeof(s));
+    nav_snap_track(&s, 0, 349, 466, 1, 338, 467, &ox, &oy);                                  /* the hover before the tap: snapped */
+    CHECK(ox == 338 && oy == 467 && !s.active);
+    nav_snap_track(&s, 1, 349, 466, 1, 338, 467, &ox, &oy);                                  /* the press */
+    CHECK(ox == 338 && oy == 467 && s.active && s.dx == -11 && s.dy == 1);
+    nav_snap_track(&s, 0, 352, 470, 0, 0, 0, &ox, &oy);                                      /* a move while down: the offset, not a new snap */
+    CHECK(ox == 341 && oy == 471);
+    nav_snap_track(&s, -1, 349, 466, 0, 0, 0, &ox, &oy);                                     /* the release at the finger's own place: the pressed place */
+    CHECK(ox == 338 && oy == 467 && !s.active);
+    nav_snap_track(&s, 0, 100, 100, 0, 0, 0, &ox, &oy);                                      /* afterwards a move is as it is */
+    CHECK(ox == 100 && oy == 100);
+    nav_snap_track(&s, 1, 100, 100, 0, 0, 0, &ox, &oy);                                      /* a press that moved nowhere: no offset */
+    CHECK(ox == 100 && oy == 100 && s.dx == 0 && s.dy == 0);
+    nav_snap_track(&s, -1, 100, 100, 0, 0, 0, &ox, &oy);
+    (void)up; (void)down; (void)ante;
+}
+
 int main(void)
 {
     test_nearest();
@@ -376,6 +428,7 @@ int main(void)
     test_scroll();
     test_find();
     test_wide_boxes();
+    test_snap();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

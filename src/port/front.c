@@ -22,6 +22,7 @@ typedef struct {
     int kind, x, y;
     uint32_t vk, sc;
     int down, ch, repeat;
+    int touch, slop;             /* type 0 from a finger (touch.c): its place is moved onto a control within `slop` pixels (nav_snap, navwm_snap) */
     uint32_t call[6];            /* type 3: a guest function to start on a thread of its own: address, then up to five arguments */
     int ncall;
 } Ev;
@@ -56,6 +57,14 @@ void front_push_mouse(int kind, int x, int y)
     Ev e = {0};
 
     e.type = 0; e.kind = kind; e.x = x; e.y = y;
+    push(&e);
+}
+
+void front_push_touch(int kind, int x, int y, int slop)
+{
+    Ev e = {0};
+
+    e.type = 0; e.kind = kind; e.x = x; e.y = y; e.touch = 1; e.slop = slop;
     push(&e);
 }
 
@@ -194,6 +203,8 @@ static volatile int nav_ready;
 static int nav_mode_now;
 
 int front_nav_ready(void) { return nav_ready; }
+static volatile int nav_cancel;
+int front_nav_cancel_ready(void) { return nav_cancel; }
 
 int front_nav_result(unsigned *seen, int *kind, int *x, int *y, int *dir)
 {
@@ -368,6 +379,8 @@ static void log_deliver(const Ev *e)
     }
 }
 
+static NavSnap touch_snap;                              /* the finger on the screen: where its press was moved to (nav_snap_track) */
+
 static void deliver(const Ev *e)
 {
     if (padlog_on())
@@ -375,7 +388,17 @@ static void deliver(const Ev *e)
     if (e->type != 6 && !(e->type == 0 && e->kind == IN_MOVE && e->x == wm_cursor_x && e->y == wm_cursor_y))
         last_view = 0;                                   /* anything the game is sent (a move, a click, a key) and the next view is a first one again */
     if (e->type == 0) {
-        int ans = yesno_mouse(e->kind);
+        int ans = yesno_mouse(e->kind), x = e->x, y = e->y;
+
+        if (e->touch && e->kind != IN_WHEEL) {           /* a finger: onto the control it was meant for, where the controls are small (a page of the Magic Shell, a dialog, a list that is down) */
+            int ev = e->kind == IN_DOWN || e->kind == IN_RDOWN ? 1 : e->kind == IN_UP || e->kind == IN_RUP ? -1 : 0, sx = 0, sy = 0, sn = 0;
+
+            if (ev == 1 || (ev == 0 && !touch_snap.active))
+                sn = navwm_snap(x, y, e->slop, &sx, &sy);
+            nav_snap_track(&touch_snap, ev, x, y, sn, sx, sy, &x, &y);
+            if (sn && ev == 1)
+                padlog("touch: the press at (%d,%d) is moved onto the control at (%d,%d)", e->x, e->y, x, y);
+        }
 
         if (ans < 0)                                     /* the release of a press that answered a yes/no question (yesno.c) */
             return;
@@ -385,7 +408,7 @@ static void deliver(const Ev *e)
             front_push_key(ans == 'y' ? 0x59 : 0x4E, ans == 'y' ? 0x15 : 0x31, 0, -1, 0);
             return;
         }
-        wm_inject_mouse(e->kind, e->x, e->y);
+        wm_inject_mouse(e->kind, x, y);
         if (e->kind == IN_DOWN || e->kind == IN_RDOWN) {
             hold_on = hold_mouse = press_down = 1;
             hold_t0 = press_t0 = port_now_ms();
@@ -476,6 +499,8 @@ void front_serve(double max_wait)
         next_frame = now + 1.0 / 30;
         nav_mode_now = navwm_mode();
         nav_ready = nav_mode_now != NAVWM_NONE;
+        navwm_tick();
+        nav_cancel = navwm_cancel_ready();
         view_ready = navwm_card_at(wm_cursor_x, wm_cursor_y) != 0;
         if (padlog_on()) {
             static int last_mode = -1, last_asking = -1;

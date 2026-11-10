@@ -328,7 +328,96 @@ void wm_process_sent(void)
     }
 }
 
+/* The left-button press a procedure is handling (its window and the point, client coordinates): the rectangles it passes to PtInRect with that point are the places it lets a click land on */
+static struct { uint32_t hwnd; int x, y; } press_ctx;
+
+static uint32_t send_local_inner(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp);
+
 uint32_t wm_send_local(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp)
+{
+    uint32_t r, saved_hwnd = press_ctx.hwnd;
+    int sx = press_ctx.x, sy = press_ctx.y;
+
+    if (msg == WM_LBUTTONDOWN) {
+        press_ctx.hwnd = hwnd;
+        press_ctx.x = (int16_t)(lp & 0xFFFF);
+        press_ctx.y = (int16_t)(lp >> 16);
+    }
+    r = send_local_inner(hwnd, msg, wp, lp);
+    if (msg == WM_LBUTTONDOWN) {
+        press_ctx.hwnd = saved_hwnd;
+        press_ctx.x = sx;
+        press_ctx.y = sy;
+    }
+    return r;
+}
+
+void wm_hot_note(int l, int t, int r, int b, int x, int y, uint32_t site)
+{
+    Window *w;
+    int i;
+
+    if (!press_ctx.hwnd || (((x ^ press_ctx.x) | (y ^ press_ctx.y)) & 0xFFFF) || r - l < 1 || b - t < 1)
+        return;
+    w = wm_window(press_ctx.hwnd);
+    if (!w)
+        return;
+    if (w->nspot && (w->spot_w != w->w || w->spot_h != w->h))
+        w->nspot = 0;                                                  /* the window was resized: what it knew of its layout is out of date */
+    w->spot_w = w->w;
+    w->spot_h = w->h;
+    for (i = 0; i < w->nspot; i++)
+        if (w->spot[i][0] == l && w->spot[i][1] == t && w->spot[i][2] == r && w->spot[i][3] == b && w->spot[i][4] == (int)site)
+            return;
+    if (w->nspot < WM_HOT_MAX) {
+        w->spot[w->nspot][0] = l; w->spot[w->nspot][1] = t; w->spot[w->nspot][2] = r; w->spot[w->nspot][3] = b; w->spot[w->nspot][4] = (int)site;
+        w->nspot++;
+    }
+}
+
+int wm_hotspots(const Window *w, int (*out)[4], int max)
+{
+    int i, j, ox, oy, best = -1, best_n = 0, sites = 0, n = 0;
+
+    if (!w || w->nspot == 0 || w->spot_w != w->w || w->spot_h != w->h)
+        return 0;
+    for (i = 0; i < w->nspot; i++) {                         /* the place that asked about the most rectangles (the first of them wins a tie) */
+        int count = 0, first = 1;
+
+        for (j = 0; j < w->nspot; j++) {
+            count += w->spot[j][4] == w->spot[i][4];
+            if (j < i && w->spot[j][4] == w->spot[i][4])
+                first = 0;
+        }
+        sites += first;
+        if (first && count > best_n) {
+            best = i;
+            best_n = count;
+        }
+    }
+    if (best < 0 || (best_n < 2 && sites > 1))
+        return 0;
+    wm_client_origin(w, &ox, &oy);
+    for (i = 0; i < w->nspot && n < max; i++)
+        if (w->spot[i][4] == w->spot[best][4]) {
+            out[n][0] = ox + w->spot[i][0]; out[n][1] = oy + w->spot[i][1];
+            out[n][2] = ox + w->spot[i][2]; out[n][3] = oy + w->spot[i][3];
+            n++;
+        }
+    return n;
+}
+
+int wm_hot_probe(Window *w)
+{
+    if (!w || w->spot_probed)
+        return 0;
+    w->spot_probed = 1;
+    wm_post(w->hwnd, WM_LBUTTONDOWN, 1, 0);                           /* a press at the corner of the client area, where the program has no button: it tests its places against that point and finds none */
+    wm_post(w->hwnd, WM_LBUTTONUP, 0, 0);
+    return 1;
+}
+
+static uint32_t send_local_inner(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp)
 {
     Window *win = wm_window(hwnd);
     uint32_t args[4], r;
@@ -790,6 +879,7 @@ static uint32_t PtInRect(const uint32_t *a)
     int32_t l = (int32_t)RD32(a[0]), t = (int32_t)RD32(a[0] + 4), r = (int32_t)RD32(a[0] + 8), b = (int32_t)RD32(a[0] + 12);
     int32_t x = (int32_t)a[1], y = (int32_t)a[2];
 
+    wm_hot_note(l, t, r, b, x, y, RD32(port_sp));              /* port_sp: the return address, which is where in the program it was asked */
     return l <= x && x < r && t <= y && y < b;
 }
 static uint32_t UnionRect(const uint32_t *a)
