@@ -21,6 +21,10 @@ set "GAME=%PENTAMOOR_GAME%"
 if "%GAME%"=="" set "GAME=sources\installed\Magic\Program"
 
 rem an .iso as the first argument (a file dropped on this one): install from it first
+if /i "%~x1"==".iso" if not exist "%~1" (
+  echo pentamoor: "%~1" is not a file. Check the path: drag the .iso file onto this window to paste it.
+  goto failed
+)
 if /i "%~x1"==".iso" if exist "%~1" (
   call pentamoor-install.bat "%~1"
   if errorlevel 1 goto failed

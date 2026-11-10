@@ -17,12 +17,30 @@ class Entry:
         self.name, self.lba, self.size, self.is_dir = name, lba, size, is_dir
 
 
+def not_an_iso(path, f):
+    """What to tell a person who gave a file that is not a plain ISO 9660 image: say what it looks like, and what to do."""
+    f.seek(0)
+    head = f.read(4)
+    name = os.path.basename(path)
+    if path.lower().endswith((".mdf", ".mds")):
+        return (f"{path} is a raw .mdf disc image, not an .iso. Convert it first (macOS: brew install mdf2iso, Linux: your package manager's mdf2iso), then give the .iso it makes:\n"
+                '  mdf2iso "MTG v1.0.mdf" "MTG v1.0.iso"')
+    if head[:2] == b"MZ":
+        return (f"{name} is a Windows program (an .exe), not a disc image. The installer wants the disc image of the game's CD, an .iso file"
+                " (the Spells of the Ancients 2.15 patch SOTAV215.EXE goes after --patch, with --sota and the expansion's disc).")
+    if head[:2] == b"PK" or head[:2] == b"\x1f\x8b" or head[:6] == b"7z\xbc\xaf\x27\x1c" or head[:4] == b"Rar!":
+        return f"{name} is a compressed archive (a .zip, .gz, .7z or .rar), not a disc image. Unpack it and give the .iso file inside."
+    return (f"{path} is not an ISO 9660 image (the plain disc image of a CD, an .iso). A .mdf/.mds pair has to be converted first (mdf2iso), and a .bin/.cue pair, a .nrg or a .dmg"
+            " has to be made into an .iso too.")
+
+
 class Iso:
     def __init__(self, path):
         self.path = path
         self.f = open(path, "rb")
         self.joliet = False
         root = None
+        volume_bytes = 0
         sector = 16
         while True:                                            # the volume descriptors
             self.f.seek(sector * SECTOR)
@@ -32,6 +50,7 @@ class Iso:
             kind = vd[0]
             if kind == 1 and root is None:
                 root = vd[156:190]
+                volume_bytes = struct.unpack_from("<I", vd, 80)[0] * SECTOR          # the size the image says it has (0: not given)
                 self.label = vd[40:72].decode("ascii", "replace").strip()
             elif kind == 2 and vd[88:91] in (b"%/@", b"%/C", b"%/E"):
                 root, self.joliet = vd[156:190], True
@@ -39,7 +58,10 @@ class Iso:
                 break
             sector += 1
         if root is None:
-            raise IsoError(f"{path} is not an ISO 9660 image (a raw .mdf is not: convert it first, see docs)")
+            raise IsoError(not_an_iso(path, self.f))
+        if volume_bytes and os.path.getsize(path) < volume_bytes:
+            raise IsoError(f"{path} is cut short: the disc image says it is {volume_bytes:,} bytes and the file has {os.path.getsize(path):,} (an incomplete download or copy). "
+                           "Get the disc image again, or copy it again, and check that the copy is as big as the original.")
         self.root = Entry("", struct.unpack_from("<I", root, 2)[0], struct.unpack_from("<I", root, 10)[0], True)
 
     def read_dir(self, entry):

@@ -38,9 +38,9 @@ Unpack it, then:
   `./pentamoor-install "path/to/MTG v1.0.iso"` does only the install.
 
 If there is no C compiler on the machine (on Linux and macOS: no gcc, clang or cc), the installer offers to download one (the Zig compiler, about 100 MB, checked against a known checksum); nothing
-else is downloaded. The files are not signed, so Windows SmartScreen and macOS Gatekeeper warn on the first start (`README.txt` in the download says what to click).
+else is downloaded. The files are not signed, so Windows SmartScreen and macOS Gatekeeper warn on the first start (`README.txt` in the download says what to click). On macOS a download that was opened in Finder or by a browser carries a "quarantine" mark, which can leave the terminal waiting with nothing on it: `./pentamoor` looks for the mark, says so, and the one command that clears it is `xattr -dr com.apple.quarantine .` (run once, in the unpacked folder).
 The unpacked folder gets a `sources/` (your game files and the C made from them) and the three game modules; do not share those. It needs up to 1 GB while it builds (about 500 MB without the downloaded compiler), and
-`pentamoor-install --clean` afterwards deletes about 200 MB of intermediate files.
+`pentamoor-install --clean` afterwards deletes the intermediate files (about 100 MB; about 275 MB with Spells of the Ancients 2.15).
 
 ### Spells of the Ancients 2.15 (experimental)
 

@@ -248,23 +248,30 @@ def local_zig(tools_dir):
     return Compiler([exe, "cc"], "zig", {"ZIG_GLOBAL_CACHE_DIR": cache, "ZIG_LOCAL_CACHE_DIR": cache})
 
 
+def compiler_hint():
+    """How a person gets a C compiler on this system, in one line."""
+    return {"darwin": "On a Mac, install Apple's command line tools: run  xcode-select --install  in the terminal, wait for it to finish, then run this again.",
+            "windows": "On Windows, MSYS2 or w64devkit has one (the release download carries its own).",
+            }.get(host_os(), "Install one with your package manager (Debian/Ubuntu: sudo apt install gcc; Fedora: sudo dnf install gcc; Arch: sudo pacman -S gcc), then run this again.")
+
+
 def get_zig(tools_dir, download, ask, say, fetch):
     """The Compiler for the Zig in tools_dir, downloading it first if it is not there (after `ask`)."""
     cc = local_zig(tools_dir)
     if cc is not None:
         return cc
     if not download:
-        raise BuildError("no working C compiler (gcc, clang, cc) was found, and downloading Zig is switched off; install one, or run again allowing the download")
+        raise BuildError("no working C compiler (gcc, clang, cc) was found, and downloading Zig is switched off (--no-download). " + compiler_hint() + " Or run again without --no-download to let the installer fetch one.")
     try:
         _, size, _ = zigdl.wheel_for()
     except zigdl.ZigError as e:
         raise BuildError(str(e)) from e
     if ask and not ask(f"Download the Zig compiler (about {size // (1 << 20)} MB, from PyPI, checked against a known checksum) into {tools_dir}?"):
-        raise BuildError("no C compiler: install gcc or clang (on Windows: MSYS2 or w64devkit), or let the installer download Zig (it asks; --yes answers for you)")
+        raise BuildError("no C compiler, and the download of one was not agreed to. " + compiler_hint() + " Or run this again and answer yes to the download of Zig (about 100 MB; --yes answers for you).")
     try:
         fetch(tools_dir, say)
     except zigdl.ZigError as e:
-        raise BuildError(f"{e}. Install gcc or clang instead, or run this again when online") from e
+        raise BuildError(f"{e}. {compiler_hint()} Or run this again when online.") from e
     return local_zig(tools_dir)
 
 

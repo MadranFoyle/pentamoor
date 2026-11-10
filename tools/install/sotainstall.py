@@ -79,11 +79,12 @@ def check_first_disc(disc, path):
     kind = disc_kind(disc)
     if kind == "first":
         return
-    if kind == "expansion":
+    if kind == "expansion" and builds.SOTA_DISC["tag_application"].lower() in read_tag(disc).get("application", "").lower():
         raise SotaError(f"{path} is the Spells of the Ancients disc (version {read_tag(disc).get('version', '2.0')}), not the original game's. The expansion is installed over the first game, "
                         f"so the installer needs the original game's disc (MTG v1.0, with Setup/data.z) first and this one after --sota, and the 2.15 patch:\n  {PATCH_HINT}")
-    raise SotaError(f"{path} does not look like the Magic: The Gathering disc (no Setup/data.z). The installer needs a disc image of the retail CD, version 1.0"
-                    + (f" (label {disc.label!r} was found)." if getattr(disc, "label", "") else "."))
+    label = getattr(disc, "label", "")
+    raise SotaError(f"{path} does not look like the Magic: The Gathering disc, version 1.0 (it has no Setup/data.z" + (f"; the disc's name is {label!r}" if label else "") + "). "
+                    "It may be the disc of another game or another version, or a copy that lost files. The installer needs a disc image of the retail CD of the original game, version 1.0 (usually MTG v1.0.iso).")
 
 
 def sha256_entry(disc, entry):
@@ -135,9 +136,13 @@ def check_patch(path):
         text = str(e)
         size = os.path.getsize(path) if os.path.exists(path) else 0
         hint = ""
-        if size and size < spec["size"]:
+        is_program = True
+        if size:
+            with open(path, "rb") as f:
+                is_program = f.read(2) == b"MZ"                              # (a text file or a picture is not an exe that was cut short)
+        if size and size < spec["size"] and is_program:
             hint = f" The whole {spec['name']} is {kib(spec['size'])} bytes; this file is {kib(size)}: it was cut short (an incomplete download or copy). Get the patch again."
-        elif "no files" in text:
+        elif "no files" in text or not is_program:
             hint = f" --patch wants {spec['name']}, the Spells of the Ancients 2.15 patch (Magic: The Gathering, 19 November 1997)."
         raise SotaError(text + ("." if not text.endswith(".") else "") + hint)
     want = {n.lower(): n for n in spec["files"]}

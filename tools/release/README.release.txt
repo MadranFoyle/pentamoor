@@ -19,8 +19,9 @@ What you need
 @steamdeck * A Steam Deck (SteamOS 3, x86-64). Python 3 and SDL2 are part of SteamOS. SteamOS has no C compiler, so the
 @steamdeck   installer downloads one (Zig, about 100 MB, checked against a known checksum) into this folder. Nothing is
 @steamdeck   installed system-wide: SteamOS's own files are read-only and are not touched.
-* Up to 1 GB of free disk space while it builds (pentamoor-install --clean deletes about 200 MB of it afterwards)
-  and a few minutes, once (2 to 15, depending on the computer).
+* Up to 1 GB of free disk space while it builds (about 0.5 GB for the first game alone; pentamoor-install --clean deletes the
+  intermediate files afterwards: about 100 MB, or about 275 MB with Spells of the Ancients 2.15) and a few minutes, once (2 to 15,
+  depending on the computer).
 * Optional: ffmpeg on the PATH plays the ending movie and the spell and wizard clips.
 
 Install and play
@@ -54,7 +55,9 @@ Install and play
 @unix installs, and starts the game. After that it just starts the game.
 @unix (You can also run  ./pentamoor "path/to/MTG v1.0.iso"  or  ./pentamoor-install "path/to/MTG v1.0.iso".)
 @macos If macOS says the program cannot be opened because it is from an unidentified developer (the files are not
-@macos signed), run this once in the folder, then try again:   xattr -dr com.apple.quarantine .
+@macos signed), or the launcher says the files are "marked as downloaded from the internet", or the terminal just waits
+@macos with nothing on it, run this once in the folder, then try again:   xattr -dr com.apple.quarantine .
+@macos (A download opened in Finder or a browser gets that mark; the launcher looks for it and says so before anything starts.)
 
 @unix Other things to run: "./pentamoor deck" and "./pentamoor duel" run the standalone deck builder and duel program.
 @windows Other things to run: "pentamoor.bat deck" and "pentamoor.bat duel" run the standalone deck builder and duel program.
@@ -70,7 +73,9 @@ the expansion (Magic: The Gathering "Spells of the Ancients", version 2.0, usual
 @steamdeck its World page starts the adventure.
 It takes a few minutes more than the first game alone. Everything is checked before anything is written; if a file is missing, in the wrong place or the wrong one (a cut-short patch, the
 expansion's disc given first) the installer says what it found and what it needs. The 2.15 game is a folder of its own (sources/installed_sota) with its own saves (port_overlay_sota), and
-the first game is not changed by it. ManaLink is not part of it, and the expansion's own shell (magic.exe, "sota shell") has no controller or touch navigation yet.
+the first game is not changed by it. port_overlay_sota also holds the licence value (registry.dat, below): if you delete that folder to start over, or point PORT_OVERLAY at another one, the
+game no longer finds it and the shell's Start match shows a black window; run the same installer command again to write it again. ManaLink is not part of it, and the expansion's own shell
+(magic.exe, "sota shell") has no controller or touch navigation yet.
 At the end the installer does what the original Spells of the Ancients installer did for an owner of the discs: it runs the original installer's own writer (a library from the expansion's cabinet
 on your machine, checked first by its SHA-256) to write the game's machine-bound licence value into port_overlay_sota/registry.dat, with the flag word the original used (and, by default, one flag more, below), bound to a
 random machine id made for this install only. It says so when it does it. Nothing of that is in this download, and the game and the launchers never write it. --no-licence-value skips it
@@ -86,7 +91,7 @@ in port_overlay/display.cfg (PORT_SCALE, PORT_FILTER, PORT_FULLSCREEN and PORT_W
 @unix "./pentamoor-install --help" lists the installer's options: --check shows what is ready, --self-test checks the
 @windows "pentamoor-install.bat --help" lists the installer's options: --check shows what is ready, --self-test checks the
 compiler, --compiler picks one (for example --compiler gcc), --no-download refuses to fetch anything,
---clean removes the intermediate files (about 200 MB) after a successful build.
+--clean removes the intermediate files (about 100 MB, about 275 MB with Spells of the Ancients 2.15) after a successful build.
 
 What is in this folder
 ----------------------

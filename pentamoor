@@ -21,6 +21,15 @@ esac
 if [ -f ./pentamoor-run ]; then BUILD=.; else BUILD=src/port/build; fi
 RUN=${PENTAMOOR_RUN:-$BUILD/pentamoor-run}
 
+# macOS: a download opened in Finder or a browser is marked "quarantine" (the files are not signed); the first start of a marked program then waits for a dialog that may be hidden or never comes,
+# and the terminal looks frozen. Say so, with the one command that clears the mark, before anything is started (the release's runtime is the file to look at; ls -l@ lists a file's attributes).
+if [ "$(uname -s)" = Darwin ] && [ -f ./pentamoor-run ] && [ -z "$PENTAMOOR_RUN" ] && ls -l@ ./pentamoor-run 2>/dev/null | grep -q com.apple.quarantine; then
+  echo "pentamoor: macOS has marked these files as downloaded from the internet (a \"quarantine\" mark) and does not trust them yet, because they are not signed. It may refuse to open them, or leave" >&2
+  echo "this window waiting with nothing on it. Clear the mark once, in this folder, and run ./pentamoor again:" >&2
+  echo "  xattr -dr com.apple.quarantine ." >&2
+  exit 1
+fi
+
 # how to install: the release's (or this checkout's) installer
 if [ -f ./pentamoor-install ]; then
   INSTALL='./pentamoor-install'
@@ -44,6 +53,9 @@ case "$1" in
     if [ -f "$1" ]; then
       run_installer "$1" || exit 1
       shift
+    else     # a mistyped path used to be passed to the game, which then asked for the disc from the beginning
+      echo "pentamoor: $1 is not a file (check the path: with the terminal open, drag the .iso file onto it to paste the path)." >&2
+      exit 1
     fi ;;
 esac
 
