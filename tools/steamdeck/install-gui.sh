@@ -33,7 +33,7 @@ PY=$(command -v python3 || command -v python)
 
 # where things are once installed: the launcher's own rules (the ./pentamoor script): the first game's module is game_magic, Spells of the Ancients' are game_shandalar (the adventure) and game_shell
 SOTA_DIR=${PENTAMOOR_SOTA:-$ROOT/sources/installed_sota/Magic/Program}
-module_built() { [ -f "$ROOT/$1.so" ] || [ -f "$ROOT/src/port/build/$1.so" ]; }
+module_built() { [ -f "$ROOT/$1.so" ] || [ -f "$ROOT/src/port/build/$1.so" ] || [ -f "$ROOT/$1.dylib" ] || [ -f "$ROOT/src/port/build/$1.dylib" ]; }     # (.dylib: a Mac, where this runs when it is tried)
 first_installed() { [ -f "$ROOT/sources/installed/Magic/Program/MAGIC.EXE" ] && module_built game_magic; }
 sota_installed() { [ -f "$SOTA_DIR/shandalar.exe" ] && module_built game_shandalar; }
 sota_shell_installed() { [ -f "$SOTA_DIR/magic.exe" ] && module_built game_shell; }
