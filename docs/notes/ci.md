@@ -52,8 +52,46 @@ pefile and capstone imported from the archive's `tools/pydeps` (capstone disasse
 chooses a compiler (on Windows `--compiler zig`: the bundled Zig), builds the stub module with the archive's own `modbuild.py` and headers, and has the archive's own `pentamoor-run` load it. The
 `./pentamoor` launcher of a Unix archive is run with no game installed and must refuse and name `pentamoor-install`. The archives are uploaded as artifacts (7 days).
 
-What this does not cover: a real game module (that needs the game), the game on Windows, the x86-64 half of the macOS binary, a system without a C compiler on Linux and macOS (the Zig download is
-tested by unit tests with a local file, and by hand), and the publish step of `release.yml`.
+What this does not cover on the builder: the archive on any machine but the one that built it. That is the next section.
+
+### The archives on fresh runners (`archive-smoke.yml`)
+
+`check_archive.py` runs where the archive was built (on Windows with a scrubbed PATH, but still on the builder's image). `.github/workflows/archive-smoke.yml` (a reusable workflow: `ci.yml` calls it after `package`, `release.yml`
+calls it before `publish`, which `needs` it) downloads each archive of the run with `actions/download-artifact` onto a **fresh runner of the system it is for** and runs `tools/release/smoke_archive.py` on it. Nothing in it has a game file.
+
+| Runner | Archive | Why this runner |
+|---|---|---|
+| `windows-latest` (Windows Server 2025) | windows-x86_64 | |
+| `windows-2022` | windows-x86_64 | the nearest the hosted runners come to Windows 10 |
+| `ubuntu-22.04` | linux-x86_64 | the glibc the runtime was built against |
+| `ubuntu-latest` (24.04) | linux-x86_64, and steamdeck | a newer system |
+| `macos-latest` (macOS 26, arm64) | macos-universal | the arm64 half |
+| `macos-15-intel` | macos-universal | the **x86-64 half**, run natively for the first time. (`macos-13`, the old Intel label, is retired; `macos-26-intel` exists as well and `macos-14` is deprecated. GitHub offers no Windows 10, no Linux arm64 archive is built, and no Intel runner older than macOS 15.) |
+
+Each job unpacks the archive with the system's `tar` (Windows: `tar.exe` for the `.zip`) into `.../Alice Smith/Downloads/` (a space in the path, as a user's folder may have), then `smoke_archive.py` prints one line per thing it tries,
+`[smoke] ok   <what>` or `[smoke] FAIL <what>: <why>` (a failure is also an annotation, and the lines go to the job summary), and the exit status is 1 if any failed. What it tries:
+
+* **archive**: every file against `SHA256SUMS`; nothing game-derived (`check_archive.forbidden`, `check_tree`); the programs are executable after `tar`; the longest path against Windows' 260 characters in a typical Downloads folder; macOS: `lipo -archs` and `codesign -v`.
+* **python**: the archive's Python (Windows: `python\python.exe`, the embedded one, with a PATH of only Windows' folders; elsewhere the runner's `python3`) runs `install.py --check`, imports pefile and capstone from the archive's `tools/pydeps`, and lifts three
+  hand-assembled x86 functions to C with the archive's lifter (`smoke_inside.py lift`).
+* **compiler**: `install.py --self-test --no-download` with whatever compiler the installer finds on its own (Windows: it must be the Zig in `tools/local`, nothing else being on the PATH; elsewhere the runner's `cc`); on Linux and macOS also with an empty PATH, where the
+  message must say there is no compiler and that downloading is off. The Zig **download** (the path of a Linux or macOS user with no compiler) needs the network and is not tried.
+* **runtime** (`smoke_archive.runtime_checks`): the stub module is built with the installer's own build step (`modbuild`), and a tiny PE program is written by the smoke test (`make_stub_pe`, the same bytes as `src/port/stubgame/mkpe.c`; `test_smoke.py` checks that against the compiled `mkpe`).
+  Then the archive's `pentamoor-run` does what `make check-module`, `check-run`, `check-program` and `check-build` do: loads the module; refuses a missing module and a file that is not one; starts the SDL window half on the dummy drivers; runs the PE through the loader, the imports and the file layer
+  (exit 7, `HELLO.TXT` of 24 bytes); refuses a build it does not know (exit 3). On Windows that is `pentamoor-run.exe` with the bundled `SDL2.dll` and a module built by the bundled Zig.
+* **installer** (`smoke_install.py`): the real disc's fingerprints can never match a made-up disc, so there are two halves, both through the archive's own entry point (`pentamoor-install`; Windows: `pentamoor-install.bat` through `cmd.exe` and the embedded Python).
+  *Wrong discs*: a path that is not there, a text file named .iso, an ISO that is not the game's, the expansion's disc given first, `--sota` without `--patch`, no disc: each must exit 1 with a message that names the problem and write nothing.
+  *A made-up 1.0 disc* (`tools/install/fakediscs.py`, the installer tests' maker: Setup/data.z in the game's own archive format, the music and movie folders) is installed by `install.main`, the function `pentamoor-install` runs, in the archive's Python. **Two things are replaced, and the output says so**
+  (`smoke_inside.py install`): the table of known builds holds the made-up files' hashes instead of the retail disc's, and the lifter's step is skipped (the made-up programs are not PE files; the "lifted C" it compiles is the stub module's own, three times). Everything else is the installer's:
+  reading the ISO, unpacking, copying the media, the check of the programs, the compiler choice, compiling and linking `game_magic`, `game_deck` and `game_duel`, loading each in the runtime; run again, it must say the game is installed.
+* **launchers**: `./pentamoor` / `pentamoor.bat` with no game installed and no terminal print the documented message and exit 1 (also `sota`); on Windows through `cmd.exe`, and again in a folder named `Program Files (x86)\Pentamoor Smoke` (only the files the launcher needs are copied there);
+  after the made-up install the launcher starts the runtime, which refuses the made-up `MAGIC.EXE` (exit 3). On a Linux runner without SDL2 (the job runs before SDL2 is installed, as a new user's system may be) the runtime's failure is the loader's line and `./pentamoor` says how to install SDL2; the job then installs `libsdl2-2.0-0`, as `README.txt` says.
+* **steamdeck**: `check_archive.check_steamdeck` on the Steam Deck archive.
+
+What this still does not cover: the game (every check above is the stub module and a made-up disc); the lifter on a real PE (only on hand-assembled functions); the Zig download; the real disc's fingerprint; a process-spawn round trip *through the runtime binary*
+(the runtime starts another program only for a program the active build's profile names, and the stub is an unknown build, so it cannot; `src/port/test_process.c` does the round trip with the test program standing in for the runtime, and runs on Windows too since this smoke test was added); a real
+display and sound device (SDL's dummy drivers); Windows 10 itself, an Apple-silicon Mac without Rosetta running the x86-64 half, and Linux distributions other than Ubuntu; code signing and Gatekeeper/SmartScreen.
+
 
 ## Badge
 

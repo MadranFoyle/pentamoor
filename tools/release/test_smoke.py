@@ -52,7 +52,7 @@ def test_each_wrong_disc_waits_for_a_message_the_installer_can_say():
         with open(os.path.join(ROOT, "tools", "install", name), encoding="utf-8") as f:
             text += f.read()
     for what, args, must in smoke_install.WRONG_DISCS:
-        assert must in text, f"{what}: no '{must}' in the installer"
+        assert any(m in text for m in must.split("|")), f"{what}: none of '{must}' in the installer"
 
 
 def test_the_batch_file_command_line_is_quoted_for_cmd(tmp_path):

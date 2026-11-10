@@ -43,6 +43,7 @@ jobs:
         shell: bash
         run: |
           uname -a || true
+          head -2 /etc/os-release 2>/dev/null || sw_vers 2>/dev/null || cmd //c ver || true
           ls -l dist
           python3 --version || python --version
 

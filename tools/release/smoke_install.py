@@ -19,7 +19,7 @@ The discs are made with tools/install/fakediscs.py, the installer tests' own mak
 import json
 import os
 import sys
-import types
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -31,7 +31,7 @@ def make(dest):
     try:
         import pytest  # noqa: F401
     except ImportError:                                                   # test_install.py imports pytest at the top; make_archive needs none of it
-        sys.modules["pytest"] = types.ModuleType("pytest")
+        sys.modules["pytest"] = mock.MagicMock()                          # (its decorators and fixtures are never used here)
     import fakediscs
     world = fakediscs.World(dest)
     other = os.path.join(dest, "some other disc.iso")
@@ -45,14 +45,14 @@ def make(dest):
     return {"first": world.iso1, "expansion": world.iso2, "other": other, "text": text, "known": known, "patch": world.patch}
 
 
-# (what is given, what the message must say). {first} {expansion} {other} {text} {missing} are the made-up files.
+# (what is given, what the message must say: one text, or alternatives separated by |). {first} {expansion} {other} {text} {missing} are the made-up files.
 WRONG_DISCS = [
     ("a path that is not there", ["{missing}"], "does not exist"),
     ("a file that is not a disc image", ["{text}"], "is not an ISO 9660 image"),
     ("a disc image that is not the game's", ["{other}"], "no Setup/data.z"),
     ("the expansion's disc given first", ["{expansion}"], "is the Spells of the Ancients disc"),
     ("--sota without --patch", ["{first}", "--sota", "{expansion}"], "--patch is missing"),
-    ("no disc at all (no terminal to ask on)", [], "no disc image given"),
+    ("no disc at all (nothing to ask on)", [], "no disc image given|cancelled"),     # (Windows takes a NUL stdin for a terminal: it asks, reads the end of input, and cancels)
 ]
 
 
@@ -69,7 +69,7 @@ def installer_phase(smoke):
     files["missing"] = os.path.join(disc_dir, "no such disc.iso")
     for what, args, must in WRONG_DISCS:
         code, out = smoke.installer([a.format(**files) for a in args])
-        ok = code == 1 and must in out and "install:" in out
+        ok = code == 1 and any(m in out for m in must.split("|")) and "install:" in out
         smoke.check(f"installer: wrong disc, {what}", ok, f"exit {code}, expected exit 1 and '{must}'" + ("" if ok else f"; output: {out.strip()[-400:]}"))
     wrote = os.path.exists(os.path.join(smoke.root, "sources", "installed"))
     smoke.check("installer: the wrong discs wrote nothing", not wrote, "sources/installed was created" if wrote else "no sources/installed")

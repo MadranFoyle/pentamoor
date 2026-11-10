@@ -210,7 +210,10 @@ static size_t quote_arg(char *out, size_t cap, const char *arg)
     return n;
 }
 
-static HANDLE children[64];
+/* A child's id is a number nothing else reuses (a POSIX child's is its process id): process.c keeps its record of a child under that id, and a second child with the id of a first one that has
+ * ended would be taken for the first, already done. So the id counts up, and the slot is only where the handle is kept. */
+static struct { HANDLE h; long id; } children[64];
+static long next_child_id;
 
 int plat_spawn(const char *const *argv, const char *const *set, const char *const *unset, long *id)
 {
@@ -221,7 +224,7 @@ int plat_spawn(const char *const *argv, const char *const *set, const char *cons
     char *env = GetEnvironmentStringsA();
     int slot;
 
-    for (slot = 0; slot < 64 && children[slot]; slot++)
+    for (slot = 0; slot < 64 && children[slot].h; slot++)
         ;
     if (slot == 64 || !env)
         return -1;
@@ -273,24 +276,25 @@ int plat_spawn(const char *const *argv, const char *const *set, const char *cons
     }
     free(block);
     CloseHandle(pi.hThread);
-    children[slot] = pi.hProcess;
-    *id = slot + 1;
+    children[slot].h = pi.hProcess;
+    children[slot].id = *id = ++next_child_id;
     return 0;
 }
 
 int plat_child_state(long id, int *exit_code)
 {
     DWORD code = 0;
-    HANDLE h;
+    int slot;
 
-    if (id < 1 || id > 64 || !children[id - 1])
+    for (slot = 0; slot < 64 && !(children[slot].h && children[slot].id == id); slot++)
+        ;
+    if (id < 1 || slot == 64)
         return -1;
-    h = children[id - 1];
-    if (WaitForSingleObject(h, 0) != WAIT_OBJECT_0)
+    if (WaitForSingleObject(children[slot].h, 0) != WAIT_OBJECT_0)
         return 0;
-    GetExitCodeProcess(h, &code);
-    CloseHandle(h);
-    children[id - 1] = NULL;
+    GetExitCodeProcess(children[slot].h, &code);
+    CloseHandle(children[slot].h);
+    children[slot].h = NULL;
     *exit_code = (int)code;
     return 1;
 }

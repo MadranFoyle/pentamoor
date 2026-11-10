@@ -307,8 +307,8 @@ class Smoke:
     def launcher_checks_empty(self):
         code, out = self.launcher([])
         if WIN:
-            ok = code == 1 and "the game is not installed yet" in out and "no disc image given" in out
-            what = "the documented offer, then the installer's 'no disc image given'"
+            ok = code == 1 and "the game is not installed yet" in out and ("no disc image given" in out or "install: cancelled" in out)
+            what = "the documented offer, then the installer asks for the disc and is cancelled (stdin is NUL)"
         else:
             ok = code == 1 and "pentamoor-install" in out and "is not installed" in out
             what = "the message that names pentamoor-install"
@@ -327,7 +327,7 @@ class Smoke:
         for sub in ("python", os.path.join("tools", "install"), os.path.join("tools", "lift")):
             shutil.copytree(os.path.join(self.root, sub), os.path.join(dest, sub))
         code, out = self.launcher([], root=dest)
-        self.check("launcher: pentamoor.bat in 'Program Files (x86)\\...' prints the message and exits 1", code == 1 and "the game is not installed yet" in out and "no disc image given" in out,
+        self.check("launcher: pentamoor.bat in 'Program Files (x86)\\...' prints the message and exits 1", code == 1 and "the game is not installed yet" in out and ("no disc image given" in out or "install: cancelled" in out),
                    f"exit {code}; " + out.strip()[-500:])
         code, out = self.run(self.cmd_bat("pentamoor-install.bat", ["--help"], dest), cwd=dest)
         self.check("launcher: pentamoor-install.bat --help in that folder", code == 0 and "--sota" in out, f"exit {code}; " + out.strip()[-300:])
