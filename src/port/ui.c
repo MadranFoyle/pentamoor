@@ -968,7 +968,7 @@ static void draw_edit(Canvas *c, const Window *w, const Window *dlg, int x0, int
     if (w->has_caret == 2) {                                                         /* the file dialog's: all of it selected */
         sa = 0;
         sb = len;
-    } else if (focused && w->sel_anchor != w->caret) {
+    } else if (!w->has_caret && focused && w->sel_anchor != w->caret) {                  /* (the file dialog's box keeps its own caret and never has a selection but all of it) */
         sa = w->sel_anchor < w->caret ? w->sel_anchor : w->caret;
         sb = w->sel_anchor < w->caret ? w->caret : w->sel_anchor;
         if (sa < 0)

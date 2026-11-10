@@ -1786,7 +1786,7 @@ static int display_open(int deck)
     return 1;
 }
 
-/* The edit boxes' clipboard (wm.h): SDL's. They are asked from the game's thread; SDL's clipboard calls are not tied to the thread that made the window on any of its video drivers. */
+/* The edit boxes' clipboard (wm.h): SDL's. They are asked from the game's thread (SDL 2 documents no thread for its clipboard calls); only tried on SDL's dummy driver, where the clipboard is a string of SDL's own. */
 static char *sdl_clip_get(void)
 {
     char *t = SDL_GetClipboardText(), *r;

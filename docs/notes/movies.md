@@ -73,3 +73,9 @@ structure it is handed.)
   the saved game; the positions are the statwin's own numbers (origin + table).
 - Indeo 4 has no native decoder (see above): without ffmpeg the clips do not play.
 - The black key's threshold (8) is a guess at what 8 bit palette index 0 did; there is no reference picture.
+
+## The Magic Shell's movies (Spells of the Ancients 2.15)
+
+Credits (`CREDIT.AVI`, 145 s, no sound) and the World page's Animation (`INTRO.AVI`, 117 s, 8-bit PCM sound) are Indeo 4, 560x420, 15 frames a second, like the StatWin clips, and play through the same ffmpeg pipe, by MCI (`video.c`: `mciSendCommandA`). The
+shell looks for them as `D:\AutoPlay\<name>` on the first CD-ROM drive; the installer copies the expansion disc's `Autoplay` folder to `<install>/Magic/AutoPlay` and `GetDriveTypeA` calls D: a CD-ROM drive when that folder is there. The MCI mode constants
+were off by one (525 is stopped, 526 playing), `MCI_PLAY` now shows the window and, full screen, centres it, and `GetAsyncKeyState` has its "pressed since" bit (Esc and the mouse buttons stop a movie). [sota-comparison.md](sota-comparison.md), "Shell polish".
