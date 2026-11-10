@@ -328,7 +328,7 @@ void wm_process_sent(void)
     }
 }
 
-/* The left-button press a procedure is handling (its window and the point, client coordinates): the rectangles it passes to PtInRect with that point are the places it lets a click land on */
+/* The left-button press or pointer move a procedure is handling (its window and the point, client coordinates): the rectangles it passes to PtInRect with that point are the places it lets a click land on */
 static struct { uint32_t hwnd; int x, y; } press_ctx;
 
 static uint32_t send_local_inner(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp);
@@ -338,13 +338,13 @@ uint32_t wm_send_local(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp)
     uint32_t r, saved_hwnd = press_ctx.hwnd;
     int sx = press_ctx.x, sy = press_ctx.y;
 
-    if (msg == WM_LBUTTONDOWN) {
+    if (msg == WM_LBUTTONDOWN || msg == WM_MOUSEMOVE) {
         press_ctx.hwnd = hwnd;
         press_ctx.x = (int16_t)(lp & 0xFFFF);
         press_ctx.y = (int16_t)(lp >> 16);
     }
     r = send_local_inner(hwnd, msg, wp, lp);
-    if (msg == WM_LBUTTONDOWN) {
+    if (msg == WM_LBUTTONDOWN || msg == WM_MOUSEMOVE) {
         press_ctx.hwnd = saved_hwnd;
         press_ctx.x = sx;
         press_ctx.y = sy;

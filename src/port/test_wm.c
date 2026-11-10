@@ -3218,6 +3218,7 @@ static void test_navwm_page(void)
     NavTarget nt[NAV_MAXTARGETS];
     int sw = screen_w, sh = screen_h, n, cur, i, found, tx = 0, ty = 0, sx = 0, sy = 0;
     Window *root;
+    int click_x = 0, click_y = 0;
 
     screen_w = 800; screen_h = 600;
     site_sp = scratch(16);
@@ -3231,7 +3232,13 @@ static void test_navwm_page(void)
     register_class("ShellClass", port_host_function(shellproc), 0, 0);
     top = create("ShellClass", WS_VISIBLE | WS_POPUP, 0, 0, 800, 600, 0, 0);
     root = wm_window(top);
-        /* the title page: the page buttons exist and are hidden, nothing else is shown */
+        /* a window that tests its clicks and has no standard controls (the map of the first game) is no page: the D-pad stays the arrow keys */
+    wm_send(top, WM_LBUTTONDOWN, 1, 0);
+    CHECK(root->nspot == 8 && navwm_mode() == NAVWM_NONE);
+    root->nspot = 0;
+    root->spot_probed = 0;
+    shell_probes = 0;
+    /* the title page: the page buttons exist and are hidden, nothing else is shown */
     solo = create("BUTTON", WS_CHILD | 0xB, 242, 66, 107, 26, top, 100);
     gaunt = create("BUTTON", WS_CHILD | 0xB, 242, 92, 100, 26, top, 101);
     API("SetWindowLongA", solo, (uint32_t)-4, port_host_function(ignorepaint));              /* the shell subclasses its owner-draw buttons */
@@ -3261,6 +3268,36 @@ static void test_navwm_page(void)
     wm_inject_mouse(IN_UP, 87, 98);
     pump_all();
     CHECK(shell_probes == 1);
+    /* an owned pop-up is shown, and a click reaches it, whether or not its owner is shown: the shell hides its window under the sealed deck's pack screen, a dialog of its own with a DONE button */
+    {
+        uint32_t pack, done;
+
+        pack = create("TestClass", WS_VISIBLE | WS_POPUP, 0, 0, 800, 600, top, 0);
+        done = create("BUTTON", WS_CHILD | WS_VISIBLE | 0xB, 27, 89, 26, 64, pack, 1);
+        API("ShowWindow", top, 0);
+        CHECK(!wm_window(top)->visible && wm_window(pack)->visible);
+        CHECK(wm_hit_test(40, 120) == done && wm_hit_test(400, 300) == pack);
+        API("DestroyWindow", pack);
+        API("ShowWindow", top, 1);
+    }
+    /* the D-pad through the front end (front.c): a second press that comes with the pointer still where the first was pressed goes on from where it is going; a mouse event in between (the pointer the
+     * mouse put back on the same spot) ends that, and the press is from where the pointer is */
+    {
+        unsigned seen = 0;
+        int kind = 0, x = 0, y = 0, dir = 0;
+
+        front_push_nav(NAV_DOWN, 87, 98);
+        front_serve(0);
+        CHECK(front_nav_result(&seen, &kind, &x, &y, &dir) && kind == NAVR_MOVE && y >= 146 && y < 254);          /* Duel to Tools */
+        front_push_nav(NAV_DOWN, 87, 98);
+        front_serve(0);
+        CHECK(front_nav_result(&seen, &kind, &x, &y, &dir) && kind == NAVR_MOVE && y >= 252 && y < 360);          /* the pointer has not arrived: Tools to World */
+        front_push_mouse(IN_MOVE, 87, 98);
+        front_serve(0);
+        front_push_nav(NAV_DOWN, 87, 98);
+        front_serve(0);
+        CHECK(front_nav_result(&seen, &kind, &x, &y, &dir) && kind == NAVR_MOVE && y >= 146 && y < 254);          /* the mouse put it back on the Duel button: Duel to Tools again */
+    }
 
     /* the Duel page: standard controls on the window (the real ones are in a child dialog; here they are children of the window itself) */
     API("ShowWindow", solo, 1);
@@ -3277,6 +3314,19 @@ static void test_navwm_page(void)
     start = create("BUTTON", WS_CHILD | WS_VISIBLE | 0xB, 628, 497, 107, 28, top, 118);
     API("EnableWindow", radio_off, 0);
     API("SetWindowLongA", start, (uint32_t)-4, port_host_function(ignorepaint));
+    {   /* a group of radio buttons the program subclassed (the shell's four skills): a click turns the one clicked on and the others of the group off, as for an unsubclassed group */
+        uint32_t r1 = create("BUTTON", WS_CHILD | WS_VISIBLE | 9 | 0x20000, 431, 520, 189, 14, top, 130), r2 = create("BUTTON", WS_CHILD | WS_VISIBLE | 9, 431, 540, 189, 14, top, 131);
+
+        API("SetWindowLongA", r1, (uint32_t)-4, port_host_function(ignorepaint));
+        API("SetWindowLongA", r2, (uint32_t)-4, port_host_function(ignorepaint));
+        wm_window(r1)->checked = 1;
+        click_at(500, 545);
+        CHECK(wm_window(r2)->checked == 1 && wm_window(r1)->checked == 0);
+        click_at(500, 525);
+        CHECK(wm_window(r1)->checked == 1 && wm_window(r2)->checked == 0);
+        API("DestroyWindow", r1);
+        API("DestroyWindow", r2);
+    }
     CHECK(wm_window(hidden_btn)->visible == 0);
     n = navwm_collect(nt, NAV_MAXTARGETS, 0, 0, &cur);
     /* 5 balls, 2 page buttons, the combo's closed box, the check box, one radio (the other is disabled), the edit box, the spin's two halves, Start: 14; no group box, no label, no hidden button */
@@ -3310,8 +3360,13 @@ static void test_navwm_page(void)
     API("SendMessageA", combo, 0x143, 0, cstr("one"));
     API("SendMessageA", combo, 0x143, 0, cstr("two"));
     i = nav_index(nt, n, combo, 0);
-    click_at((nt[i].x0 + nt[i].x1) / 2, (nt[i].y0 + nt[i].y1) / 2);
+    API("SendMessageA", combo, 0x14E, 1, 0);                                                    /* CB_SETCURSEL: "two" is the choice */
+    click_x = (nt[i].x0 + nt[i].x1) / 2;
+    click_y = (nt[i].y0 + nt[i].y1) / 2;
+    click_at(click_x, click_y);
     CHECK(wm_combo_open() == (int)combo && navwm_mode() == NAVWM_COMBO && navwm_collect(nt, NAV_MAXTARGETS, 0, 0, &cur) == 2);
+    /* the pointer still on the closed box: the first press goes to the row that is the choice shown ("two"), whichever way it is pressed */
+    CHECK(navwm_pick(click_x, click_y, NAV_UP, &tx, &ty) == 1 && navwm_pick(click_x, click_y, NAV_DOWN, &tx, &ty) == 1);
     wm_inject_mouse(IN_RDOWN, 330, 285);
     wm_inject_mouse(IN_RUP, 330, 285);
     CHECK(wm_combo_open() == 0 && navwm_mode() == NAVWM_PAGE);

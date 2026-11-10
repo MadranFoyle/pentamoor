@@ -278,6 +278,14 @@ def test_sota_shell_duels_tell_the_pages_from_the_duel_dialogs(tmp_path):
     assert [d.h for d in t.dialogs()] == [0x30] and s.on_duel_page(t, "solo") and not s.on_duel_page(t, "gauntlet")
 
 
+def test_window_dump_line_has_enabled_checked_and_id():
+    import pentamoor_ctl as pc
+    on = pc.Win(pc.WIN_RE.match("  win 0x20 parent 0x10 BUTTON 'Magician' (431,453)-(620,467) z=3 style=0x50010009 tid=1 visible noproc id=7 checked"))
+    off = pc.Win(pc.WIN_RE.match("  win 0x21 parent 0x10 BUTTON* 'Wizard' (431,499)-(620,513) z=4 style=0x50010009 tid=1 visible id=12 disabled"))
+    assert on.enabled and on.checked and on.wid == 7 and on.visible
+    assert not off.enabled and not off.checked and off.wid == 12 and off.cls == "BUTTON*"
+
+
 def test_ppm_region_hash_tells_pictures_and_regions_apart():
     from pentamoor_ctl import ppm_region_hash
     w, h = 4, 3

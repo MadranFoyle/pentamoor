@@ -83,10 +83,10 @@ typedef struct Window {
                                   * untouched shows what is behind it, as it does on the real screen where a child shares its parent's pixels */
     void *movie;                 /* a movie window (movie.c) */
     /* the places the program tests a click against (the rectangles it passes to PtInRect with the point of a WM_LBUTTONDOWN it is handling): what a window that draws its own buttons
-     * (the Magic Shell's five round ones) lets a click land on, in client coordinates; at most WM_HOT_MAX; dropped when the window's size changes (wm_hot_note, wm_hotspots) */
-    int spot[16][5], nspot, spot_w, spot_h, spot_probed;                /* l, t, r, b and the place in the program that asked (the return address) */
+     * (the Magic Shell's five round ones) lets a click land on, in client coordinates; at most WM_HOT_MAX, from the program's tests of a left-button press or of the pointer's move; dropped when the window's size changes (wm_hot_note, wm_hotspots) */
+    int spot[32][5], nspot, spot_w, spot_h, spot_probed;                /* l, t, r, b and the place in the program that asked (the return address) */
 } Window;
-#define WM_HOT_MAX 16
+#define WM_HOT_MAX 32
 
 /* windows */
 Window *wm_window(uint32_t hwnd);
@@ -116,8 +116,8 @@ uint32_t wm_default_proc(uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp);
 void wm_show(uint32_t hwnd, int cmd);
 uint32_t wm_control_message(Window *w, const char *cls, uint32_t msg, uint32_t wp, uint32_t lp);
 Window *wm_dlg_item(uint32_t hdlg, uint32_t id);
-/* Hot spots: a window of the program's own that draws buttons itself and tests where a click landed (the Magic Shell: five round buttons on its main window) is no tree of child windows. The program
- * does the test with PtInRect, in its handler of WM_LBUTTONDOWN; the window layer notes each rectangle it is asked about with that message's point (nothing of the program's code or data is read), so
+/* Hot spots: a window of the program's own that draws buttons itself and tests where a click landed (the Magic Shell: five round buttons on its main window; the sealed deck's pack screen: three packs) is no
+ * tree of child windows. The program does the test with PtInRect, in its handler of WM_LBUTTONDOWN (and of WM_MOUSEMOVE, to light the button under the pointer); the window layer notes each rectangle it is asked about with that message's point (nothing of the program's code or data is read), so
  * the D-pad can put the pointer on them. A program tests its buttons in a loop (one place asks about each of them) and its odd rectangles (the window's own caption buttons, a hidden region) one by one from places of
  * their own, and a press that hits none runs every test: so what wm_hotspots gives is the rectangles one place asked about, the place that asked about most (at least two, or the only one asked). They are in
  * screen coordinates, x0, y0, x1, y1 each (x1 and y1 exclusive); returns how many (at most max).

@@ -415,6 +415,42 @@ static void test_snap(void)
     (void)up; (void)down; (void)ante;
 }
 
+/* A form (NAVF_FORM): controls on a page, as the shell's Gauntlet page lays them out at 800x600. The check box "Ante" sits at the left of the column, under a combo box that starts to its right (no beam
+ * of its own: nothing above or below it overlaps it sideways except labels) and above and to the left of an edit box; the round buttons are in a column at the left, in another zone. With the rules of a
+ * duel the check box is a sink: nothing goes to it (the edit box's left goes to the round button level with it, which is in the beam). As a form the nearer cone neighbour of the same zone wins. */
+static void test_form(void)
+{
+    List l = {{{0}}, 0};
+    int hx = -1, hy = -1, ante, edit, combo, ball, opts, from;
+
+    ball = add(&l, 34, 362, 108, 108, 9, "ball");                        /* the Help ball: other zone, level with the edit box */
+    combo = add(&l, 305, 293, 430, 21, 1, "combo");
+    ante = add(&l, 237, 383, 54, 14, 1, "ante");
+    edit = add(&l, 299, 418, 34, 28, 1, "edit");
+    opts = add(&l, 616, 411, 112, 28, 1, "options");
+    (void)combo; (void)opts;
+    from = edit;
+    CHECK(go(&l, from, NAV_LEFT) == ball);                                /* a duel's rules: the beam first, whatever zone: the round button, and the check box stays out of reach */
+    {
+        int x, y;
+
+        nav_point(&l.t[from], &x, &y);
+        CHECK(nav_pick_ex(l.t, l.n, -1, x, y, NAV_LEFT, NAVF_FORM, &hx, &hy) == ante);       /* as a form: the check box is 52 pixels away up and left, the round button 227 pixels: the check box */
+        CHECK(nav_pick_ex(l.t, l.n, -1, x, y, NAV_LEFT, 0, &hx, &hy) == ball);
+        CHECK(nav_pick_ex(l.t, l.n, -1, x, y, NAV_RIGHT, NAVF_FORM, &hx, &hy) == go(&l, from, NAV_RIGHT));   /* nothing else changes where there is no cone neighbour */
+        nav_point(&l.t[ante], &x, &y);
+        CHECK(nav_pick_ex(l.t, l.n, -1, x, y, NAV_UP, NAVF_FORM, &hx, &hy) == nav_pick(l.t, l.n, -1, x, y, NAV_UP, &hx, &hy));
+        CHECK(nav_pick_ex(l.t, l.n, -1, x, y, NAV_LEFT, NAVF_FORM, &hx, &hy) == ball);          /* and the way out of the check box to the left is still the round button */
+    }
+    /* the beam of the same zone still comes first: a button level with the source in its own zone beats any cone neighbour, near as it is */
+    {
+        int near_cone = add(&l, 200, 395, 20, 20, 1, "near cone"), same_beam = add(&l, 100, 420, 60, 24, 1, "same beam"), x, y;
+
+        nav_point(&l.t[from], &x, &y);
+        CHECK(nav_pick_ex(l.t, l.n, -1, x, y, NAV_LEFT, NAVF_FORM, &hx, &hy) == same_beam && near_cone != same_beam);
+    }
+}
+
 int main(void)
 {
     test_nearest();
@@ -429,6 +465,7 @@ int main(void)
     test_find();
     test_wide_boxes();
     test_snap();
+    test_form();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

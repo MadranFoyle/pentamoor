@@ -53,7 +53,9 @@ static int aligned(int dir, int slo, int shi, const NavTarget *t)
     return lo < shi && slo < hi;
 }
 
-int nav_pick(const NavTarget *t, int n, int cur, int x, int y, int dir, int *hx, int *hy)
+int nav_pick(const NavTarget *t, int n, int cur, int x, int y, int dir, int *hx, int *hy) { return nav_pick_ex(t, n, cur, x, y, dir, 0, hx, hy); }
+
+int nav_pick_ex(const NavTarget *t, int n, int cur, int x, int y, int dir, int flags, int *hx, int *hy)
 {
     int i, sx2, sy2, slo, shi, best = -1, best_tier = 99, best_score = 0, best_side = 0, have, zone = 0;
     int vertical = dir == NAV_UP || dir == NAV_DOWN;
@@ -87,6 +89,8 @@ int nav_pick(const NavTarget *t, int n, int cur, int x, int y, int dir, int *hx,
         if (side > along && !al)                                    /* off to the side by more than 45 degrees and not in the beam: not a neighbour in this direction */
             continue;
         tier = (al ? 0 : 2) + (have && t[i].zone == zone ? 0 : 1);
+        if ((flags & NAVF_FORM) && tier > 0)                         /* a form: a neighbour of the same zone in the cone is as good as one of another zone in the beam, whichever is nearer */
+            tier = tier == 3 ? 2 : 1;
         score = along + 2 * side;
         if (tier < best_tier || (tier == best_tier && (score < best_score || (score == best_score && side < best_side)))) {
             best = i;

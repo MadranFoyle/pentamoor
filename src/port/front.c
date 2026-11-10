@@ -220,11 +220,14 @@ int front_nav_result(unsigned *seen, int *kind, int *x, int *y, int *dir)
     return got;
 }
 
+/* The last D-pad move: asked from (fx, fy), answered (tx, ty), until the window half has put the pointer there. A second press that comes with the pointer still at (fx, fy) (the first move has not
+ * reached it yet) goes on from where the pointer is going. Any mouse event delivered ends it: the first move's own arrival, the real mouse, a click (a pointer the mouse put back on the same spot is
+ * not "still waiting"). */
+static struct { int on, fx, fy, tx, ty; uint32_t t; } nav_pend;
+
 /* A D-pad press, on the guest side: the next target in the direction, read off the window tree (navwm.c); the window half moves the pointer there with an ordinary mouse move */
 static void nav_serve(const Ev *e)
 {
-    static int pend, pend_fx, pend_fy, pend_tx, pend_ty;           /* the last move: asked from (fx, fy), answered (tx, ty), until the window half has put the pointer there */
-    static uint32_t pend_t;
     int tx = 0, ty = 0, r, x = e->x, y = e->y;
     uint32_t now = port_now_ms();
 
@@ -232,9 +235,9 @@ static void nav_serve(const Ev *e)
         navwm_dump(stderr, e->x, e->y);
         return;
     }
-    if (pend && now - pend_t < 400 && x == pend_fx && y == pend_fy) {     /* a second press before the first move has reached the pointer: go on from where it is going */
-        x = pend_tx;
-        y = pend_ty;
+    if (nav_pend.on && now - nav_pend.t < 400 && x == nav_pend.fx && y == nav_pend.fy) {     /* a second press before the first move has reached the pointer: go on from where it is going */
+        x = nav_pend.tx;
+        y = nav_pend.ty;
     }
     r = navwm_pick(x, y, e->kind, &tx, &ty);
     if (r == NAV_NONE) {
@@ -243,7 +246,7 @@ static void nav_serve(const Ev *e)
         return;
     }
     if (r != NAV_SCROLL) {
-        pend = 1; pend_fx = e->x; pend_fy = e->y; pend_tx = tx; pend_ty = ty; pend_t = now;
+        nav_pend.on = 1; nav_pend.fx = e->x; nav_pend.fy = e->y; nav_pend.tx = tx; nav_pend.ty = ty; nav_pend.t = now;
     }
     pthread_mutex_lock(&nlock);
     nav_n++;
@@ -408,6 +411,7 @@ static void deliver(const Ev *e)
             front_push_key(ans == 'y' ? 0x59 : 0x4E, ans == 'y' ? 0x15 : 0x31, 0, -1, 0);
             return;
         }
+        nav_pend.on = 0;                                  /* the pointer has moved (or been clicked): a D-pad press is from where it is */
         wm_inject_mouse(e->kind, x, y);
         if (e->kind == IN_DOWN || e->kind == IN_RDOWN) {
             hold_on = hold_mouse = press_down = 1;

@@ -565,7 +565,7 @@ void wm_button_auto_check(Window *w)
     for (i = lo; i < hi; i++) {
         Window *c = wm_window_at_index(i);
 
-        if (c->parent == w->parent && !c->proc && (c->style & 0xF) == 9)
+        if (c->parent == w->parent && (!c->proc || c->subclassed) && (c->style & 0xF) == 9)       /* a radio button the program only subclassed (the shell's skill buttons) is still an automatic one */
             c->checked = c == w;
     }
 }

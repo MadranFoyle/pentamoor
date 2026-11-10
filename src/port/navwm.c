@@ -30,9 +30,12 @@ static const Window *parent_of(const Window *w) { return w->parent ? wm_window(w
 /* the window and every ancestor are shown */
 static int shown(const Window *w)
 {
-    for (; w; w = parent_of(w))
+    for (; w; w = parent_of(w)) {
         if (!w->visible)
             return 0;
+        if ((w->style & WS_POPUP) && !(w->style & WS_CHILD))       /* an owned top-level popup is shown whether or not its owner is (input.c, window_at) */
+            return 1;
+    }
     return 1;
 }
 
@@ -389,6 +392,27 @@ static int add_control(Out *o, const Window *w, int page)
     return 1;
 }
 
+/* The rectangles a window of the program's own tests the pointer against (wm_hotspots), as targets of no window of their own: the shell's round buttons, the pack screen's packs. A click in the middle of
+ * one must reach the window itself (nothing is on top of it). */
+static void add_hotspots(Out *o, const Window *root, const char *label)
+{
+    int i, spots[WM_HOT_MAX][4], ns;
+
+    if (!root)
+        return;
+    ns = wm_hotspots(root, spots, WM_HOT_MAX);
+    for (i = 0; i < ns; i++) {
+        Rc r = {spots[i][0], spots[i][1], spots[i][2], spots[i][3]};
+
+        if (r.x0 < 0) r.x0 = 0;
+        if (r.y0 < 0) r.y0 = 0;
+        if (r.x1 > screen_w) r.x1 = screen_w;
+        if (r.y1 > screen_h) r.y1 = screen_h;
+        if (r.x1 > r.x0 && r.y1 > r.y0 && wm_hit_test((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2) == root->hwnd)        /* nothing on top of it */
+            add(o, &r, 0, (int)root->hwnd, NAVK_BUTTON, label);                 /* id 0: a part of the window, not a window of its own */
+    }
+}
+
 static void collect_dialog(Out *o, uint32_t hdlg)
 {
     int i, n = wm_window_count();
@@ -403,6 +427,7 @@ static void collect_dialog(Out *o, uint32_t hdlg)
         if (w->proc && !w->subclassed && !cls_is(w, "STATIC") && !has_hit_child(w))
             add_window(o, w, (int)w->parent, NAVK_OTHER);                              /* a window of the game's own inside a dialog (the card choice) */
     }
+    add_hotspots(o, wm_window(hdlg), "dialog area");                                                  /* what the dialog's own procedure tests the pointer against (the pack screen's packs) */
 }
 
 /* ---- a page: an ordinary window with controls on it ------------------------------------------------------------------------------------------------------------- */
@@ -447,12 +472,12 @@ static const Window *page_root(void)
         if (w && w != root && page_control(w) && is_below(w, root->hwnd) && shown(w))
             return root;
     }
-    return wm_hotspots(root, spots, WM_HOT_MAX) > 0 ? root : NULL;
+    return has_button_child(root) && wm_hotspots(root, spots, WM_HOT_MAX) > 0 ? root : NULL;       /* only a window that is made of standard controls (hidden ones too): a map window that tests its clicks is not a page */
 }
 
 static void collect_page(Out *o, const Window *root)
 {
-    int i, n = wm_window_count(), spots[WM_HOT_MAX][4], ns;
+    int i, n = wm_window_count();
 
     for (i = 0; i < n; i++) {
         Window *w = wm_window_at_index(i);
@@ -461,17 +486,7 @@ static void collect_page(Out *o, const Window *root)
             continue;
         add_control(o, w, 1);
     }
-    ns = wm_hotspots(root, spots, WM_HOT_MAX);
-    for (i = 0; i < ns; i++) {
-        Rc r = {spots[i][0], spots[i][1], spots[i][2], spots[i][3]};
-
-        if (r.x0 < 0) r.x0 = 0;
-        if (r.y0 < 0) r.y0 = 0;
-        if (r.x1 > screen_w) r.x1 = screen_w;
-        if (r.y1 > screen_h) r.y1 = screen_h;
-        if (r.x1 > r.x0 && r.y1 > r.y0 && wm_hit_test((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2) == root->hwnd)        /* nothing on top of it */
-            add(o, &r, 0, (int)root->hwnd, NAVK_BUTTON, "page button");                 /* id 0: a part of the window, not a window of its own */
-    }
+    add_hotspots(o, root, "page button");
 }
 
 /* ---- a popup menu and a combo box's list ----------------------------------------------------------------------------------------------------------------------- */
@@ -619,12 +634,21 @@ int navwm_collect(NavTarget *out, int max, int x, int y, int *cur)
 int navwm_pick(int x, int y, int dir, int *tx, int *ty)
 {
     NavTarget t[NAV_MAXTARGETS];
-    int n, cur;
+    int n, cur, mode_now = navwm_mode();
 
     n = navwm_collect(t, NAV_MAXTARGETS, x, y, &cur);
-    if (cur < 0 && navwm_mode() == NAVWM_SCREEN)                 /* the pointer is on nothing of a screen the game drew: the first press takes the nearest */
+    if (cur < 0 && mode_now == NAVWM_SCREEN)                 /* the pointer is on nothing of a screen the game drew: the first press takes the nearest */
         return nav_nearest(t, n, x, y, tx, ty);
-    return nav_pick(t, n, cur, x, y, dir, tx, ty);
+    if (cur < 0 && navwm_mode() == NAVWM_COMBO) {                /* a list that has just come down, the pointer still on its closed box: the first press goes to the choice the box shows, whichever way it is pressed */
+        const Window *w = wm_window((uint32_t)wm_combo_open());
+        int k = w ? w->hot - w->top : -1;
+
+        if (k >= 0 && k < n) {
+            nav_point(&t[k], tx, ty);
+            return k;
+        }
+    }
+    return nav_pick_ex(t, n, cur, x, y, dir, mode_now == NAVWM_PAGE || mode_now == NAVWM_DIALOG ? NAVF_FORM : 0, tx, ty);
 }
 
 int navwm_snap(int x, int y, int slop, int *sx, int *sy)
@@ -658,8 +682,14 @@ void navwm_dump(FILE *f, int x, int y)
 
     n = navwm_collect(t, NAV_MAXTARGETS, x, y, &cur);
     fprintf(f, "  nav: mode %s, %d targets, pointer (%d,%d) on %d, found in %.1f ms\n", navwm_mode_name(navwm_mode()), n, x, y, cur, (port_now() - t0) * 1000.0);
-    for (i = 0; i < n; i++)
-        fprintf(f, "  target %d zone %d kind %d id 0x%x (%d,%d)-(%d,%d) scroll %d '%s'\n", i, t[i].zone, t[i].kind, t[i].id, t[i].x0, t[i].y0, t[i].x1, t[i].y1, t[i].scroll, t[i].label);
+    for (i = 0; i < n; i++) {
+        char label[sizeof(t[i].label)];
+        size_t k;
+
+        for (k = 0; k < sizeof(label); k++)                              /* a title can hold a line break (the pack screen's button says D, O, N, E one under the other): one line a target */
+            label[k] = (unsigned char)t[i].label[k] < 32 && t[i].label[k] ? ' ' : t[i].label[k];
+        fprintf(f, "  target %d zone %d kind %d id 0x%x (%d,%d)-(%d,%d) scroll %d '%s'\n", i, t[i].zone, t[i].kind, t[i].id, t[i].x0, t[i].y0, t[i].x1, t[i].y1, t[i].scroll, label);
+    }
 }
 
 /* The duel's card the pointer is on, for the controller's "view card" button: the hwnd of the MAGICGAME_CardClass window a click at (x, y) would reach (a card of a hand, a permanent, a card in
