@@ -709,10 +709,9 @@ def step_player(sh, state):
     page_checks(sh, "Player", ts, "player")
     edits = sh.kind_targets(ts, "EDIT")
     check(len(edits) >= 4, "the Player page's edit boxes are targets (%d)" % len(edits))
-    # an edit box: A gives it the keyboard (text input on while it has the focus), so first nothing has it
+    # an edit box: A gives it the keyboard (text input on while it has the focus; the page may have given the first box the focus already, so the typed text is what tells which box has it)
     name = next((t for t in edits if t.label == "<player>"), edits[0] if edits else None)
     if name:
-        check(sh.text_input() is False, "before it: no text field has the focus (text input off)")
         press_target_at(sh, ts, name)
         end = time.time() + 4
         on = False
