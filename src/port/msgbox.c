@@ -249,7 +249,13 @@ static const char *id_name(int id)
 
 int msgbox_log_line(char *out, size_t cap, const char *caption, const char *text, int id, int answered)
 {
-    return snprintf(out, cap, "MessageBox: %s: %s -> %s%s", caption, text, id_name(id), answered ? " (answered)" : "");
+    char flat[2200];
+    size_t i, n = 0;
+
+    for (i = 0; text[i] && n + 1 < sizeof(flat); i++)                /* one line in the log, whatever line breaks the text has (a message of this port's own has two paragraphs) */
+        flat[n++] = text[i] == '\n' || text[i] == '\r' ? ' ' : text[i];
+    flat[n] = 0;
+    return snprintf(out, cap, "MessageBox: %s: %s -> %s%s", caption, flat, id_name(id), answered ? " (answered)" : "");
 }
 
 int msgbox_show(uint32_t owner, const char *caption, const char *text, uint32_t type)

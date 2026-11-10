@@ -2660,6 +2660,12 @@ static void test_msgbox(void)
     msgbox_log_line(line, sizeof(line), "End of duel", "Want to play again?", IDYES, 0);
     CHECK(!strcmp(line, "MessageBox: End of duel: Want to play again? -> IDYES"));
     msgbox_log_line(line, sizeof(line), "Deck Maker", "Save?", IDCANCEL, 1);
+    {
+        char two[200];
+
+        msgbox_log_line(two, sizeof(two), "Help", "First paragraph.\n\nSecond.", IDOK, 0);
+        CHECK(!strcmp(two, "MessageBox: Help: First paragraph.  Second. -> IDOK") && strchr(two, '\n') == NULL);       /* one line in the log */
+    }
     CHECK(!strcmp(line, "MessageBox: Deck Maker: Save? -> IDCANCEL (answered)"));
 
     /* the size: the text wrapped to a width, the icon beside it, the buttons in a row under both */
