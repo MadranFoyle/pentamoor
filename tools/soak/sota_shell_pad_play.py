@@ -90,6 +90,11 @@ class Shell:
     def stop(self):
         self.g.stop()
 
+    def restart(self):
+        """A new process for what follows a flow that cannot be left from the pad (the sealed deck's tournament is a chain of dialogs): the same pipe, workdir and overlay copy, a fresh title page."""
+        self.g.stop()
+        return self.start()
+
     # ---- reads that settle ---------------------------------------------------------------------------------------------------------
     def nav(self):
         r = self.g.nav_targets()
@@ -137,6 +142,25 @@ class Shell:
             if w.cls.rstrip("*") == "BUTTON" and w.title == title and t.shown(w):
                 return w.checked
         return None
+
+    def spin_text(self, up):
+        """The number a spin button shows: the text of the edit box at its left (the spin target `up`'s window tree neighbour), or None."""
+        tree = self.tree()
+        for w in tree.wins:
+            if w.cls.rstrip("*") == "EDIT" and tree.shown(w) and abs(w.x1 - up.x0) <= 2 and w.y0 <= up.y0 < w.y1:
+                return w.title
+        return None
+
+    def wait_spin(self, up, was, timeout=4.0):
+        """The spin button's number once it is not `was` (or the last one read when it never is within the time)."""
+        end = time.time() + timeout
+        v = was
+        while time.time() < end:
+            v = self.spin_text(up)
+            if v != was:
+                return v
+            time.sleep(0.1)
+        return v
 
     def kind_targets(self, ts, cls):
         """The targets that are windows of class `cls` (COMBOBOX, EDIT), found through the window tree: a combo box's closed box is as tall as an edit box, so the list cannot tell them apart."""
@@ -341,6 +365,9 @@ def go_ball(sh, ts, ball):
     """From wherever the pointer is on the page's targets to the round button `ball` with the D-pad, then A; waits for the page's own button to show. Returns the settled list of the page."""
     balls = sorted([t for t in ts if t.label == "page button"], key=lambda t: t.y0)
     want = balls[BALLS.index(ball)]
+    if not on_target(sh, ts):                                  # a fresh process, or a list has just closed over the pointer: the mouse puts it on the first target
+        sh.mouse_puts += 1
+        sh.put(*ts[0].center)
     reached = sh.walk_to(ts, want)
     check(reached, "the D-pad walks to the round button %s (%d presses at most)" % (ball, 12))
     if not reached:
@@ -381,25 +408,34 @@ def on_target(sh, ts):
 
 # ---- the pages ------------------------------------------------------------------------------------------------------------------------
 def spin_checks(sh, ts, nth=0):
-    """A on a spin button's arrows counts (the edit box beside it shows the number): the up arrow changes it and the down arrow puts it back; at the top of its range the down arrow goes first."""
+    """A on a spin button's arrows counts (the edit box beside it shows the number): the up arrow adds one and the down arrow takes it back; at the top of its range the down arrow goes first."""
     up = find(ts, "spin up", nth)
     down = find(ts, "spin down", nth)
     if not up or not down:
         check(False, "spin button %d has both arrows as targets" % nth)
         return
-    box = (up.x0 - 40, up.y0, up.x0, down.y1)
-    before = sh.region(box)
+    before = sh.spin_text(up)
     press_target(sh, ts, "spin up", nth)
-    after = sh.changed(box, before)
-    first, second, what = "spin up", "spin down", "up"
+    after = sh.wait_spin(up, before)
+    second = "spin down"
+    what = "up"
+    try:
+        good = int(after) == int(before) + 1
+    except (TypeError, ValueError):
+        good = False
     if after == before:                                           # at the top of its range: the down arrow goes first
         press_target(sh, ts, "spin down", nth)
-        after = sh.changed(box, before)
-        first, second, what = "spin down", "spin up", "down (the number was at the top of its range)"
-    check(after != before, "A on the %s arrow of spin button %d changes the number (the picture beside it)" % (what, nth))
+        after = sh.wait_spin(up, before)
+        second = "spin up"
+        what = "down (the number was at the top of its range)"
+        try:
+            good = int(after) == int(before) - 1
+        except (TypeError, ValueError):
+            good = False
+    check(good, "A on the %s arrow of spin button %d counts: %s -> %s" % (what, nth, before, after))
     press_target(sh, ts, second, nth)
-    back = sh.changed(box, after)
-    check(back == before, "A on the other arrow puts it back")
+    back = sh.wait_spin(up, after)
+    check(back == before, "A on the other arrow puts it back: %s -> %s" % (after, back))
 
 
 def toggle_checks(sh, ts, label, radio=False):
@@ -445,7 +481,7 @@ def combo_checks(sh, ts, nth=0, name="the combo box"):
         check(False, "%s is a target" % name)
         return
     c = combos[nth]
-    box = (c.x0 + 2, c.y0 + 2, c.x1 - 20, c.y1 - 2)              # the closed box without the arrow
+    box = (c.x0 + 2, c.y0 + 2, min(c.x1 - 20, c.x0 + 150), c.y1 - 2)      # the left of the closed box: the pointer's arrow (a screenshot shows it) is drawn right of and under where the pointer is, which is the middle
     press_target_at(sh, ts, c)
     h0 = sh.region(box)
     ok, mode, rows = sh.wait(lambda m, t: m == "combo" and len(t) >= 2, 5)
@@ -531,13 +567,25 @@ def options_checks(sh, ts, label, name):
     check(ok, "A on OK closes it")
 
 
+def recover(sh, ts):
+    """Leave whatever is open (a list, a dialog) with Back and return the page's settled list (the previous one if the shell does not show a page)."""
+    for _ in range(4):
+        mode, now = sh.nav()
+        if mode == "page":
+            break
+        sh.back()
+        sh.wait(lambda m, t: m != mode, 3)
+    ok, mode, now = sh.wait(lambda m, t: m == "page" and len(t) >= 5, 5)
+    return now if ok else ts
+
+
 def step_title(sh, state):
     ok, mode, ts = sh.wait(lambda m, t: m == "page" and len(t) == 5)
     check(ok and all(t.label == "page button" and t.kind == K_BUTTON for t in ts), "the title page: mode page, five targets, the round buttons Duel, Tools, World, Help, Player (%d)" % len(ts))
     ys = [t.y0 for t in ts]
     check(ys == sorted(ys) and len({t.y0 for t in ts}) == 5, "they are in a column, Duel on top")
-    sh.graph, bad = {}, []
     graph, bad = sh.explore(ts)
+    state["title_graph"] = graph
     check(not bad, "every target in every direction (20 moves)%s" % ("" if not bad else ": %s" % bad[:3]))
     ok, short = strongly_connected(graph)
     check(ok, "each round button can be reached from every other")
@@ -580,31 +628,36 @@ def step_duel(sh, state):
     for n in range(3):
         spin_checks(sh, sts, nth=n)
     radio_checks(sh, sts, ["&40 cards", "&60 cards"])
-    # the pack screen: a dialog of its own that the shell hides its window under: its DONE button is a window, its packs are places it tests the pointer against
+    # the pack screen: a dialog of its own that the shell hides its window under: its DONE button is a window, its packs are places it tests a click against (learned from the first click on it)
     press_target(sh, sts, "Start &tournament")
     ok, mode, pts = sh.wait(lambda m, tt: m == "dialog" and len(tt) >= 1, 12)
-    check(ok, "A on Start tournament: the pack screen is a dialog (mode dialog) with %d D-pad target(s) before the pointer has moved in it" % len(pts))
-    if ok:
+    done = next((t for t in pts if t.kind == K_BUTTON and t.id), None)
+    check(ok and done is not None, "A on Start tournament: the pack screen is a dialog (mode dialog) and its DONE button is a D-pad target (%d target(s))" % len(pts))
+    if ok and done:
         p, what = sh.press("left")
+        check(done.x0 <= p[0] < done.x1 and done.y0 <= p[1] < done.y1, "the first D-pad press in it goes to DONE (%s)" % (p,))
+        sh.put(400, 560)                                           # a click on the picture, where the dialog has nothing: the dialog tests its packs against it, and so they are known
+        sh.a_button()
         ok, mode, pts = sh.wait(lambda m, tt: m == "dialog" and len(tt) >= 4, 6)
-        done = next((t for t in pts if t.kind == K_BUTTON and t.id), None)
         areas = [t for t in pts if t.label == "dialog area"]
-        check(ok and done is not None and len(areas) >= 3, "after the first D-pad move in it: DONE and the %d packs (the places the dialog tests the pointer against) are targets" % len(areas))
-        check(done is not None and done.x0 <= p[0] < done.x1 and done.y0 <= p[1] < done.y1, "the first press went to DONE (%s)" % (p,))
+        check(ok and len(areas) >= 3, "after a click on it: DONE and the %d packs (the places the dialog tests a click against) are targets" % len(areas))
         if areas:
-            before = sh.region((0, 180, 800, 600))
+            before = sh.region((0, 180, 800, 600), settle=True)
             sh.put(*areas[0].center)
             sh.a_button()
             after = sh.changed((0, 180, 800, 600), before)
             check(after != before, "A on a pack shows what is in it (the picture changed)")
-        if done:
-            sh.put(*done.center)
-            sh.a_button()
-            ok, mode, sts2 = sh.wait(lambda m, tt: m == "page" and any(x.label == "Start &tournament" for x in tt), 8)
-            check(ok, "A on DONE closes it: back on the Sealed Deck page")
-            state["ts"] = sts2 if ok else sts
-            return
-    state["ts"] = sts
+        sh.put(*done.center)
+        sh.a_button()
+        # DONE goes on to the tournament: the deck library in a dialog, its Stats, Deck Info and Exit buttons; the Edit deck, Next Round and Quit buttons of the ladder are under a window of the library
+        ok, mode, tts = sh.wait(lambda m, tt: m == "dialog" and any(x.label == "Exit" for x in tt), 12)
+        names = sorted(clean(x.label) for x in tts if x.kind == K_BUTTON)
+        check(ok and {"Deck Info", "Exit"} <= set(names) and not ({"Quit", "Next Round"} & set(names)), "A on DONE: the tournament's deck library is a dialog; its buttons that can be pressed are targets (%s), the ones under its card list are not" % ", ".join(names))
+    # the tournament is a chain of dialogs (free lands, the ladder) that the pad cannot leave without playing it: a new process for the rest
+    ok = sh.restart()
+    check(ok, "the shell is started again (a fresh title page) for the pages that follow")
+    state["ts"] = sh.wait(lambda m, tt: m == "page" and len(tt) == 5)[2]
+    sh.graph = state.get("title_graph", {})
 
 
 def step_tools(sh, state):
@@ -679,8 +732,11 @@ def step_player(sh, state):
 
 def step_dialogs(sh, state, a):
     """Start match: the match-up screen, the coin toss and the ante dialog, then the board."""
-    ts = visit(sh, state, "Duel", state["ts"])
-    press_target(sh, ts, "Start &match")
+    sh.graph = state.get("title_graph", {})
+    ts = visit(sh, state, "Duel", state["ts"])                    # the round button by the D-pad (the title page's moves are known), the page's own button with the mouse (this process has not measured the page)
+    t = find(ts, "Start &match")
+    sh.put(*t.center)
+    sh.a_button()
     ok, mode, ds = sh.wait(lambda m, tt: m == "dialog", 15)
     check(ok, "A on Start match: a dialog (the match-up screen) comes up (%d targets)" % len(ds))
     note("the match-up screen has no button: a click anywhere (A) goes on")
@@ -735,20 +791,21 @@ def step_touch(a, seed, overlay):
         check(ok, "a tap on the round button Duel opens the page")
         ok, mode, ts = sh.wait(lambda m, t: m == "page" and any(x.label == "Solo &Duel" for x in t) and len(t) >= 15)
         up, down = find(ts, "spin up"), find(ts, "spin down")
-        box = (up.x0 - 40, up.y0, up.x0, down.y1)
-        h0 = sh.region(box)
+        v0 = sh.spin_text(up)
         tap(up.x1 + 9, up.y0 + 5)                                 # 9 pixels right of the arrow, on nothing
-        h1 = sh.changed(box, h0)
-        if h1 == h0:                                                # at the top of its range: the other arrow first
+        v1 = sh.wait_spin(up, v0)
+        if v1 == v0:                                                # at the top of its range: the other arrow first
             tap(down.x0 + 6, down.y1 + 6)
-            h1 = sh.changed(box, h0)
-            check(h1 != h0, "a tap 6 pixels under the down arrow counts down (the number was at the top of its range)")
+            v1 = sh.wait_spin(up, v0)
+            check(v1 != v0, "a tap 6 pixels under the down arrow counts down: %s -> %s (the number was at the top of its range)" % (v0, v1))
             tap(up.x1 + 9, up.y0 + 5)
-            check(sh.changed(box, h1) == h0, "a tap 9 pixels beside the up arrow of a spin button (12 pixels wide) counts up")
+            v2 = sh.wait_spin(up, v1)
+            check(v2 == v0, "a tap 9 pixels beside the up arrow of a spin button (12 pixels wide) counts up: %s -> %s" % (v1, v2))
         else:
-            check(True, "a tap 9 pixels beside the up arrow of a spin button (12 pixels wide) counts up")
+            check(v1 != v0, "a tap 9 pixels beside the up arrow of a spin button (12 pixels wide) counts up: %s -> %s" % (v0, v1))
             tap(down.x0 + 6, down.y1 + 6)                          # just under the down arrow
-            check(sh.changed(box, h1) == h0, "a tap 6 pixels under the down arrow counts down")
+            v2 = sh.wait_spin(up, v1)
+            check(v2 == v0, "a tap 6 pixels under the down arrow counts down: %s -> %s" % (v1, v2))
         ante = find(ts, "&Ante")
         was = sh.checked("&Ante")
         tap(ante.x1 + 8, ante.y0 + 7)                              # beside the check box
@@ -769,10 +826,10 @@ def step_touch(a, seed, overlay):
             tap(c.x0 + 100, c.y0 + 8)
             ok, mode, rows = sh.wait(lambda m, t: m == "combo" and len(t) >= 2, 5)
             if ok:
-                h0 = sh.region((c.x0 + 2, c.y0 + 2, c.x1 - 20, c.y1 - 2))
+                h0 = sh.region((c.x0 + 2, c.y0 + 2, min(c.x1 - 20, c.x0 + 150), c.y1 - 2))
                 tap(rows[3].x0 + 30, rows[3].y0 + 8)
                 ok, mode, _ = sh.wait(lambda m, t: m == "page", 5)
-                h1 = sh.changed((c.x0 + 2, c.y0 + 2, c.x1 - 20, c.y1 - 2), h0)
+                h1 = sh.changed((c.x0 + 2, c.y0 + 2, min(c.x1 - 20, c.x0 + 150), c.y1 - 2), h0)
                 check(ok and h1 != h0, "a tap on a row takes it")
     finally:
         sh.stop()
@@ -808,7 +865,11 @@ def main():
             for name, fn in (("duel", step_duel), ("tools", step_tools), ("world", step_world), ("help", step_help), ("player", step_player)):
                 if name in only:
                     print("--- %s" % name, flush=True)
-                    fn(sh, state)
+                    try:
+                        fn(sh, state)
+                    except Exception as e:                         # a step that cannot go on is one failed check, and the next one starts from the page the shell is on
+                        check(False, "%s: the step stopped: %s: %s" % (name, type(e).__name__, e))
+                    state["ts"] = recover(sh, state.get("ts"))
         finally:
             sh.stop()
         if "dialogs" in only:
@@ -820,7 +881,7 @@ def main():
                 sh2 = Shell(a, "dialogs", a.seed, overlay=overlay)
                 if sh2.start():
                     try:
-                        st2 = {"ts": sh2.nav()[1]}
+                        st2 = {"ts": sh2.nav()[1], "title_graph": state.get("title_graph", {})}
                         step_dialogs(sh2, st2, a)
                     finally:
                         sh2.stop()

@@ -2,7 +2,7 @@
 
 The vision: in a duel the D-pad is enough. From the card under the cursor, a direction goes to the nearest card that way (up the hand, left to your cards, up again to the opponent's), crosses from
 one zone to the next at an edge, and reaches the other things a click can act on (the Done button, the life totals, the piles, the phase icons). The stick stays for free pointing. The same goes
-for a dialog's buttons and fields and for a popup menu's rows. The screens the game draws itself (title, new game, village, shops, world map, clues, encounter boxes) have their targets read from the game's
+for a dialog's buttons and fields and for a popup menu's rows, and for the pages of Spells of the Ancients' Magic Shell (`controller-screens.md`). The screens the game draws itself (title, new game, village, shops, world map, clues, encounter boxes) have their targets read from the game's
 own button table instead (`controller-screens.md`), and the deck builder's cards and buttons are windows like these. On the map and in castles and dungeons the D-pad is still the arrow keys (`controller.md`).
 
 This note is the research (where the game keeps its cards, and how the program gets at them), the rules, and what was tested.
@@ -87,7 +87,7 @@ its repeats, so a key is never left down.
 2. A candidate lies beyond the current one: its centre strictly past the current centre along the axis, and either overlaps the current box sideways (up and down: in x; left and right: in y) or
    is within 45 degrees (no further sideways than along). No wrapping.
 3. Tiers, the first with a candidate wins: in the beam, same zone; in the beam, another zone; in the cone only, same zone; in the cone only, another zone. A zone is a hand, a territory, a list, a
-   dialog's buttons, the life totals, the piles, a mana pool, a phase column side. So inside a row of cards left and right walk the row, and at its end the move jumps to what is next to it.
+   dialog's buttons, the life totals, the piles, a mana pool, a phase column side. So inside a row of cards left and right walk the row, and at its end the move jumps to what is next to it. **In a page or a dialog** (controls laid out as a form, not cards in zones: the Magic Shell's pages, `controller-screens.md`) the second and third tiers are one: a neighbour of the same zone in the cone and one of another zone in the beam compete on distance (rule 4), so no control that only the cone reaches is left out of reach (`nav.h`, `NAVF_FORM`).
 4. In a tier the nearest wins: distance along the axis plus twice the sideways offset of the centres. A tie goes to the smaller sideways offset, then to the earlier in the list (sorted top to
    bottom, left to right), so it is the same every time.
 5. A list that scrolls (a list box with rows above or below what is shown) says "scroll" instead of leaving it: the D-pad taps its arrow key, and the list moves. Nothing else scrolls: the hand

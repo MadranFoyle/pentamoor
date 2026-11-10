@@ -445,6 +445,14 @@ static int glyph_edges(const TTFont *f, int glyph, double m[6], Edges *E, int de
 }
 
 /* A glyph's coverage: an 8-bit plane with the offsets of its top-left corner from the origin (x right, y up from the baseline). */
+/* One cell's share of the glyph's coverage; an edge that starts a hair left of the bitmap (a negative cell: floor of -0.2) or ends at its right edge has no cell to give it to, and the bitmap is cut there (an
+ * index of -1 on the first row wrote before the block and killed the program with a bus error once, when a combo box's list drew a name). */
+static void acc_add(double *acc, int W, int row, int c, double v)
+{
+    if (c >= 0 && c < W)
+        acc[row * W + c] += v;
+}
+
 uint8_t *ttf_glyph(const TTFont *f, double em, unsigned char ch, int *w, int *h, int *left, int *top)
 {
     Edges E = {0};
@@ -510,9 +518,8 @@ uint8_t *ttf_glyph(const TTFont *f, double em, unsigned char ch, int *w, int *h,
             if (c0 == c1) {
                 double xmf = 0.5 * (xa + xb) - c0;           /* the edge stays in one cell: split its area at the cell's mean x */
 
-                acc[row * W + c0] += dir * dy * (1.0 - xmf);
-                if (c0 + 1 < W)
-                    acc[row * W + c0 + 1] += dir * dy * xmf;
+                acc_add(acc, W, row, c0, dir * dy * (1.0 - xmf));
+                acc_add(acc, W, row, c0 + 1, dir * dy * xmf);
             } else {
                 double slope = dy / (right_x - left_x);
 
@@ -521,9 +528,8 @@ uint8_t *ttf_glyph(const TTFont *f, double em, unsigned char ch, int *w, int *h,
 
                     if (cr <= cl)
                         continue;
-                    acc[row * W + c] += dir * part * (1.0 - xmf);
-                    if (c + 1 < W)
-                        acc[row * W + c + 1] += dir * part * xmf;
+                    acc_add(acc, W, row, c, dir * part * (1.0 - xmf));
+                    acc_add(acc, W, row, c + 1, dir * part * xmf);
                 }
             }
         }

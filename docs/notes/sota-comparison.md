@@ -750,7 +750,7 @@ The 1.0 pad smoke (`pad_play.py`) passes (18 checks), and `make -C src/port test
 
 ### Follow-up, not done
 
-- **Controller and touch on the shell** (`pad`/`touch`): the shell's pages are standard controls inside child dialogs, which `navwm.c`'s dialog collector could take (it collects the controls of a modal dialog); the page buttons are subclassed owner-draw buttons, so the plumbing exists (`plain()`), but the page switching, the combo boxes and the spin buttons need targets and `A`/`B` rules, and a hover check like `sota_pad_play.py`'s. Not almost free, so not done. A mouse and a keyboard work.
+- **(Done afterwards: [controller-screens.md](controller-screens.md), "The Magic Shell".)** Controller and touch on the shell (`pad`/`touch`): the shell's pages are standard controls inside child dialogs and its five round buttons are no windows; the D-pad's mode `page`, the spin buttons' halves, the places the shell tests its clicks against (`PtInRect`), B and Back, a finger's snap onto small controls, and `tools/soak/sota_shell_pad_play.py` came after this milestone.
 - (**Done in "Shell polish", below.**) The caret and selection of an edit box (typing appends and Backspace removes the last character).
 - (**Done in "Shell polish", below.**) `WinHelp.exe`/`Write.exe` (the Help page's two programs): the port has `winhelp.c` for 1.0's help; the shell's help file is not wired to it.
 - ManaLink 3.0's `magic.exe` (a second profile row, the 151-slot duel layout): out of scope.

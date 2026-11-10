@@ -360,9 +360,12 @@ static int reachable(const Window *w, const Rc *r)
 }
 
 /* The standard control `w` as a target, if it is one the pointer can act on (a push, check or radio button, an edit box, a combo box's closed box, the rows of a list box, the two halves of a spin
- * button). `page`: on an ordinary window's page, where a control must also be the one a click at its middle reaches. Returns 1 if `w` is such a control (whether or not it made a target). */
-static int add_control(Out *o, const Window *w, int page)
+ * button) and a click at its middle reaches it (nothing is on top of it: on a page the controls of another page lie under this one, and the sealed deck's tournament screen has its Edit deck, Next Round
+ * and Quit buttons under a window of the deck library). Returns 1 if `w` is such a control (whether or not it made a target). */
+static int add_control(Out *o, const Window *w)
 {
+    const int page = 1;
+
     Rc r;
     int zone = (int)w->parent;
 
@@ -422,7 +425,7 @@ static void collect_dialog(Out *o, uint32_t hdlg)
 
         if (!w || w->hwnd == hdlg || !w->visible || !is_below(w, hdlg) || !shown(w) || !w->w || !w->h)
             continue;
-        if (add_control(o, w, 0))
+        if (add_control(o, w))
             continue;
         if (w->proc && !w->subclassed && !cls_is(w, "STATIC") && !has_hit_child(w))
             add_window(o, w, (int)w->parent, NAVK_OTHER);                              /* a window of the game's own inside a dialog (the card choice) */
@@ -484,7 +487,7 @@ static void collect_page(Out *o, const Window *root)
 
         if (!w || w == root || !w->visible || !is_below(w, root->hwnd) || !shown(w) || !w->w || !w->h)
             continue;
-        add_control(o, w, 1);
+        add_control(o, w);
     }
     add_hotspots(o, root, "page button");
 }

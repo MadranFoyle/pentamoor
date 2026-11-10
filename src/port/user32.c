@@ -377,7 +377,7 @@ void wm_hot_note(int l, int t, int r, int b, int x, int y, uint32_t site)
 
 int wm_hotspots(const Window *w, int (*out)[4], int max)
 {
-    int i, j, ox, oy, best = -1, best_n = 0, sites = 0, n = 0;
+    int i, j, ox, oy, best = -1, best_n = 0, n = 0;
 
     if (!w || w->nspot == 0 || w->spot_w != w->w || w->spot_h != w->h)
         return 0;
@@ -389,17 +389,16 @@ int wm_hotspots(const Window *w, int (*out)[4], int max)
             if (j < i && w->spot[j][4] == w->spot[i][4])
                 first = 0;
         }
-        sites += first;
         if (first && count > best_n) {
             best = i;
             best_n = count;
         }
     }
-    if (best < 0 || (best_n < 2 && sites > 1))
+    if (best < 0)
         return 0;
     wm_client_origin(w, &ox, &oy);
     for (i = 0; i < w->nspot && n < max; i++)
-        if (w->spot[i][4] == w->spot[best][4]) {
+        if (best_n >= 2 ? w->spot[i][4] == w->spot[best][4] : 1) {            /* no loop at all (a dialog that tests its few areas one after the other): every rectangle it asked about */
             out[n][0] = ox + w->spot[i][0]; out[n][1] = oy + w->spot[i][1];
             out[n][2] = ox + w->spot[i][2]; out[n][3] = oy + w->spot[i][3];
             n++;

@@ -119,7 +119,7 @@ Window *wm_dlg_item(uint32_t hdlg, uint32_t id);
 /* Hot spots: a window of the program's own that draws buttons itself and tests where a click landed (the Magic Shell: five round buttons on its main window; the sealed deck's pack screen: three packs) is no
  * tree of child windows. The program does the test with PtInRect, in its handler of WM_LBUTTONDOWN (and of WM_MOUSEMOVE, to light the button under the pointer); the window layer notes each rectangle it is asked about with that message's point (nothing of the program's code or data is read), so
  * the D-pad can put the pointer on them. A program tests its buttons in a loop (one place asks about each of them) and its odd rectangles (the window's own caption buttons, a hidden region) one by one from places of
- * their own, and a press that hits none runs every test: so what wm_hotspots gives is the rectangles one place asked about, the place that asked about most (at least two, or the only one asked). They are in
+ * their own, and a press that hits none runs every test: so what wm_hotspots gives is the rectangles one place asked about, the place that asked about most when one asked about two or more (a loop), and, when none did (a dialog that tests its few areas one after the other), all of them. They are in
  * screen coordinates, x0, y0, x1, y1 each (x1 and y1 exclusive); returns how many (at most max).
  * wm_hot_probe: ask the window where they are by sending it one press and release of the left button at the corner of its client area, which hits nothing; done once for a window, 1 if it sent. */
 int wm_hotspots(const Window *w, int (*out)[4], int max);

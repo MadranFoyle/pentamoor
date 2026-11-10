@@ -3203,6 +3203,18 @@ static uint32_t shellproc(const uint32_t *a)
     return a[1] == WM_NCCREATE;
 }
 
+static uint32_t lonelyproc(const uint32_t *a)            /* a dialog that tests its three areas one after the other, each from a place of its own, as the sealed deck's pack screen does */
+{
+    if (a[1] == WM_LBUTTONDOWN) {
+        int x = (int16_t)(a[3] & 0xFFFF), y = (int16_t)(a[3] >> 16);
+
+        ask(0x531698, 26, 235, 105, 350, x, y);
+        ask(0x53170b, 135, 220, 210, 365, x, y);
+        ask(0x531750, 243, 220, 322, 365, x, y);
+    }
+    return a[1] == WM_NCCREATE;
+}
+
 static void pump_all(void)
 {
     uint32_t m = scratch(28);
@@ -3232,7 +3244,18 @@ static void test_navwm_page(void)
     register_class("ShellClass", port_host_function(shellproc), 0, 0);
     top = create("ShellClass", WS_VISIBLE | WS_POPUP, 0, 0, 800, 600, 0, 0);
     root = wm_window(top);
-        /* a window that tests its clicks and has no standard controls (the map of the first game) is no page: the D-pad stays the arrow keys */
+        {   /* no loop: every rectangle it asked about */
+        uint32_t cls_ok = register_class("LonelyClass", port_host_function(lonelyproc), 0, 0), lone;
+        int spots[WM_HOT_MAX][4];
+
+        (void)cls_ok;
+        lone = create("LonelyClass", WS_POPUP, 0, 0, 800, 600, 0, 0);
+        wm_send(lone, WM_LBUTTONDOWN, 1, 0x00500050);
+        CHECK(wm_window(lone)->nspot == 3 && wm_hotspots(wm_window(lone), spots, WM_HOT_MAX) == 3);
+        CHECK(spots[0][0] == 26 && spots[2][2] == 322);
+        API("DestroyWindow", lone);
+    }
+    /* a window that tests its clicks and has no standard controls (the map of the first game) is no page: the D-pad stays the arrow keys */
     wm_send(top, WM_LBUTTONDOWN, 1, 0);
     CHECK(root->nspot == 8 && navwm_mode() == NAVWM_NONE);
     root->nspot = 0;
