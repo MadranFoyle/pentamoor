@@ -497,8 +497,8 @@ uint32_t wm_edit_dragging(void)
     return w && w->edit_drag ? drag_h : 0;
 }
 
-static uint32_t last_t, last_h;
-static int last_x, last_y, clicks;
+static uint32_t click_t, click_h;                           /* the last press in an edit box: when, where, and how many presses in a row (for the double and triple click) */
+static int click_x, click_y, click_n;
 
 int wm_edit_mouse(Window *w, int kind, int x, int y, int shift)
 {
@@ -525,21 +525,21 @@ int wm_edit_mouse(Window *w, int kind, int x, int y, int shift)
             return 1;
         }
         idx = ui_edit_index_at(w, x, y);
-        if (last_h == w->hwnd && now - last_t <= 500 && abs(x - last_x) <= 4 && abs(y - last_y) <= 4)
-            clicks++;
+        if (click_h == w->hwnd && now - click_t <= 500 && abs(x - click_x) <= 4 && abs(y - click_y) <= 4)
+            click_n++;
         else
-            clicks = 1;
-        last_t = now;
-        last_h = w->hwnd;
-        last_x = x;
-        last_y = y;
-        if (clicks == 2) {                                   /* a double click: the word */
+            click_n = 1;
+        click_t = now;
+        click_h = w->hwnd;
+        click_x = x;
+        click_y = y;
+        if (click_n == 2) {                                   /* a double click: the word */
             int a, b;
 
             word_at(w, idx, &a, &b);
             w->sel_anchor = a;
             w->caret = b;
-        } else if (clicks >= 3) {                            /* a triple click: the line (all of a one-line box) */
+        } else if (click_n >= 3) {                            /* a triple click: the line (all of a one-line box) */
             int a = 0, b = text_len(w);
 
             if (w->style & ES_MULTILINE) {
@@ -556,7 +556,7 @@ int wm_edit_mouse(Window *w, int kind, int x, int y, int shift)
             }
             w->sel_anchor = a;
             w->caret = b;
-            clicks = 0;
+            click_n = 0;
         } else {
             w->caret = idx;
             if (!shift)
@@ -583,7 +583,7 @@ int wm_edit_mouse(Window *w, int kind, int x, int y, int shift)
         return 1;
     }
     if (kind == IN_UP && w->edit_drag) {
-        if (w->edit_drag == 1 && (x != last_x || y != last_y)) {          /* the release is the last place the pointer was (a move or two may have been merged into it), but a click's own release is not a drag */
+        if (w->edit_drag == 1 && (x != click_x || y != click_y)) {          /* the release is the last place the pointer was (a move or two may have been merged into it), but a click's own release is not a drag */
             int idx = ui_edit_index_at(w, x, y);
 
             if (idx != w->caret) {

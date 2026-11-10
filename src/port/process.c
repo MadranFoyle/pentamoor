@@ -5,10 +5,13 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "msgbox.h"
 #include "plat.h"
 #include "port.h"
 #include "process.h"
 #include "sched.h"
+#include "textview.h"
+#include "winhelp.h"
 
 extern Image main_image;
 #define P(a) ((char *)(G + (a)))
@@ -171,6 +174,102 @@ static const char *shm_folder(void)
     return shm_dir = shm_made;
 }
 
+/* ---- the programs of Windows a game starts to show something ------------------------------------------------------------------------------------------------------ */
+ProcExt proc_external_kind(const char *file)
+{
+    char name[64];
+    size_t i, n = 0;
+    const char *base = file ? file : "", *p;
+
+    for (p = base; *p; p++)
+        if (*p == '\\' || *p == '/' || *p == ':')
+            base = p + 1;
+    for (i = 0; base[i] && n + 1 < sizeof(name); i++)
+        name[n++] = (char)tolower((unsigned char)base[i]);
+    name[n] = 0;
+    if (n > 4 && !strcmp(name + n - 4, ".exe"))
+        name[n - 4] = 0;
+    if (!strcmp(name, "write") || !strcmp(name, "notepad") || !strcmp(name, "wordpad"))
+        return PROC_EXT_TEXT;
+    if (!strcmp(name, "winhelp") || !strcmp(name, "winhlp32"))
+        return PROC_EXT_HELP;
+    if (!strcmp(name, "tutorial"))
+        return PROC_EXT_TUTORIAL;
+    return PROC_EXT_NONE;
+}
+
+ProcExt proc_external(const char *application, const char *command_line, char *arg, size_t cap)
+{
+    char first[300];
+    const char *rest = "";
+
+    if (cap)
+        arg[0] = 0;
+    proc_first_word(command_line ? command_line : "", first, sizeof(first), &rest);
+    if (cap)
+        proc_first_word(rest, arg, cap, NULL);                              /* the argument may be quoted */
+    return proc_external_kind(application && *application ? application : first);
+}
+
+/* A child that is already over: the program's wait for it (CreateProcessA, then WaitForSingleObject) ends at once. */
+static void finished_child(long *id)
+{
+    static long next = 0x40000000L;
+    int i;
+
+    for (i = 0; i < MAX_CHILDREN && children[i].used; i++)
+        ;
+    *id = next++;
+    if (i < MAX_CHILDREN) {
+        children[i].id = *id;
+        children[i].used = 1;
+        children[i].done = 1;
+        children[i].code = 0;
+    }
+}
+
+static const char *base_of(const char *path)
+{
+    const char *b = path, *p;
+
+    for (p = path; *p; p++)
+        if (*p == '\\' || *p == '/' || *p == ':')
+            b = p + 1;
+    return b;
+}
+
+static int run_external(ProcExt kind, const char *arg, long *id)
+{
+    char host[1200];
+
+    if (kind == PROC_EXT_TEXT) {
+        FILE *f;
+        char *bytes, *text;
+        size_t n;
+        int cut;
+
+        if (!arg[0] || !paths_host(arg, 0, host, sizeof(host)) || !(f = fopen(host, "rb"))) {
+            port_log("process: not started: the text viewer was asked for %s, which is not a file here", arg[0] ? arg : "(nothing)");
+            return 2;                                                       /* ERROR_FILE_NOT_FOUND: a program's debugging dump ("Write c:/spack.txt") is not shown */
+        }
+        bytes = malloc(300000);
+        n = bytes ? fread(bytes, 1, 300000, f) : 0;
+        fclose(f);
+        text = bytes ? textview_prepare(bytes, n, 262144, &cut) : NULL;
+        free(bytes);
+        if (!text)
+            return 8;
+        textview_run(0, base_of(arg), text);
+        free(text);
+    } else if (kind == PROC_EXT_HELP) {
+        winhelp_launch(0, arg);
+    } else {
+        msgbox_run(0, "Magic: The Gathering", msgbox_tutorial_text(), MB_OK | MB_ICONASTERISK);
+    }
+    finished_child(id);
+    return 0;
+}
+
 int proc_start(const char *application, const char *command_line, long *id)
 {
     ProcPlan plan;
@@ -182,8 +281,11 @@ int proc_start(const char *application, const char *command_line, long *id)
     int i;
 
     if (proc_plan(profile, application, command_line, &plan) != 0) {
-        char word[300];
+        char word[300], arg[600];
+        ProcExt kind = proc_external(application, command_line, arg, sizeof(arg));
 
+        if (kind != PROC_EXT_NONE)
+            return run_external(kind, arg, id);
         proc_first_word(application && *application ? application : command_line ? command_line : "", word, sizeof(word), NULL);
         port_log("process: not started: %s is not a program the profile of this build (%s %s) names", word, profile->build, profile->file);
         return 2;                                                   /* ERROR_FILE_NOT_FOUND */

@@ -114,7 +114,7 @@ uint32_t wm_control_message(Window *w, const char *cls, uint32_t msg, uint32_t w
 Window *wm_dlg_item(uint32_t hdlg, uint32_t id);
 void wm_button_auto_check(Window *w);          /* a click on an automatic check box or radio button */
 void wm_spin_click(Window *w, int up);                 /* a click on a spin button's upper or lower arrow */
-void wm_set_focus(uint32_t hwnd);                      /* the keyboard focus (user32.c), as the dialog manager moves it with Tab; an edit box that loses it gets WM_KILLFOCUS and the one that gains it WM_SETFOCUS */
+void wm_set_focus(uint32_t hwnd);                      /* the keyboard focus (user32.c), as the dialog manager moves it with Tab; an edit box that loses it hides its selection and one that gains it selects its text (the program is sent no message) */
 uint32_t wm_get_focus(void);                           /* ... and who has it */
 void wm_query_ctl_colors(Window *parent, Window *c);   /* ask the parent's procedure how the control is coloured (WM_CTLCOLORSTATIC and the rest) and keep the answer for when it is drawn */
 
@@ -174,6 +174,8 @@ int wm_inject_char(int ch);                      /* WM_CHAR alone, to the open d
 int wm_text_focus(void);                         /* an edit control of the open modal dialog, or (no dialog open) one with the keyboard focus on a page, is there to be typed into (the on-screen keyboard may show) */
 extern int wm_cursor_x, wm_cursor_y;
 extern uint8_t wm_keys[256];
+void wm_clear_presses(void);                      /* ... forget them all (a movie is about to start: the click that started it is not the one that stops it) */
+void wm_note_press(uint32_t vk);                 /* a key or mouse button went down (VK_LBUTTON 1, VK_RBUTTON 2): bit 0 of GetAsyncKeyState until it is asked */
 
 uint32_t wm_hit_test(int x, int y);
 void wm_dump(FILE *f);

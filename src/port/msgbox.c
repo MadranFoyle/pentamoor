@@ -304,6 +304,12 @@ int msgbox_show(uint32_t owner, const char *caption, const char *text, uint32_t 
     return id >= 1 && id <= 7 ? id : sp.id[sp.def];
 }
 
+const char *msgbox_tutorial_text(void)
+{
+    return "The Tutorial program is not supported by Pentamoor.\n\nThe tutorial is a separate program (Tutorial.exe, a Macromedia Director projector that plays its lessons from the game's disc), "
+           "and Pentamoor does not run it.";
+}
+
 int msgbox_run(uint32_t owner, const char *caption, const char *text, uint32_t type)
 {
     int id, shown = msgbox_mode() == MSGBOX_ASK;

@@ -72,6 +72,16 @@ int proc_instance_enter(const char *overlay, const char *program, char *msg, siz
 
 /* The arguments this process was started with ($PORT_CMDLINE), or "" */
 const char *proc_args(void);
+/* The programs of Windows itself that a game starts to show something, and that are not programs of the game: Write.exe and Notepad.exe (a text file), WinHelp.exe (a help file), and the
+ * game's own Tutorial.exe, which is a Macromedia Director projector Pentamoor cannot run. The runtime does not start another process for them: it answers the start (a text viewer, a message
+ * about the help file, a message that the tutorial is not supported) and the program's wait for the process ends at once, as if the program had been closed. WinExec("Write c:/spack.txt"),
+ * which shandalar.exe runs on a debugging dump, finds no such file and is not started, without a window. `file` is the program's name as given ("C:\\WINDOWS\\Write.exe", "write", "NOTEPAD.EXE"). */
+typedef enum { PROC_EXT_NONE = 0, PROC_EXT_TEXT, PROC_EXT_HELP, PROC_EXT_TUTORIAL } ProcExt;
+ProcExt proc_external_kind(const char *file);
+/* Which of them a call asks for (the same reading of `application` and `command_line` as proc_plan's: the program is `application`, else the first word of the line, and the line's rest is
+ * what it is asked to show) and the argument, unquoted ("C:\\MAGIC\\PROGRAM\\ReadMe.txt"). */
+ProcExt proc_external(const char *application, const char *command_line, char *arg, size_t cap);
+
 /* The command line the guest sees: GetCommandLineA's ("C:\MAGIC\PROGRAM\NAME.EXE" in capitals, then the arguments), and the C runtime's argv[0] with the arguments
  * ("C:\Magic\Program\" and the file's name as it is spelled). */
 void proc_command_line(char *out, size_t cap);
