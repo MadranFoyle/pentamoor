@@ -189,3 +189,169 @@ def test_a_question_with_nobody_to_ask_says_so(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Download the Zig compiler? -> no" in out and "no terminal to ask on" in out and "--yes" in out
     assert install.ask_yes("Download?", assume=True) is True and capsys.readouterr().out == ""
+
+
+# ---- a file that is not the patch --------------------------------------------------------------------------------------------------------------------------
+def test_a_text_file_given_as_the_patch_is_not_said_to_be_cut_short(tmp_path):
+    """The readme that comes with the patch (sotav215.txt, 2 KB) is smaller than the patch: it was called 'cut short'."""
+    import sotainstall
+    p = tmp_path / "sotav215.txt"
+    p.write_bytes(b"Magic: The Gathering patch notes\r\n" * 60)
+    with pytest.raises(sotainstall.SotaError) as e:
+        sotainstall.check_patch(str(p))
+    assert "cut short" not in str(e.value) and "--patch wants SOTAV215.EXE" in str(e.value)
+
+
+def test_a_program_that_is_the_patch_cut_short_still_is(world, tmp_path):
+    import sotainstall
+    data = world.patch_bytes
+    (tmp_path / "sotav215.exe").write_bytes(data[:data.find(b"PK\x01\x02") - 5])
+    with pytest.raises(sotainstall.SotaError, match="cut short"):
+        sotainstall.check_patch(str(tmp_path / "sotav215.exe"))
+
+
+def test_the_expansion_disc_given_where_the_patch_goes_and_the_other_way_round(tmp_path, world):
+    """--sota and --patch swapped: the patch is a program, not a disc image (and says which option it belongs to)."""
+    import sotainstall
+    with pytest.raises(iso9660.IsoError, match="Windows program"):
+        iso9660.open_disc(world.patch)
+    with pytest.raises(sotainstall.SotaError, match="no files"):
+        sotainstall.check_patch(world.iso2)
+
+
+# ---- a download that macOS has marked (quarantine) ---------------------------------------------------------------------------------------------------------
+def release_folder(tmp_path):
+    import install
+    root = tmp_path / "rel"
+    (root / "tools").mkdir(parents=True)
+    (root / "pentamoor-run").write_bytes(b"\xcf\xfa\xed\xfe")
+    return install.Layout(str(root))
+
+
+def test_the_quarantine_mark_on_the_runtime_is_found_and_explained(tmp_path, monkeypatch):
+    import install
+    layout = release_folder(tmp_path)
+
+    class Done:
+        def __init__(self, out):
+            self.stdout = out
+
+    def fails(*a, **kw):
+        raise OSError("no ls")
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    marked = "-rwxr-xr-x@ 1 me  staff  1234 Nov  9 23:00 pentamoor-run\n\tcom.apple.quarantine\t  57 \n"
+    clean = "-rwxr-xr-x  1 me  staff  1234 Nov  9 23:00 pentamoor-run\n"
+    assert install.quarantined(layout, runner=lambda *a, **kw: Done(marked)) is True
+    assert install.quarantined(layout, runner=lambda *a, **kw: Done(clean)) is False
+    assert install.quarantined(layout, runner=fails) is False
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert install.quarantined(layout, runner=lambda *a, **kw: Done(marked)) is False                 # only a Mac has the mark
+    assert "xattr -dr com.apple.quarantine ." in install.QUARANTINE_MESSAGE and "not signed" in install.QUARANTINE_MESSAGE
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="com.apple.quarantine is a macOS attribute")
+def test_the_installer_and_the_launcher_stop_on_a_marked_download_with_the_command_that_clears_it(tmp_path):
+    import shutil
+    import subprocess
+    root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+    rel = tmp_path / "rel"
+    (rel / "tools" / "install").mkdir(parents=True)
+    for name in os.listdir(os.path.join(root, "tools", "install")):
+        if name.endswith(".py") and not name.startswith("test_"):
+            shutil.copy(os.path.join(root, "tools", "install", name), rel / "tools" / "install" / name)
+    shutil.copytree(os.path.join(root, "tools", "lift"), rel / "tools" / "lift", ignore=shutil.ignore_patterns("__pycache__", "test_*"))
+    for name in ("pentamoor-install", "pentamoor"):
+        shutil.copy(os.path.join(root, name), rel / name)
+    (rel / "pentamoor-run").write_bytes(b"\xcf\xfa\xed\xfe")
+    mark = ["xattr", "-w", "com.apple.quarantine", "0083;5f000000;Safari;", str(rel / "pentamoor-run")]
+    if subprocess.run(mark, capture_output=True).returncode != 0:
+        pytest.skip("cannot set the attribute here")
+    r = subprocess.run([sys.executable, str(rel / "pentamoor-install"), "--check"], capture_output=True, text=True, cwd=rel, timeout=120)
+    assert r.returncode == 1 and r.stderr.startswith("install: macOS has marked these files") and "xattr -dr com.apple.quarantine ." in r.stderr
+    r = subprocess.run(["sh", str(rel / "pentamoor")], capture_output=True, text=True, cwd=rel, timeout=120, stdin=subprocess.DEVNULL)
+    assert r.returncode == 1 and r.stderr.startswith("pentamoor: macOS has marked these files") and "xattr -dr com.apple.quarantine ." in r.stderr
+    subprocess.run(["xattr", "-dr", "com.apple.quarantine", str(rel)], check=True)                    # what the message says to do
+    r = subprocess.run(["sh", str(rel / "pentamoor")], capture_output=True, text=True, cwd=rel, timeout=120, stdin=subprocess.DEVNULL)
+    assert "macOS has marked" not in r.stderr and "the game is not installed" in r.stderr
+
+
+# ---- the wrong file at the prompt ----------------------------------------------------------------------------------------------------------------------------
+def test_a_wrong_file_typed_at_the_prompt_asks_again_instead_of_ending(world, command, tmp_path, monkeypatch, capsys):
+    """Someone who drags the wrong file onto the terminal was sent back to the beginning (the launcher's Install it now? question); the prompt asks again."""
+    import install
+
+    class Terminal:
+        def isatty(self):
+            return True
+
+    bad = tmp_path / "notes.iso"
+    bad.write_bytes(b"not a disc\n" * 1000)
+    answers = iter([str(bad), world.iso2, world.iso1])                         # a text file, the expansion's disc, then the right one
+    monkeypatch.setattr(sys, "stdin", Terminal())
+    monkeypatch.setattr(install, "ask_disc", lambda: next(answers))
+    out = command("--dest", tmp_path / "inst")
+    assert out.count("Try another file, or leave it empty to cancel.") == 2
+    assert "is not an ISO 9660 image" in out and "is the Spells of the Ancients disc" in out
+    assert "game files: " in out and (tmp_path / "inst" / "Magic" / ".pentamoor-extracted").exists()
+
+
+def test_a_wrong_file_given_on_the_command_line_ends_it(world, command, tmp_path):
+    bad = tmp_path / "notes.iso"
+    bad.write_bytes(b"not a disc\n" * 1000)
+    text = refused(command, bad, "--dest", tmp_path / "inst")
+    assert "is not an ISO 9660 image" in text
+
+
+# ---- little free disk space, Ctrl-C ------------------------------------------------------------------------------------------------------------------------
+def test_too_little_free_space_is_said_at_the_start(tmp_path):
+    import install
+    mb = 1 << 20
+    with pytest.raises(SystemExit) as e:
+        install.check_space(str(tmp_path / "sources" / "installed"), False, free_bytes=300 * mb)
+    text = str(e.value)
+    assert text.startswith("install: there is not enough free disk space") and "650 MB" in text and "300 MB is free" in text and str(tmp_path) in text
+    with pytest.raises(SystemExit) as e:
+        install.check_space(str(tmp_path), True, free_bytes=900 * mb)
+    assert "1150 MB (with Spells of the Ancients 2.15)" in str(e.value) and "900 MB is free" in str(e.value)
+    install.check_space(str(tmp_path), False, free_bytes=700 * mb)                      # room enough: nothing said
+    install.check_space(str(tmp_path), True, have_bytes=500 * mb, free_bytes=700 * mb)  # what an earlier install already holds does not need room again
+
+
+def test_the_install_checks_the_space_before_it_reads_the_disc(world, command, tmp_path, monkeypatch):
+    import install
+    monkeypatch.setattr(install.shutil, "disk_usage", lambda p: type("U", (), {"free": 100 << 20})())
+    text = refused(command, world.iso1, "--dest", tmp_path / "inst")
+    assert "not enough free disk space" in text and "100 MB is free" in text
+    assert not (tmp_path / "inst").exists() and command.rec.calls == []
+
+
+def test_the_measured_sizes_are_what_the_messages_say():
+    import install
+    assert install.NEED_MB == {False: 650, True: 1150}
+    assert "650 MB" in install.os_error_message(OSError(errno.ENOSPC, "No space left on device", "/x")) and "1150 MB" in install.os_error_message(OSError(errno.ENOSPC, "No space left", "/x"))
+
+
+def test_ctrl_c_says_how_to_carry_on(monkeypatch):
+    import install
+
+    def stopped(argv=None, default_build=False):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(install, "run", stopped)
+    with pytest.raises(SystemExit) as e:
+        install.main([])
+    assert "install: stopped. Run the same command again to carry on" in str(e.value)
+
+
+# ---- the launcher ------------------------------------------------------------------------------------------------------------------------------------------
+@pytest.mark.skipif(sys.platform == "win32", reason="./pentamoor is a shell script")
+def test_a_mistyped_iso_path_is_said_not_passed_on_to_the_game(tmp_path):
+    import shutil
+    import subprocess
+    root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+    shutil.copy(os.path.join(root, "pentamoor"), tmp_path / "pentamoor")
+    r = subprocess.run(["sh", str(tmp_path / "pentamoor"), "MTG v1.0.iso"], capture_output=True, text=True, cwd=tmp_path, stdin=subprocess.DEVNULL)
+    assert r.returncode == 1 and r.stderr.startswith("pentamoor: MTG v1.0.iso is not a file") and "drag the .iso file" in r.stderr
+    assert "the game is not installed" not in r.stderr                                  # (it was: the name went on to the game as an argument)
+    r = subprocess.run(["sh", str(tmp_path / "pentamoor")], capture_output=True, text=True, cwd=tmp_path, stdin=subprocess.DEVNULL)
+    assert "the game is not installed" in r.stderr                                      # no argument: as before

@@ -136,9 +136,13 @@ def check_patch(path):
         text = str(e)
         size = os.path.getsize(path) if os.path.exists(path) else 0
         hint = ""
-        if size and size < spec["size"]:
+        is_program = True
+        if size:
+            with open(path, "rb") as f:
+                is_program = f.read(2) == b"MZ"                              # (a text file or a picture is not an exe that was cut short)
+        if size and size < spec["size"] and is_program:
             hint = f" The whole {spec['name']} is {kib(spec['size'])} bytes; this file is {kib(size)}: it was cut short (an incomplete download or copy). Get the patch again."
-        elif "no files" in text:
+        elif "no files" in text or not is_program:
             hint = f" --patch wants {spec['name']}, the Spells of the Ancients 2.15 patch (Magic: The Gathering, 19 November 1997)."
         raise SotaError(text + ("." if not text.endswith(".") else "") + hint)
     want = {n.lower(): n for n in spec["files"]}

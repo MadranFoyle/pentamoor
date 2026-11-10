@@ -68,12 +68,58 @@ def os_error_message(e):
     import errno
     where = f" ({e.filename})" if getattr(e, "filename", None) else ""
     if e.errno == errno.ENOSPC:
-        return (f"the disk is full{where}. The install needs about 1 GB of free space while it works (about 500 MB when it is done; --clean frees about 100 MB more). "
-                "Free some space and run the same command again: the files already written are kept.")
+        return (f"the disk is full{where}. The install needs about {NEED_MB[False]} MB of free space while it works ({NEED_MB[True]} MB with Spells of the Ancients 2.15), "
+                "and --clean gives back the intermediate files afterwards. Free some space and run the same command again: the files already written are kept.")
     if e.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
         return (f"cannot write{where}: {e.strerror.lower() if e.strerror else 'permission denied'}. Pentamoor installs into the folder it was unpacked in (it makes sources/ there and puts the "
                 f"game modules beside the launchers). Unpack it where you may write, for example in your home folder (not on a read-only disk or in a system folder), and run it from there.")
     return f"{e.strerror or e}{where}"
+
+
+NEED_MB = {False: 650, True: 1150}            # the disk an install takes while it builds, measured on macOS (arm64): 411 MB for the first game, 896 MB with Spells of the Ancients 2.15, and room to spare
+
+
+def tree_bytes(*folders):
+    """The bytes under these folders that exist (what an earlier install already has there: it is reused, so it does not need room again)."""
+    total = 0
+    for folder in folders:
+        for here, _, files in os.walk(folder):
+            for name in files:
+                try:
+                    total += os.path.getsize(os.path.join(here, name))
+                except OSError:
+                    pass
+    return total
+
+
+def check_space(path, want_sota, have_bytes=0, free_bytes=None):
+    """Die at the start if the drive that holds `path` has less free space than the install needs (a full disk found out in the lifter, after the disc was read, was a traceback); the
+    bytes an earlier install already has are counted. Zig, when it has to be downloaded, is about 100 MB more."""
+    here = os.path.abspath(path)
+    while not os.path.exists(here) and os.path.dirname(here) != here:
+        here = os.path.dirname(here)
+    if free_bytes is None:
+        free_bytes = shutil.disk_usage(here).free
+    need = NEED_MB[bool(want_sota)] * (1 << 20) - have_bytes
+    if free_bytes < need:
+        die(f"there is not enough free disk space: the install needs about {NEED_MB[bool(want_sota)]} MB{' (with Spells of the Ancients 2.15)' if want_sota else ''} on the drive that holds {here}, and "
+            f"{free_bytes >> 20} MB is free. Free some space and run it again (the C compiler, if the installer has to download one, is about 100 MB more).")
+
+
+QUARANTINE_MESSAGE = ("macOS has marked these files as downloaded from the internet (a \"quarantine\" mark) and does not trust them yet, because they are not signed. It may refuse to open them, or leave "
+                      "this window waiting with nothing on it (the first thing that stops is the Python package that reads your game). Clear the mark once, in this folder, and run this again:\n"
+                      "  xattr -dr com.apple.quarantine .")
+
+
+def quarantined(layout, runner=subprocess.run):
+    """macOS, a release: does the runtime still carry the "downloaded from the internet" mark (com.apple.quarantine)? `ls -l@` lists a file's extended attributes (a program that is always there)."""
+    if sys.platform != "darwin" or not layout.release or not os.path.exists(layout.runtime):
+        return False
+    try:
+        r = runner(["ls", "-l@", layout.runtime], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return "com.apple.quarantine" in (r.stdout or "")
 
 
 def check_writable(*paths):
@@ -527,11 +573,15 @@ def main(argv=None, default_build=False):
         run(argv, default_build)
     except OSError as e:
         die(os_error_message(e))
+    except KeyboardInterrupt:
+        sys.exit("\ninstall: stopped. Run the same command again to carry on: what was already written is kept.")
 
 
 def run(argv=None, default_build=False):
     args = parser().parse_args(argv)
     layout = Layout()
+    if quarantined(layout):
+        die(QUARANTINE_MESSAGE)
     if args.check:
         sys.exit(check(layout, args))
     if args.self_test:
@@ -561,20 +611,26 @@ def run(argv=None, default_build=False):
         say(f"the game folder {os.path.join(dest, 'Magic')} is only partly there (an earlier install was stopped); the disc is needed again to finish it.")
     if not args.check and not args.verify_only and (args.disc is not None or not have_game):
         check_writable(dest, *([sota_dest] if want_sota else []), layout.out_dir)
+        check_space(dest, want_sota, tree_bytes(dest, sota_dest, layout.generated, layout.objects))
     # Everything the run will read is opened and checked before anything is written: a wrong disc, a disc in the wrong place, a cut-short patch stop it here, not after the first
     # game has been unpacked.
     disc = disc2 = patch = None
     if args.disc is None and have_game:
         say(f"the game is already extracted in {os.path.join(dest, 'Magic')}; not reading the disc again")
     else:
-        disc_path = args.disc or ask_disc()
-        if not os.path.exists(disc_path):
-            die(f"{disc_path} does not exist")
-        try:
-            disc = iso9660.open_disc(disc_path)
-            sotainstall.check_first_disc(disc, disc_path)
-        except (iso9660.IsoError, sotainstall.SotaError) as e:
-            die(str(e))
+        while disc is None:
+            disc_path = args.disc or ask_disc()
+            try:
+                if not os.path.exists(disc_path):
+                    raise iso9660.IsoError(f"{disc_path} does not exist")
+                disc = iso9660.open_disc(disc_path)
+                sotainstall.check_first_disc(disc, disc_path)
+            except (iso9660.IsoError, sotainstall.SotaError) as e:
+                if args.disc is None and sys.stdin and sys.stdin.isatty():              # a person at a terminal who gave the wrong file: ask again, not start over
+                    say(f"  {e}\n  Try another file, or leave it empty to cancel.")
+                    disc = None
+                    continue
+                die(str(e))
     if want_sota:
         disc2, patch = open_sota_sources(args)
     if args.verify_only:
