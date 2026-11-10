@@ -69,3 +69,9 @@ Run natively with SDL's dummy drivers, the dialogs read from screenshots and the
 * The standalone `DECK.EXE` and the overworld (towns, castles, dungeons): nothing there asks for help or has an About.
 * The real Windows 98 About dialog and the real WinHelp window against screenshots: not compared (no Windows 98 run of the duel's About was made); the look is the game's own template through `ui.c`.
 * The dialog's height is estimated from the text length at about 50 characters a line; a very long help file name could make the text wrap to more lines than room was left for.
+
+## The Magic Shell's Help page (Spells of the Ancients 2.15)
+
+The shell's "Help File" button runs `C:\WINDOWS\WinHelp.exe <install>\Duel.hlp` and "Read Me" runs `C:\WINDOWS\Write.exe <install>\ReadMe.txt`, each with `CreateProcessA` and a wait. Neither is a program of the game, so the
+runtime answers the start instead of starting a process (`proc_external` in `process.c`): WinHelp.exe on a file gets the message above (`winhelp_launch`: the help file is there but cannot be shown, or it is not in the folder), and
+Write.exe, Notepad.exe and WordPad.exe on a text file get a read-only text window (`textview.c`). What ran and what did not: [sota-comparison.md](sota-comparison.md), "Shell polish".

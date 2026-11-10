@@ -1092,6 +1092,18 @@ static int clip_is(const char *want)
     return ok;
 }
 
+static int navy_pixels(Window *w)                                                                 /* how many pixels of the selection's colour the box draws */
+{
+    static uint8_t rgb[3 * 320 * 240];
+    int i, navy = 0;
+
+    memset(rgb, 90, sizeof(rgb));
+    ui_draw_control(rgb, 320, 240, w, 0);
+    for (i = 0; i < 320 * 240; i++)
+        navy += rgb[3 * i] == 0 && rgb[3 * i + 1] == 0 && rgb[3 * i + 2] == 128;
+    return navy;
+}
+
 static void test_edit_box(void)
 {
     enum { VKL = 0x25, VKU = 0x26, VKR = 0x27, VKD = 0x28, VKHOME = 0x24, VKEND = 0x23, VKDEL = 0x2E, VKPGUP = 0x21 };
@@ -1488,6 +1500,25 @@ static void test_edit_box(void)
         CHECK(ui_edit_x_in_line(w, 4) == 0 && ui_edit_x_in_line(w, 6) > 0);
     }
     API("DestroyWindow", e);
+
+    /* the file dialog's box (has_caret) keeps its own caret in `caret` and never has a selection but all of its text (has_caret 2): its unset `sel_anchor` is not one */
+    e = create("EDIT", WS_CHILD | WS_VISIBLE | 0x800000, 10, 200, 100, 20, parent, 18);
+    w = wm_window(e);
+    API("SetWindowTextA", e, cstr("name.dek"));
+    w->has_caret = 1;
+    w->caret = 8;
+    w->sel_anchor = 0;
+    CHECK(navy_pixels(w) == 0);
+    w->has_caret = 2;
+    CHECK(navy_pixels(w) > 50);                                                                     /* all selected: white on navy */
+    w->has_caret = 0;
+    API("SetFocus", parent);
+    API("SetFocus", e);
+    w->sel_anchor = 2;
+    w->caret = 5;
+    CHECK(navy_pixels(w) > 20);                                                                     /* an ordinary box with the focus shows its selection */
+    API("SetFocus", parent);
+    CHECK(navy_pixels(w) == 0);                                                                     /* and hides it without the focus (no ES_NOHIDESEL) */
     pump_to_dispatch();                                                                             /* the EN_CHANGE messages of all this are nobody's business any more */
     API("DestroyWindow", parent);
 }

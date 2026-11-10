@@ -31,8 +31,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import soak  # noqa: E402
 from pentamoor_ctl import Game  # noqa: E402
 
-KEYS = ["Escape", "Escape", "Return", "Return", "space", "Up", "Down", "Left", "Right", "Home", "End", "PageUp", "PageDown", "Tab", "BackSpace"] \
-    + list("abcdefghijklmnopqrstuvwxyz0123456789") + ["F%d" % i for i in range(1, 11)]
+KEYS = ["Escape", "Escape", "Return", "Return", "space", "Up", "Down", "Left", "Right", "Home", "End", "PageUp", "PageDown", "Tab", "BackSpace", "Delete"] \
+    + list("abcdefghijklmnopqrstuvwxyz0123456789") + ["F%d" % i for i in range(1, 11)] \
+    + ["shift+Left", "shift+Right", "shift+Home", "shift+End", "ctrl+Left", "ctrl+Right", "ctrl+a", "ctrl+c", "ctrl+x", "ctrl+v"]       # what an edit box with the focus (the Player page) does something with
 STARTED_RE = re.compile(r"^process: started (\S+) \(module (\S+), id (\d+)\)", re.M)
 # the title menu's Exit button of shandalar.exe, as fractions of the screen (measured at 800x600)
 TITLE_EXIT = (315 / 800, 543 / 600)
@@ -69,8 +70,8 @@ class ShellSoak(soak.Soak):
         super().__init__(a)
         self.known_stderr += [re.compile(r"^LoadLibraryA\(\w+\.dll\) -> mapped"), re.compile(r"^process: started \w+\.exe \(module game_\w+, id \d+\)"),
                               re.compile(r"^process: .* finished"), re.compile(r"^MessageBox: "),
-                              # the Help page's Read Me and Help File run Windows' own Write.exe and WinHelp.exe, which are not programs of the game: the runtime says so and the shell goes on
-                              re.compile(r"^process: not started: C:\\WINDOWS\\(Write|WinHelp)\.exe is not a program the profile"),
+                              # the Help page's Read Me runs Windows' own Write.exe, which the runtime answers with its text viewer (src/port/textview.c; in a run nobody watches it only logs)
+                              re.compile(r"^text viewer: ReadMe\.txt \(\d+ bytes\)"),
                               re.compile(r"^\[debug\] ")]
         self.root = None
         self.where = "start"
