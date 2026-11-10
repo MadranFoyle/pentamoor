@@ -429,44 +429,604 @@ int ui_text_measure(const char *face, int pt, int bold, const char *s, int width
     return h;
 }
 
+/* ---- edit boxes ------------------------------------------------------------------------------------------------------------------------------
+ * One layout serves the drawing, the mouse (which byte offset is under a point), the caret and the scrolling, so they cannot drift apart. A one-line box is one line of text, scrolled to the
+ * left by `edit_xscroll` pixels when it is wider than the box; a multi-line box (ES_MULTILINE) wraps its text to its width into visual lines and shows `edit_top` onward, with a scroll bar when
+ * the window has WS_VSCROLL. Offsets are bytes of the window's own text (edit.c). The text of a password box is drawn (and measured) as asterisks. */
+typedef struct EditGeo {
+    int x0, y0, x1, y1;                 /* the control, on the screen */
+    int tx0, ty0, tx1, ty1;             /* the text's area: inside the frame, left of the scroll bar */
+    int sb;                             /* the scroll bar's left edge, or 0 for none */
+    int inset, ml;
+    UiFont f;
+} EditGeo;
+
+typedef struct VLine { int start, end, next; } VLine;      /* a visual line: its text is [start, end); the next line starts at `next` (after a line break, if the line ended with one) */
+
+static UiFont edit_font(const Window *w, const Window *dlg)
+{
+    const char *face = NULL, *old_face = ctl_face;
+    int bold = 0, px = 0, old_px = ctl_px, old_bold = ctl_bold;
+    UiFont f;
+
+    if (!dlg && w->hfont && gdi_font_object(w->hfont, &face, &bold, &px)) {
+        ctl_face = face;
+        ctl_px = px;
+        ctl_bold = bold;
+        f = ui_font(dlg, 0);
+        ctl_face = old_face;
+        ctl_px = old_px;
+        ctl_bold = old_bold;
+        return f;
+    }
+    return ui_font(dlg, 0);
+}
+
+static void edit_geo(const Window *w, const Window *dlg, EditGeo *g)
+{
+    int three_d = (dlg && (dlg->style & 4u)) || (w->exstyle & 0x200u);
+
+    wm_abs_rect(w, &g->x0, &g->y0, &g->x1, &g->y1);
+    g->f = edit_font(w, dlg);
+    g->inset = three_d ? 2 : 1;
+    g->ml = (w->style & 4u) != 0;
+    g->tx0 = g->x0 + g->inset + 1;
+    g->tx1 = g->x1 - g->inset - 1;
+    g->ty0 = g->y0 + g->inset;
+    g->ty1 = g->y1 - g->inset;
+    g->sb = 0;
+    if (g->ml && (w->style & 0x200000u) && g->x1 - g->x0 > 40) {        /* WS_VSCROLL */
+        g->sb = g->x1 - g->inset - 16;
+        g->tx1 = g->sb;
+    }
+}
+
+static char *edit_shown(const Window *w, const char **s)         /* the text as it is drawn; the returned pointer (or NULL) is to be freed */
+{
+    if ((w->style & 0x20u) && !(w->style & 4u)) {                /* ES_PASSWORD */
+        size_t n = strlen(w->title);
+        char *t = malloc(n + 1);
+
+        if (t) {
+            memset(t, '*', n);
+            t[n] = 0;
+            *s = t;
+            return t;
+        }
+    }
+    *s = w->title;
+    return NULL;
+}
+
+/* The wrapped lines of a multi-line box, kept (a few boxes' worth) until the text, the width or the font changes. */
+typedef struct LCache { uint32_t hwnd, hash; size_t len; int width, pt, bold; const char *face; VLine *v; int n, age; } LCache;
+static LCache lcache[4];
+static int lcache_age;
+
+static uint32_t text_hash(const char *s, size_t n)
+{
+    uint32_t h = 2166136261u;
+    size_t i;
+
+    for (i = 0; i < n; i++)
+        h = (h ^ (unsigned char)s[i]) * 16777619u;
+    return h;
+}
+
+static int fit_end(const UiFont *f, const char *s, int pos, int le, int width)        /* the last offset in (pos, le] whose text [pos, offset) fits */
+{
+    int lo = pos + 1, hi = le;
+
+    if (text_w(f, s + pos, (size_t)(le - pos)) <= width)
+        return le;
+    while (lo < hi) {
+        int mid = (lo + hi + 1) / 2;
+
+        if (text_w(f, s + pos, (size_t)(mid - pos)) <= width)
+            lo = mid;
+        else
+            hi = mid - 1;
+    }
+    return lo;
+}
+
+static VLine *build_lines(const char *s, size_t len, const UiFont *f, int width, int *nout)
+{
+    int cap = 64, n = 0, pos = 0;
+    VLine *v = malloc((size_t)cap * sizeof(*v));
+
+    if (!v)
+        return NULL;
+    for (;;) {
+        int le = pos, brk = 0, e;
+
+        while ((size_t)le < len && s[le] != '\r' && s[le] != '\n')
+            le++;
+        if ((size_t)le < len)
+            brk = (s[le] == '\r' && (size_t)le + 1 < len && s[le + 1] == '\n') ? 2 : 1;
+        for (;;) {                                              /* the line from pos to le, wrapped */
+            if (n == cap) {
+                VLine *nv = realloc(v, (size_t)(cap *= 2) * sizeof(*v));
+
+                if (!nv) {
+                    free(v);
+                    return NULL;
+                }
+                v = nv;
+            }
+            e = le;
+            if (width > 0 && le > pos && text_w(f, s + pos, (size_t)(le - pos)) > width) {
+                int k;
+
+                e = fit_end(f, s, pos, le, width);
+                if (e < le) {
+                    if (s[e] == ' ') {
+                        e++;                                    /* the space after the last word that fits hangs on the line */
+                    } else {
+                        for (k = e - 1; k > pos; k--)
+                            if (s[k] == ' ') {
+                                e = k + 1;
+                                break;
+                            }
+                    }
+                }
+            }
+            if (e >= le) {
+                v[n++] = (VLine){pos, le, le + brk};
+                break;
+            }
+            v[n++] = (VLine){pos, e, e};
+            pos = e;
+        }
+        pos = le + brk;
+        if (!brk)
+            break;
+    }
+    *nout = n;
+    return v;
+}
+
+static const VLine *edit_vlines(const Window *w, const EditGeo *g, const char *s, int *n)
+{
+    size_t len = strlen(s);
+    uint32_t h = text_hash(s, len);
+    int width = g->tx1 - g->tx0, i, oldest = 0;
+
+    for (i = 0; i < 4; i++)
+        if (lcache[i].v && lcache[i].hwnd == w->hwnd && lcache[i].hash == h && lcache[i].len == len && lcache[i].width == width && lcache[i].pt == g->f.pt &&
+            lcache[i].bold == g->f.bold && lcache[i].face == g->f.face) {
+            *n = lcache[i].n;
+            return lcache[i].v;
+        }
+    for (i = 0; i < 4; i++) {
+        if (lcache[i].hwnd == w->hwnd) {                         /* the box's own entry is replaced */
+            oldest = i;
+            break;
+        }
+        if (!lcache[i].v) {
+            oldest = i;
+            break;
+        }
+        if (lcache[i].age < lcache[oldest].age)
+            oldest = i;
+    }
+    free(lcache[oldest].v);
+    lcache[oldest] = (LCache){w->hwnd, h, len, width, g->f.pt, g->f.bold, g->f.face, build_lines(s, len, &g->f, width, n), 0, ++lcache_age};
+    if (!lcache[oldest].v) {
+        *n = 0;
+        return NULL;
+    }
+    lcache[oldest].n = *n;
+    return lcache[oldest].v;
+}
+
+static int line_at(const VLine *v, int n, int off)               /* the last line that starts at or before an offset */
+{
+    int i, at = 0;
+
+    for (i = 0; i < n; i++)
+        if (v[i].start <= off)
+            at = i;
+    return at;
+}
+
+static int page_of(const EditGeo *g)
+{
+    int p = (g->ty1 - g->ty0) / g->f.height;
+
+    return p < 1 ? 1 : p;
+}
+
+static int single_x(const Window *w, const EditGeo *g, int tw)  /* where a one-line box's text starts */
+{
+    int vw = g->tx1 - g->tx0;
+
+    if (tw <= vw)
+        return (w->style & 3u) == 1 ? g->x0 + (g->x1 - g->x0 - tw) / 2 : (w->style & 3u) == 2 ? g->x1 - g->inset - 1 - tw : g->tx0;
+    return g->tx0 - w->edit_xscroll;
+}
+
+static int nearest_boundary(const UiFont *f, const char *s, int a, int b, int lx)      /* the offset in [a, b] whose left edge is nearest to lx (pixels from the start of s + a) */
+{
+    int i, prev = 0;
+
+    for (i = a; i < b; i++) {
+        int next = text_w(f, s + a, (size_t)(i + 1 - a));
+
+        if (lx < (prev + next) / 2)
+            return i;
+        prev = next;
+    }
+    return b;
+}
+
+int ui_edit_index_at(const Window *w, int x, int y)
+{
+    EditGeo g;
+    const char *s;
+    char *own;
+    int r = 0, len;
+
+    if (!w || !w->title)
+        return 0;
+    edit_geo(w, dialog_of(w), &g);
+    own = edit_shown(w, &s);
+    len = (int)strlen(s);
+    if (!g.ml) {
+        r = nearest_boundary(&g.f, s, 0, len, x - single_x(w, &g, text_w(&g.f, s, (size_t)len)));
+    } else {
+        int n, line;
+        const VLine *v = edit_vlines(w, &g, s, &n);
+
+        if (v) {
+            line = w->edit_top + (y - g.ty0) / g.f.height;
+            line = line < 0 ? 0 : line >= n ? n - 1 : line;
+            r = nearest_boundary(&g.f, s, v[line].start, v[line].end, x - g.tx0);
+        }
+    }
+    free(own);
+    return r;
+}
+
+int ui_edit_line_count(const Window *w)
+{
+    EditGeo g;
+    const char *s;
+    char *own;
+    int n = 1;
+
+    if (!w || !w->title)
+        return 1;
+    edit_geo(w, dialog_of(w), &g);
+    own = edit_shown(w, &s);
+    if (g.ml)
+        edit_vlines(w, &g, s, &n);
+    free(own);
+    return n;
+}
+
+int ui_edit_page_lines(const Window *w)
+{
+    EditGeo g;
+
+    if (!w)
+        return 1;
+    edit_geo(w, dialog_of(w), &g);
+    return page_of(&g);
+}
+
+int ui_edit_line_of(const Window *w, int offset)
+{
+    EditGeo g;
+    const char *s;
+    char *own;
+    int n, at = 0;
+
+    if (!w || !w->title)
+        return 0;
+    edit_geo(w, dialog_of(w), &g);
+    if (g.ml) {
+        const VLine *v;
+
+        own = edit_shown(w, &s);
+        v = edit_vlines(w, &g, s, &n);
+        at = v ? line_at(v, n, offset) : 0;
+        free(own);
+    }
+    return at;
+}
+
+int ui_edit_line_range(const Window *w, int line, int *start, int *end)
+{
+    EditGeo g;
+    const char *s;
+    char *own;
+    int n, ok = 0;
+
+    if (!w || !w->title)
+        return 0;
+    edit_geo(w, dialog_of(w), &g);
+    own = edit_shown(w, &s);
+    if (!g.ml) {
+        if (line == 0) {
+            *start = 0;
+            *end = (int)strlen(s);
+            ok = 1;
+        }
+    } else {
+        const VLine *v = edit_vlines(w, &g, s, &n);
+
+        if (v && line >= 0 && line < n) {
+            *start = v[line].start;
+            *end = v[line].end;
+            ok = 1;
+        }
+    }
+    free(own);
+    return ok;
+}
+
+int ui_edit_x_in_line(const Window *w, int offset)                  /* the pixels from the start of the visual line an offset is on to the offset */
+{
+    EditGeo g;
+    const char *s;
+    char *own;
+    int n, x = 0;
+
+    if (!w || !w->title)
+        return 0;
+    edit_geo(w, dialog_of(w), &g);
+    own = edit_shown(w, &s);
+    if (g.ml) {
+        const VLine *v = edit_vlines(w, &g, s, &n);
+
+        if (v) {
+            int l = line_at(v, n, offset);
+
+            x = text_w(&g.f, s + v[l].start, (size_t)(offset - v[l].start));
+        }
+    } else
+        x = text_w(&g.f, s, (size_t)offset);
+    free(own);
+    return x;
+}
+
+int ui_edit_offset_at(const Window *w, int line, int x)             /* the offset on a visual line nearest to x pixels from its start */
+{
+    EditGeo g;
+    const char *s;
+    char *own;
+    int n, r = 0;
+
+    if (!w || !w->title)
+        return 0;
+    edit_geo(w, dialog_of(w), &g);
+    own = edit_shown(w, &s);
+    if (g.ml) {
+        const VLine *v = edit_vlines(w, &g, s, &n);
+
+        if (v) {
+            line = line < 0 ? 0 : line >= n ? n - 1 : line;
+            r = nearest_boundary(&g.f, s, v[line].start, v[line].end, x);
+        }
+    }
+    free(own);
+    return r;
+}
+
+int ui_edit_scroll_to_caret(Window *w)
+{
+    EditGeo g;
+    const char *s;
+    char *own;
+    int changed = 0;
+
+    if (!w || !w->title)
+        return 0;
+    edit_geo(w, dialog_of(w), &g);
+    own = edit_shown(w, &s);
+    if (!g.ml) {
+        int len = (int)strlen(s), caret = w->caret > len ? len : w->caret, tw = text_w(&g.f, s, (size_t)len), vw = g.tx1 - g.tx0, old = w->edit_xscroll, cx;
+
+        if (tw <= vw) {
+            w->edit_xscroll = 0;
+        } else {
+            cx = text_w(&g.f, s, (size_t)caret);
+            if (cx - w->edit_xscroll >= vw)
+                w->edit_xscroll = cx - vw + 1;
+            else if (cx - w->edit_xscroll < 0)
+                w->edit_xscroll = cx;
+            if (w->edit_xscroll > tw - vw + 2)
+                w->edit_xscroll = tw - vw + 2;
+            if (w->edit_xscroll < 0)
+                w->edit_xscroll = 0;
+        }
+        changed = old != w->edit_xscroll;
+    } else {
+        int n, page = page_of(&g), line, old = w->edit_top;
+        const VLine *v = edit_vlines(w, &g, s, &n);
+
+        if (v) {
+            line = line_at(v, n, w->caret);
+            if (line < w->edit_top)
+                w->edit_top = line;
+            else if (line >= w->edit_top + page)
+                w->edit_top = line - page + 1;
+            if (w->edit_top > n - page)
+                w->edit_top = n - page;
+            if (w->edit_top < 0)
+                w->edit_top = 0;
+            changed = old != w->edit_top;
+        }
+    }
+    free(own);
+    return changed;
+}
+
+/* The scroll bar of a multi-line box: the same arrows, track and thumb as vscrollbar draws. */
+static void sb_geometry(const EditGeo *g, int nlines, int page, int top, int *thumb_y, int *thumb_h)
+{
+    int h = g->ty1 - g->ty0, bw = 16, th;
+    int ty = g->ty0 + bw;
+
+    th = nlines > page && nlines > 0 ? (h - 2 * bw) * page / nlines : h - 2 * bw;
+    if (th < 8)
+        th = 8;
+    if (nlines > page && top > 0)
+        ty += (h - 2 * bw - th) * (top > nlines - page ? nlines - page : top) / (nlines - page);
+    if (ty + th > g->ty1 - bw)
+        th = g->ty1 - bw - ty;
+    *thumb_y = ty;
+    *thumb_h = th;
+}
+
+int ui_edit_vscroll_hit(const Window *w, int x, int y, int *part)
+{
+    EditGeo g;
+    int n, page, ty, th;
+
+    if (!w || !w->title)
+        return 0;
+    edit_geo(w, dialog_of(w), &g);
+    if (!g.sb || x < g.sb || x >= g.x1 - g.inset || y < g.ty0 || y >= g.ty1)
+        return 0;
+    n = ui_edit_line_count(w);
+    page = page_of(&g);
+    sb_geometry(&g, n, page, w->edit_top, &ty, &th);
+    if (y < g.ty0 + 16)
+        *part = 0;
+    else if (y >= g.ty1 - 16)
+        *part = 1;
+    else if (y < ty)
+        *part = 2;
+    else if (y >= ty + th)
+        *part = 3;
+    else
+        *part = 4;
+    return 1;
+}
+
+int ui_edit_vscroll_pos(const Window *w, int y)                     /* the first line to show for a thumb dragged to a screen y (its middle) */
+{
+    EditGeo g;
+    int n, page, h, th, span;
+
+    if (!w || !w->title)
+        return 0;
+    edit_geo(w, dialog_of(w), &g);
+    n = ui_edit_line_count(w);
+    page = page_of(&g);
+    if (n <= page)
+        return 0;
+    h = g.ty1 - g.ty0;
+    th = (h - 32) * page / n;
+    if (th < 8)
+        th = 8;
+    span = h - 32 - th;
+    if (span <= 0)
+        return 0;
+    y -= g.ty0 + 16 + th / 2;
+    y = y < 0 ? 0 : y > span ? span : y;
+    return (n - page) * y / span;
+}
+
+static void edit_segment(Canvas *c, const UiFont *f, const char *s, int a, int b, int lo, int hi, int base_x, int y, const uint8_t col[3], const uint8_t *back, int line_h, int box_y0,
+                         int box_y1, int disabled)
+{
+    int x;
+
+    if (a < lo)
+        a = lo;
+    if (b > hi)
+        b = hi;
+    if (a >= b)
+        return;
+    x = base_x + text_w(f, s + lo, (size_t)(a - lo));
+    if (back)
+        fill(c, x, box_y0, x + text_w(f, s + a, (size_t)(b - a)), box_y1 < box_y0 + line_h ? box_y1 : box_y0 + line_h, back);
+    label_line(c, f, x, y, s + a, (size_t)(b - a), -1, col, disabled);
+}
+
 static void draw_edit(Canvas *c, const Window *w, const Window *dlg, int x0, int y0, int x1, int y1)
 {
-    UiFont f = ui_font(dlg, 0);
-    int three_d = (dlg && (dlg->style & 4u)) || (w->exstyle & 0x200u), inset = 1;
+    EditGeo g;
     const uint8_t *fg = w->ctl_has_fg ? w->ctl_fg : BLACK, *bg = w->ctl_has_bg ? w->ctl_bg : WINDOW;
-    char shown[256];
-    int tw;
+    const char *s;
+    char *own;
+    int len, sa = 0, sb = 0, disabled = !w->enabled || (w->style & 0x08000000u), focused, show_caret, caret;
 
-    fill(c, x0, y0, x1, y1, bg);
-    if (three_d) {
-        sunken(c, x0, y0, x1, y1);
-        inset = 2;
-    } else if (w->style & 0x800000u)
-        bevel(c, x0, y0, x1, y1, BLACK, BLACK);
-    if (w->style & 0x20u) {                                                         /* ES_PASSWORD */
-        size_t k, n = strlen(w->title);
-
-        for (k = 0; k < n && k + 1 < sizeof(shown); k++)
-            shown[k] = '*';
-        shown[k] = 0;
-    } else
-        snprintf(shown, sizeof(shown), "%s", w->title);
-    tw = text_w(&f, shown, strlen(shown));
-    if (w->has_caret == 2 && shown[0]) {                                           /* all of it selected: white on navy */
-        int sx = x0 + inset + 1;
-
-        fill(c, sx, y0 + inset, sx + tw + 1 < x1 - inset ? sx + tw + 1 : x1 - inset, y1 - inset, NAVY);
-        label_line(c, &f, sx, y0 + (y1 - y0 - f.height) / 2, shown, strlen(shown), -1, HILIGHT, 0);
-        return;
+    (void)x0; (void)y0; (void)x1; (void)y1;
+    edit_geo(w, dlg, &g);
+    fill(c, g.x0, g.y0, g.x1, g.y1, bg);
+    if (g.inset == 2)
+        sunken(c, g.x0, g.y0, g.x1, g.y1);
+    else if (w->style & 0x800000u)
+        bevel(c, g.x0, g.y0, g.x1, g.y1, BLACK, BLACK);
+    own = edit_shown(w, &s);
+    len = (int)strlen(s);
+    focused = wm_get_focus() == w->hwnd || w->has_caret || (w->style & 0x100u);          /* ES_NOHIDESEL: the selection stays shown without the focus */
+    if (w->has_caret == 2) {                                                         /* the file dialog's: all of it selected */
+        sa = 0;
+        sb = len;
+    } else if (focused && w->sel_anchor != w->caret) {
+        sa = w->sel_anchor < w->caret ? w->sel_anchor : w->caret;
+        sb = w->sel_anchor < w->caret ? w->caret : w->sel_anchor;
+        if (sa < 0)
+            sa = 0;
+        if (sb > len)
+            sb = len;
     }
-    label_line(c, &f, (w->style & 3u) == 1 ? x0 + (x1 - x0 - tw) / 2 : (w->style & 3u) == 2 ? x1 - inset - 1 - tw : x0 + inset + 1,
-               (w->style & 4u) ? y0 + inset : y0 + (y1 - y0 - f.height) / 2, shown, strlen(shown), -1, fg, !w->enabled || (w->style & 0x08000000u));
-    if (w->has_caret && (port_now_ms() / 500) % 2 == 0) {                          /* a text cursor, blinking twice a second */
-        size_t at = (size_t)w->caret < strlen(shown) ? (size_t)w->caret : strlen(shown);
-        int cx = x0 + inset + 1 + text_w(&f, shown, at), cy = y0 + (y1 - y0 - f.height) / 2;
+    caret = w->caret > len ? len : w->caret;
+    show_caret = wm_edit_caret_visible(w) && w->enabled && !(w->style & 0x800u);
+    if (!g.ml) {
+        int tw = text_w(&g.f, s, (size_t)len), tx = single_x(w, &g, tw), ty = (g.ty0 + g.ty1 - g.f.height) / 2, first = 0, last = len;
 
-        vline(c, cx, cy, cy + f.height, BLACK);
+        if (tw > g.tx1 - g.tx0) {                                                   /* scrolled: only what shows whole is drawn */
+            while (first < len && tx + text_w(&g.f, s, (size_t)first) < g.tx0)
+                first++;
+            while (last > first && tx + text_w(&g.f, s, (size_t)last) > g.tx1)
+                last--;
+        }
+        edit_segment(c, &g.f, s, 0, sa, first, last, tx, ty, fg, NULL, g.f.height, ty, g.ty1, disabled);
+        edit_segment(c, &g.f, s, sa, sb, first, last, tx, ty, HILIGHT, NAVY, g.f.height, ty, g.ty1, 0);
+        edit_segment(c, &g.f, s, sb, len, first, last, tx, ty, fg, NULL, g.f.height, ty, g.ty1, disabled);
+        if (show_caret) {
+            int cx = tx + text_w(&g.f, s, (size_t)caret);
+
+            if (cx >= g.tx0 - 1 && cx <= g.tx1)
+                vline(c, cx, ty, ty + g.f.height, fg);
+        }
+    } else {
+        int n, page = page_of(&g), top = w->edit_top, i;
+        const VLine *v = edit_vlines(w, &g, s, &n);
+
+        if (v) {
+            if (top > n - page)
+                top = n - page;
+            if (top < 0)
+                top = 0;
+            for (i = top; i < n && g.ty0 + (i - top + 1) * g.f.height <= g.ty1; i++) {
+                int ty = g.ty0 + (i - top) * g.f.height, a = v[i].start, b = v[i].end;
+
+                edit_segment(c, &g.f, s, a, sa < b ? sa : b, a, b, g.tx0, ty, fg, NULL, g.f.height, ty, g.ty1, disabled);
+                edit_segment(c, &g.f, s, sa > a ? sa : a, sb < b ? sb : b, a, b, g.tx0, ty, HILIGHT, NAVY, g.f.height, ty, g.ty1, 0);
+                edit_segment(c, &g.f, s, sb > a ? sb : a, b, a, b, g.tx0, ty, fg, NULL, g.f.height, ty, g.ty1, disabled);
+                if (sa < sb && sa < v[i].next && sb > b && b < v[i].next && sb > v[i].start) {          /* the selection runs on over the line break: a little highlight after the last character */
+                    int ex = g.tx0 + text_w(&g.f, s + a, (size_t)(b - a));
+
+                    fill(c, ex, ty, ex + 6 < g.tx1 ? ex + 6 : g.tx1, ty + g.f.height, NAVY);
+                }
+                if (show_caret && caret >= a && caret <= b && (i == line_at(v, n, caret))) {
+                    int cx = g.tx0 + text_w(&g.f, s + a, (size_t)(caret - a));
+
+                    vline(c, cx, ty, ty + g.f.height, fg);
+                }
+            }
+            if (g.sb)
+                vscrollbar(c, g.sb, g.ty0, g.x1 - g.inset, g.ty1, n, page, top);
+        }
     }
+    free(own);
 }
 
 static void folder_icon(Canvas *c, int x, int y)       /* 14 x 12: a yellow folder */
